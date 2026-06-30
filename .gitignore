@@ -1,7 +1,11 @@
-# SCADA project binaries
-*.edb
+# Elipse E3 runtime/lock files
 *.edb-journal
 
-# Project-specific binaries
+# Elipse workspace artifacts (not source)
 *.dom
-*.prj
+
+# Only track Elipse projects/libraries belonging to the xatm_ architecture
+/*.prj
+/*.lib
+!/xatm_*.prj
+!/xatm_*.lib

@@ -41,6 +41,21 @@ Each maneuver step is a string `"ACTION:DEVICE"`:
 - **TA**: transformer has already tripped. **Open CB first** to confirm isolation, then open adjacent tie to isolate dead busbar, then restore via alternate transformers.
 - **NM**: inverse of TM — restore normal state after impediment is cleared.
 
+## Project Architecture — Elipse E3/Power
+
+Four components, two layers:
+
+| Component | Type | Role |
+|-----------|------|------|
+| `xatm_lib` | `.lib` | Core logic — XObjects implementing `GetTMSteps`, `GetTASteps`, `ExecuteStep` and the state machine dispatcher. Layout-agnostic. |
+| `xatm_libconfig` | `.lib` | Visual components — reusable XControls for breakers, transformers, busbars. No logic. |
+| `xatm_config` | `.prj` | Configuration & visualization screens — instantiates XControls from `xatm_libconfig`, wires up the HMI. |
+| `xatm_data` | `.prj` | Site-specific data — one per substation. Contains real equipment tags, DJ mappings, and layout selection. For ETD Guarulhos: `se_gul`. |
+
+**Dependency order:** `xatm_data` → `xatm_config` → `xatm_libconfig` → `xatm_lib`
+
+The logic in `xatm_lib` never references real equipment IDs — those live only in `xatm_data`. The layout mapping (abstract → real) is the bridge between the two.
+
 ## Entry points for logic
 
 - `GetTMSteps(trigger, imp())` — returns ordered step array for manual transfer
