@@ -1,0 +1,7 @@
+# SCADA project binaries
+*.edb
+*.edb-journal
+
+# Project-specific binaries
+*.dom
+*.prj
