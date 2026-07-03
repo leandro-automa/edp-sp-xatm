@@ -4,6 +4,9 @@
 # Elipse workspace artifacts (not source)
 *.dom
 
+# Trace file
+EDP_SP.txt
+
 # Only track Elipse projects/libraries belonging to the xatm_ architecture
 /*.prj
 /*.lib

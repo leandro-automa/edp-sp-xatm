@@ -1,0 +1,157 @@
+-----------------------
+Documentação de Scripts
+-----------------------
+Comandos
+Wed Jul  1 08:27:14 2026
+-----------------------
+
+<XATM_TCT.DadosTCT.Comandos:Comandos_CmdBloqOper()>
+Sub Comandos_CmdBloqOper()
+	Dim TagCmd
+
+	Set TagCmd = XATM_TCT.CmdBloqueioOper
+	
+	If (TagCmd.Value = 129) or (TagCmd.Value = 1) then
+		If XATM_TCT.BloqueioOperador = True Then
+			XATM_TCT.BloqueioOperador = False
+		End If
+		TagCmd.Value = 0
+	End If
+	If (TagCmd.Value = 65) or (TagCmd.Value = 2) then
+		If XATM_TCT.BloqueioOperador = False Then		
+			XATM_TCT.BloqueioOperador = True
+		End If
+		TagCmd.Value = 0
+	End If
+End Sub
+
+<XATM_TCT.DadosTCT.Comandos:Comandos_CmdReset()>
+Sub Comandos_CmdReset()
+	Dim TagCmd
+
+	Set TagCmd = XATM_TCT.CmdReset
+
+	If (TagCmd.Value = 65) Or (TagCmd.Value = 1) Or (TagCmd.Value = 2) then
+		Reset
+		TagCmd.Value = 0
+	End If
+End Sub
+
+Sub Reset()
+	XATM_TCT.BloqueioGeral = False
+	XATM_TCT.ConcluidoComSucesso = False
+	XATM_TCT.AutomatismoEmAndamento = False
+	XATM_TCT.[NaoConcluida] = False
+	XATM_TCT.FalhaExecPasso1 = False
+	XATM_TCT.FalhaExecPasso2 = False
+	XATM_TCT.FalhaExecPasso3 = False
+	XATM_TCT.FalhaExecPasso4 = False
+	XATM_TCT.FalhaExecPasso5 = False
+	XATM_TCT.FalhaExecPasso6 = False
+	XATM_TCT.FalhaExecPasso7 = False
+	XATM_TCT.FalhaExecPasso8 = False
+	XATM_TCT.FalhaExecPasso9 = False
+	ResetEquip
+	ResetAtm
+	
+	XATM_TCT.Item("DadosParalelismo").Item("ConcluidoComSucessoMonitor").WriteEx Empty
+	XATM_TCT.Item("DadosParalelismo").Item("ConcluidoComSucessoFlag").WriteEx Empty
+	XATM_TCT.Item("MaquinaEstados").Item("Main").WriteEx 0
+	XATM_TCT.Item("MaquinaEstados").Item("TrafoAdjSelcId").WriteEx 0
+	XATM_TCT.Item("MaquinaEstados").Item("TipoTCT").WriteEx ""
+	XATM_TCT.Item("XATM_LogTCT").Texto = "[" & XATM_TCT.Name & "] - Reset concluido"
+End Sub
+
+Sub ResetEquip()
+	
+	For Each Equip in Application.GetObject("autoDados.[Subestação].Transformador")
+		Select Case TypeName(Equip)
+			Case "XATM_Disj_Red" 
+				Equip.Item("Dados").Item("ResetAutomatismos").WriteEx 1
+			Case "XATM_Secc" 
+				Equip.Item("Dados").Item("ResetAutomatismos").WriteEx 1
+			Case Else
+			
+		End Select
+	Next
+	
+	For Each Equip in Application.GetObject("autoDados.[Subestação].Barra13_8kV")
+		Select Case TypeName(Equip)
+			Case "XATM_Disj_Red" 
+				Equip.Item("Dados").Item("ResetAutomatismos").WriteEx 1
+			Case "XATM_Secc" 
+				Equip.Item("Dados").Item("ResetAutomatismos").WriteEx 1
+			Case Else
+			
+		End Select
+	Next
+
+End Sub
+
+Sub ResetAtm()
+	
+	For Each Atm in Application.GetObject("autoDados.Automatismo")
+		Select Case TypeName(Atm)
+			Case "XATM_TCT" 
+				'Atm.Item("Dados_TAL").Item("Reset").WriteEx 1
+			Case Else
+			
+		End Select
+	Next
+	
+End Sub
+
+<XATM_TCT.DadosTCT.Comandos:Comandos_CmdSimulador()>
+Sub Comandos_CmdSimulador()
+
+	Select Case Value
+		Case "Reset"
+			Reset
+		Case Else
+		
+	End Select
+	Value = ""
+	
+End Sub
+
+<XATM_TCT.DadosTCT.Comandos:Comandos_DisparoLiberacao()>
+Sub Comandos_DisparoLiberacao()
+
+	Dim TagCmd
+
+	Set TagCmd = XATM_TCT.CmdLiberar
+	DisparoFlag = False
+
+	If XATM_TCT.Enable = True Then
+		If (TagCmd.Value = 65) or (TagCmd.Value =  1) or (TagCmd.Value = 2) Then 
+			Parent.Item("PartidaLiberaçãoTCT").WriteEx "Liberar" '$NãoDocumentar
+			TagCmd.Value =  0
+		End If
+	Else
+		XATM_TCT.Item("XATM_LogTCT").Texto = "[" & XATM_TCT.Name & "] - Automatismo Desabilitado."
+	End If
+		
+End Sub
+
+<XATM_TCT.DadosTCT.Comandos:Comandos_DisparoNormalizacao()>
+Sub Comandos_DisparoNormalizacao()
+
+	Dim DisparoFlag
+	Dim TagCmd
+
+	Set TagCmd = XATM_TCT.CmdNormalizar
+	DisparoFlag = False
+
+	If XATM_TCT.Enable = True Then
+		If XATM_TCT.AutomatismoEmAndamento = False Then
+			If (TagCmd.Value = 65) or (TagCmd.Value =  1) or (TagCmd.Value = 2) Then 
+				Parent.Item("PartidaNormalizaçãoTCT").WriteEx "Normalizar" '$NãoDocumentar
+				TagCmd.Value =  0
+			End If
+		End If
+	Else
+		XATM_TCT.Item("XATM_LogTCT").Texto = "[" & XATM_TCT.Name & "] - Automatismo Desabilitado."
+	End If
+			
+End Sub
+
