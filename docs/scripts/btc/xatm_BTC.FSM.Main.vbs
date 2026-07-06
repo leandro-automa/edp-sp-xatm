@@ -1,5 +1,5 @@
 -----------------------
-Documenta--o de Scripts
+Documentação de Scripts
 -----------------------
 Main
 Mon Jul  6 15:12:44 2026
@@ -7,15 +7,15 @@ Mon Jul  6 15:12:44 2026
 
 <xatm_BTC.FSM.Main:Main_Completed()>
 Sub Main_Completed()
-	
+
 	Parent.Item("TriggerTransformerId").WriteEx  Empty, 0
 	Parent.Item("AutomationType").WriteEx Empty, 0
 	Parent.Item("StepTimer").WriteEx  Empty, 0
 	WriteEx  Empty, 0
-	
+
     xatm_BTC.Running = False
     WriteLog "Automation completed successfully."
-            	
+
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Functions()>
@@ -23,21 +23,36 @@ Sub Main_Functions()
 End Sub
 
 
+' Breaker position (Data.Position) and command (Data.CommandOpenClose) codes.
+' The same values apply to both: a position read and a command write.
+Const OPEN = 1
+Const CLOSE = 2
+
+' Past-tense word for an operation, used in step logs.
+Function OperationName(operation)
+	If operation = CLOSE Then
+		OperationName = "closed"
+	Else
+		OperationName = "opened"
+	End If
+End Function
+
+
 Function GetDeviceById(id, ByRef exists)
-    
+
     exists = False
     Set GetDeviceById = FindInFolder(Application.GetObject("XATM_Data.Substation"), id, exists)
-    
+
 End Function
 
 Function FindInFolder(folder, id, ByRef exists)
-    
+
     Set FindInFolder = Nothing
-        
+
     Dim obj
 
     For Each obj In folder
-        
+
         Select Case UCase(TypeName(obj))
 
             Case "XATM_BREAKER", "XATM_TRANSFORMER", "XATM_DISCONNECTOR"
@@ -60,7 +75,7 @@ Function FindInFolder(folder, id, ByRef exists)
                 End If
 
         End Select
-        
+
     Next
 
 End Function
@@ -69,156 +84,156 @@ Function GetLayoutType()
 
 	GetLayoutType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value & "_" & _
 					Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
-	
+
 End Function
 
 Sub ResetTimer()
 
     Parent.Item("StepTimer").Value = 0
-    
+
 End Sub
 
 Sub IncrementTimer()
 
     Parent.Item("StepTimer").Value = Parent.Item("StepTimer").Value + 1
-    
+
 End Sub
 
 Sub WriteLog(message)
-	
+
 	Dim consoleLogEngine
 	Set consoleLogEngine = Nothing
-	
+
 	On Error Resume Next
 	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
 	Application.Trace "[" & Parent.Parent.Name & "] - " & message
 	On Error Goto 0
-	
+
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
-	
+
 End Sub
 
 <xatm_BTC.FSM.Main:Main_GlobalLockout()>
 Sub Main_GlobalLockout()
-	
+
 	xatm_BTC.Running = False
-	
+
 	WriteLog "Global lockout activated due to automation failure."
-	
+
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Main()>
 Sub Main_Main()
-	
+
 	Const STEP_1_TIMER = 30
 
 	If Not xatm_BTC.Enabled Then
-		
+
 		WriteLog "Automation not enabled."
 		xatm_BTC.Running = False
 		Exit Sub
-	
+
 	End If
-	
+
 	If Not xatm_BTC.Running Then
 		Exit Sub
 	End If
-	
+
 	Select Case Value
-		
+
 		Case 0
-			
+
 			Main_Step00()
-		
+
 		Case 1
-			
+
 			If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-				
+
 				Main_Step01()
-				
+
 			Else
-				
+
 				WriteLog "Step 1: Execution failed - Timeout exceeded."
 				Main_GlobalLockout
 				Exit Sub
-				
+
 			End If
 
         Case 2
 
             If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
+
                 Main_Step02()
-                
+
             Else
-                
+
                 WriteLog "Step 2: Execution failed - Timeout exceeded."
-                
+
             End If
-        
+
         Case 3
 
             If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
+
                 Main_Step03()
-                
+
             Else
-                
+
                 WriteLog "Step 3: Execution failed - Timeout exceeded."
-                
+
             End If
 
         Case 4
-            
+
             If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
+
                 Main_Step04()
-                
+
             Else
-                
+
                 WriteLog "Step 4: Execution failed - Timeout exceeded."
-                
+
             End If
-        
+
         Case 5
-            
+
             If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
+
                 Main_Step05()
-                
+
             Else
-                
+
                 WriteLog "Step 5: Execution failed - Timeout exceeded."
-                
+
             End If
 
         Case 6
 
             If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
+
                 Main_Step06()
-                
+
             Else
-                
+
                 WriteLog "Step 6: Execution failed - Timeout exceeded."
-                
+
             End If
 
         Case 99
-			
+
 			Main_Completed()
-			
+
 	End Select
-	
+
 	IncrementTimer()
 
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Step00()>
 Sub Main_Step00()
-	
+
 	' ===============
 	' Snapshot the substation transformers lockout state at trigger time.
 	' ===============
@@ -260,28 +275,30 @@ Sub Main_Step01()
 
 	Dim triggerId
 	triggerId = Parent.Item("TriggerTransformerId").Value
-		
+
 	Select Case Parent.Item("AutomationType").Value
-		
+
 		Case "TM"
-			
+
 			S1TM triggerId
-			
+
 	End Select
-	
+
 End Sub
 
 ' ================================
 ' TM - Manual transfer
 ' ================================
 Sub S1TM(triggerId)
-	
+
 	Dim layoutType
 	layoutType = GetLayoutType()
-	
-	Dim breakerId
-	
+
+	Dim breakerId, action
+
 	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = CLOSE
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -329,52 +346,53 @@ Sub S1TM(triggerId)
 		End Select
 
 	Else
-	
+
 		' ================
 		' DEFAULT
 		' ================
+		action = CLOSE
 	 	breakerId = 700
-	
+
 	End If
-	
+
 	Dim breaker, breakerExists
 	Set breaker = GetDeviceById(breakerId, breakerExists)
-	
+
 	If Not breakerExists Then
-		
+
 		WriteLog "Step 1: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
 		Main_GlobalLockout()
 		Exit Sub
-		
+
 	End If
-	
-	If breaker.Item("Data").Item("Position").Value = 2 Then
-		
-		WriteLog "Step 1: Circuit breaker operated - Proceeding to the next step."
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 1: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
 		ResetTimer()
 		Value = 2
 		Exit Sub
 
 	End If
-	
+
 	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-		
+
 		Case 0, 3
-			
-			' 
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx 2
-			
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
 		Case 1
-			
+
 			' Command execution failed
 			Main_GlobalLockout()
 			Exit Sub
-			
+
 		Case 2
-			
+
 			' Command in progress
 			Exit Sub
-			
+
 	End Select
 
 End Sub
@@ -384,25 +402,27 @@ Sub Main_Step02()
 
 	Dim triggerId
 	triggerId = Parent.Item("TriggerTransformerId").Value
-		
+
 	Select Case Parent.Item("AutomationType").Value
-		
+
 		Case "TM"
-			
+
 			S2TM triggerId
-			
+
 	End Select
-	
+
 End Sub
 
 Sub S2TM(triggerId)
-	
+
 	Dim layoutType
 	layoutType = GetLayoutType()
-	
-	Dim breakerId
-	
+
+	Dim breakerId, action
+
 	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = OPEN
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -454,29 +474,30 @@ Sub S2TM(triggerId)
 		End Select
 
 	Else
-		
+
 		' ==============
 		' DEFAULT
 		' ==============
+		action = OPEN
 		breakerId = triggerId + 20
 		nextStep = 99
-		
+
 	End If
 
 	Dim breaker, breakerExists
 	Set breaker = GetDeviceById(breakerId, breakerExists)
 
 	If Not breakerExists Then
-		
+
 		WriteLog "Step 2: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
 		Main_GlobalLockout()
 		Exit Sub
-		
+
 	End If
 
-	If breaker.Item("Data").Item("Position").Value = 1 Then
-		
-		WriteLog "Step 2: Circuit breaker operated - Proceeding to the next step."
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 2: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
 		ResetTimer()
 		Value = nextStep
 		Exit Sub
@@ -484,25 +505,25 @@ Sub S2TM(triggerId)
 	End If
 
 	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-			
+
 		Case 0, 3
-			
-			' 
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx 1
-			
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
 		Case 1
-			
+
 			' Command execution failed
 			Main_GlobalLockout()
 			Exit Sub
-			
+
 		Case 2
-			
+
 			' Command in progress
 			Exit Sub
-			
+
 	End Select
-	
+
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Step03()>
@@ -510,25 +531,27 @@ Sub Main_Step03()
 
 	Dim triggerId
 	triggerId = Parent.Item("TriggerTransformerId").Value
-		
+
 	Select Case Parent.Item("AutomationType").Value
-		
+
 		Case "TM"
-			
+
 			S3TM triggerId
-			
+
 	End Select
-	
+
 End Sub
 
 Sub S3TM(triggerId)
-	
+
 	Dim layoutType
 	layoutType = GetLayoutType()
-	
-	Dim breakerId
-	
+
+	Dim breakerId, action
+
 	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = CLOSE
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -571,23 +594,24 @@ Sub S3TM(triggerId)
 
 	Else
 
-		
+		action = CLOSE
+
 	End If
 
 	Dim breaker, breakerExists
 	Set breaker = GetDeviceById(breakerId, breakerExists)
 
 	If Not breakerExists Then
-		
+
 		WriteLog "Step 3: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
 		Main_GlobalLockout()
 		Exit Sub
-		
+
 	End If
 
-	If breaker.Item("Data").Item("Position").Value = 2 Then
-		
-		WriteLog "Step 3: Circuit breaker operated - Proceeding to the next step."
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 3: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
 		ResetTimer()
 		Value = 4
 		Exit Sub
@@ -595,23 +619,23 @@ Sub S3TM(triggerId)
 	End If
 
 	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-			
+
 		Case 0, 3
-			
-			' 
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx 2
-			
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
 		Case 1
-			
+
 			' Command execution failed
 			Main_GlobalLockout()
 			Exit Sub
-			
+
 		Case 2
-			
+
 			' Command in progress
 			Exit Sub
-			
+
 	End Select
 
 End Sub
@@ -621,28 +645,30 @@ Sub Main_Step04()
 
 	Dim triggerId
 	triggerId = Parent.Item("TriggerTransformerId").Value
-		
+
 	Select Case Parent.Item("AutomationType").Value
-		
+
 		Case "TM"
-			
+
 			S4TM triggerId
-			
+
 	End Select
-	
+
 End Sub
 
 Sub S4TM(triggerId)
-	
+
 	Dim layoutType
 	layoutType = GetLayoutType()
-	
-	Dim breakerId
-	
+
+	Dim breakerId, action
+
 	Dim nextStep
 	nextStep = 99
-	
+
 	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = OPEN
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -681,23 +707,24 @@ Sub S4TM(triggerId)
 
 	Else
 
-		
+		action = OPEN
+
 	End If
 
 	Dim breaker, breakerExists
 	Set breaker = GetDeviceById(breakerId, breakerExists)
 
 	If Not breakerExists Then
-		
+
 		WriteLog "Step 4: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
 		Main_GlobalLockout()
 		Exit Sub
-		
+
 	End If
 
-	If breaker.Item("Data").Item("Position").Value = 1 Then
-		
-		WriteLog "Step 4: Circuit breaker operated - Proceeding to the next step."
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 4: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
 		ResetTimer()
 		Value = nextStep
 		Exit Sub
@@ -705,25 +732,25 @@ Sub S4TM(triggerId)
 	End If
 
 	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-			
+
 		Case 0, 3
-			
-			' 
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx 1
-			
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
 		Case 1
-			
+
 			' Command execution failed
 			Main_GlobalLockout()
 			Exit Sub
-			
+
 		Case 2
-			
+
 			' Command in progress
 			Exit Sub
-			
+
 	End Select
-	
+
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Step05()>
@@ -731,25 +758,27 @@ Sub Main_Step05()
 
 	Dim triggerId
 	triggerId = Parent.Item("TriggerTransformerId").Value
-		
+
 	Select Case Parent.Item("AutomationType").Value
-		
+
 		Case "TM"
-			
+
 			S5TM triggerId
-			
+
 	End Select
-	
+
 End Sub
 
 Sub S5TM(triggerId)
-	
+
 	Dim layoutType
 	layoutType = GetLayoutType()
-	
-	Dim breakerId
-	
+
+	Dim breakerId, action
+
 	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = CLOSE
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -764,23 +793,24 @@ Sub S5TM(triggerId)
 
 	Else
 
-		
+		action = CLOSE
+
 	End If
 
 	Dim breaker, breakerExists
 	Set breaker = GetDeviceById(breakerId, breakerExists)
 
 	If Not breakerExists Then
-		
+
 		WriteLog "Step 5: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
 		Main_GlobalLockout()
 		Exit Sub
-		
+
 	End If
 
-	If breaker.Item("Data").Item("Position").Value = 2 Then
-		
-		WriteLog "Step 5: Circuit breaker operated - Proceeding to the next step."
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 5: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
 		ResetTimer()
 		Value = 6
 		Exit Sub
@@ -788,25 +818,25 @@ Sub S5TM(triggerId)
 	End If
 
 	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-			
+
 		Case 0, 3
-			
-			' 
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx 2
-			
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
 		Case 1
-			
+
 			' Command execution failed
 			Main_GlobalLockout()
 			Exit Sub
-			
+
 		Case 2
-			
+
 			' Command in progress
 			Exit Sub
-			
+
 	End Select
-	
+
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Step06()>
@@ -814,25 +844,27 @@ Sub Main_Step06()
 
 	Dim triggerId
 	triggerId = Parent.Item("TriggerTransformerId").Value
-		
+
 	Select Case Parent.Item("AutomationType").Value
-		
+
 		Case "TM"
-			
+
 			S6TM triggerId
-			
+
 	End Select
-	
+
 End Sub
 
 Sub S6TM(triggerId)
-	
+
 	Dim layoutType
 	layoutType = GetLayoutType()
-	
-	Dim breakerId
-	
+
+	Dim breakerId, action
+
 	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = OPEN
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -849,23 +881,24 @@ Sub S6TM(triggerId)
 
 	Else
 
-		
+		action = OPEN
+
 	End If
 
 	Dim breaker, breakerExists
 	Set breaker = GetDeviceById(breakerId, breakerExists)
 
 	If Not breakerExists Then
-		
+
 		WriteLog "Step 6: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
 		Main_GlobalLockout()
 		Exit Sub
-		
+
 	End If
 
-	If breaker.Item("Data").Item("Position").Value = 1 Then
-		
-		WriteLog "Step 6: Circuit breaker operated - Proceeding to the next step."
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 6: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
 		ResetTimer()
 		Value = 99
 		Exit Sub
@@ -873,24 +906,23 @@ Sub S6TM(triggerId)
 	End If
 
 	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-			
+
 		Case 0, 3
-			
-			' 
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx 1
-			
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
 		Case 1
-			
+
 			' Command execution failed
 			Main_GlobalLockout()
 			Exit Sub
-			
+
 		Case 2
-			
+
 			' Command in progress
 			Exit Sub
-			
+
 	End Select
 
 End Sub
-
