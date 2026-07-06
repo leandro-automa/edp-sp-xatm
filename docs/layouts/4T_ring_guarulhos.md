@@ -19,18 +19,41 @@ TIE[1A,4A]──B1A──TIE[1B,1A]──B1B──TIE[2A,1B]──B2A──TIE[2
 
 ## Mapeamento de Dispositivos
 
-| Conceito Abstrato  | ID Real (ETD Guarulhos) | Posição no Anel |
-|--------------------|-------------------------|-----------------|
-| `CB[1]`            | DJ03                    | Secundário TR1 → B1B |
-| `CB[2]`            | DJ04                    | Secundário TR2 → B2A |
-| `CB[3]`            | DJ05                    | Secundário TR3 → B3A |
-| `CB[4]`            | DJ06                    | Secundário TR4 → B4A |
-| `TIE[1B,1A]`       | DJ20                    | B1B ↔ B1A (= B1B2) |
-| `TIE[1A,4A]`       | DJ10                    | B1A ↔ B4A |
-| `TIE[2A,1B]`       | DJ30                    | B2A ↔ B1B |
-| `TIE[2B,2A]`       | DJ40                    | B2B ↔ B2A |
-| `TIE[3A,2B]`       | DJ50                    | B3A ↔ B2B |
-| `TIE[4A,3A]`       | DJ60                    | B4A ↔ B3A |
+O **ID Lógico** é o valor da propriedade `.Id` que a lógica (`xatm_BTC`) usa — é
+o contrato, independente do nome de exibição do dispositivo em `xatm_data`.
+
+### Transformadores
+
+| Nome GUL | ID Lógico |
+|----------|-----------|
+| TR1      | 100       |
+| TR2      | 200       |
+| TR3      | 300       |
+| TR4      | 400       |
+
+### Disjuntores
+
+| Conceito Abstrato  | ID Real (ETD Guarulhos) | ID Lógico | Posição no Anel |
+|--------------------|-------------------------|-----------|-----------------|
+| `CB[1]`            | DJ03                    | 120       | Secundário TR1 → B1B |
+| `CB[2]`            | DJ04                    | 220       | Secundário TR2 → B2A |
+| `CB[3]`            | DJ05                    | 320       | Secundário TR3 → B3A |
+| `CB[4]`            | DJ06                    | 420       | Secundário TR4 → B4A |
+| `TIE[1B,1A]`       | DJ20                    | 700       | B1B ↔ B1A (= B1B2) |
+| `TIE[2A,1B]`       | DJ30                    | 710       | B2A ↔ B1B |
+| `TIE[2B,2A]`       | DJ40                    | 720       | B2B ↔ B2A |
+| `TIE[3A,2B]`       | DJ50                    | 730       | B3A ↔ B2B |
+| `TIE[4A,3A]`       | DJ60                    | 740       | B4A ↔ B3A |
+| `TIE[1A,4A]`       | DJ10                    | 900       | B1A ↔ B4A (fecha o anel, NA) |
+
+### Esquema de numeração dos IDs Lógicos
+
+- **100–400** — vãos de transformador (`TRn = n×100`); **+20** = disjuntor
+  secundário do transformador (`120 / 220 / 320 / 420`)
+- **700–740** — os cinco disjuntores de interligação de barra, percorrendo o
+  anel na ordem dos barramentos B1A→B4A (`700, 710, 720, 730, 740`)
+- **900** — disjuntor de fechamento do anel (retorno B4A→B1A, normalmente
+  aberto — sobre o qual todas as sequências TM/TA se apoiam)
 
 ## Estado Normal
 
