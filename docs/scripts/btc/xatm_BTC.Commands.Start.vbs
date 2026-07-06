@@ -1,15 +1,17 @@
+-----------------------
+Documentação de Scripts
+-----------------------
+Start
+Mon Jul  6 15:44:45 2026
+-----------------------
+
 <xatm_BTC.Commands.Start:Start_OnChangedValue()>
-' Single trigger funnel for every automation type.
-' Value format: "MODE:trigger"  e.g. "TM:1", "NM:4", "TA:3"
-'   - Operators write TM / NM (transformer live, make-before-break)
-'   - Protection writes TA     (transformer already tripped)
-' One arm routine gates all three. Self-clears without re-firing.
 Sub Start_OnChangedValue()
 
-	If Trim(Me.Value) = "" Then Exit Sub      ' self-cleared write, ignore
+	If Trim(Value) = "" Then Exit Sub      ' self-cleared write, ignore
 
 	Dim ts
-	ts = Me.TimeStamp	' preserve for the silent clear
+	ts = TimeStamp	' preserve for the silent clear
 
 	Dim parts
 	parts = Split(Me.Value, ":")
@@ -23,15 +25,21 @@ Sub Start_OnChangedValue()
 	mode = UCase(Trim(parts(0)))
 
 	Select Case mode
+		
 		Case "TM", "NM", "TA"
+		
 		Case Else
+			
 			Reject "Unknown automation type '" & mode & "'.", ts
 			Exit Sub
+			
 	End Select
 
 	If Not IsNumeric(parts(1)) Then
+		
 		Reject "Invalid trigger transformer '" & parts(1) & "'.", ts
 		Exit Sub
+		
 	End If
 
 	Dim triggerId
@@ -83,7 +91,7 @@ Sub Start_OnChangedValue()
 	' ================
 	' START
 	' ================
-
+	
 	xatm_BTC.Item("FSM").Item("AutomationType").WriteEx mode
 	xatm_BTC.Item("FSM").Item("TriggerTransformerId").WriteEx triggerId
 	xatm_BTC.Item("FSM").Item("StepTimer").WriteEx 0
@@ -131,5 +139,22 @@ Sub Reject(reason, ts)
 
 	WriteLog "[BTC] Not started - " & reason
 	WriteEx "", ts
-
+	
 End Sub
+
+Sub WriteLog(message)
+	
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+	
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+	
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+	
+End Sub
+

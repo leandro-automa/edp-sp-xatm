@@ -23,14 +23,9 @@ Sub Main_Functions()
 End Sub
 
 
-' Breaker position (Data.Position) and command (Data.CommandOpenClose) codes.
-' The same values apply to both: a position read and a command write.
-Const OPEN = 1
-Const CLOSE = 2
-
 ' Past-tense word for an operation, used in step logs.
 Function OperationName(operation)
-	If operation = CLOSE Then
+	If operation = 2 Then
 		OperationName = "closed"
 	Else
 		OperationName = "opened"
@@ -239,9 +234,37 @@ Sub Main_Step00()
 	' ===============
 	StoreLockouts()
 
+	WriteLog "Starting " & DescribeAutomation()
+
 	Value = 1
 
 End Sub
+
+' Human-readable summary of the running automation for the step log,
+' e.g. "TM TR1 - T200 locked out".
+Function DescribeAutomation()
+
+	Dim autoType, triggerId, lockouts, i, lockedList
+
+	autoType  = Parent.Item("AutomationType").Value
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	lockouts  = ReadLockouts()
+
+	lockedList = ""
+	For i = 1 To 4
+		If lockouts(i) Then
+			If lockedList <> "" Then lockedList = lockedList & ", "
+			lockedList = lockedList & "T" & (i * 100)
+		End If
+	Next
+
+	If lockedList = "" Then
+		DescribeAutomation = autoType & " TR" & (triggerId \ 100) & " - no transformer locked out"
+	Else
+		DescribeAutomation = autoType & " TR" & (triggerId \ 100) & " - " & lockedList & " locked out"
+	End If
+
+End Function
 
 Function ReadLockouts()
 
@@ -298,7 +321,7 @@ Sub S1TM(triggerId)
 
 	If layoutType = "4TR4LV_6BB6TIERING" Then
 
-		action = CLOSE
+		action = 2
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -350,7 +373,7 @@ Sub S1TM(triggerId)
 		' ================
 		' DEFAULT
 		' ================
-		action = CLOSE
+		action = 2
 	 	breakerId = 700
 
 	End If
@@ -422,7 +445,7 @@ Sub S2TM(triggerId)
 
 	If layoutType = "4TR4LV_6BB6TIERING" Then
 
-		action = OPEN
+		action = 1
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -478,7 +501,7 @@ Sub S2TM(triggerId)
 		' ==============
 		' DEFAULT
 		' ==============
-		action = OPEN
+		action = 1
 		breakerId = triggerId + 20
 		nextStep = 99
 
@@ -551,7 +574,7 @@ Sub S3TM(triggerId)
 
 	If layoutType = "4TR4LV_6BB6TIERING" Then
 
-		action = CLOSE
+		action = 2
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -594,7 +617,7 @@ Sub S3TM(triggerId)
 
 	Else
 
-		action = CLOSE
+		action = 2
 
 	End If
 
@@ -668,7 +691,7 @@ Sub S4TM(triggerId)
 
 	If layoutType = "4TR4LV_6BB6TIERING" Then
 
-		action = OPEN
+		action = 1
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -707,7 +730,7 @@ Sub S4TM(triggerId)
 
 	Else
 
-		action = OPEN
+		action = 1
 
 	End If
 
@@ -778,7 +801,7 @@ Sub S5TM(triggerId)
 
 	If layoutType = "4TR4LV_6BB6TIERING" Then
 
-		action = CLOSE
+		action = 2
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -793,7 +816,7 @@ Sub S5TM(triggerId)
 
 	Else
 
-		action = CLOSE
+		action = 2
 
 	End If
 
@@ -864,7 +887,7 @@ Sub S6TM(triggerId)
 
 	If layoutType = "4TR4LV_6BB6TIERING" Then
 
-		action = OPEN
+		action = 1
 
 		Dim lockouts
 		lockouts = ReadLockouts()
@@ -881,7 +904,7 @@ Sub S6TM(triggerId)
 
 	Else
 
-		action = OPEN
+		action = 1
 
 	End If
 
