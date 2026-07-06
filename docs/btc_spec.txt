@@ -1,0 +1,1477 @@
+ETD GUARULHOS ­ CONJUNTO CUBICULOS (CBBS-1/ CBBS-2 e CBBS-3)
+
+1.1 Condições de funcionamento da estação.
+
+Na tabela abaixo vemos quais são as combinações pré-estabelecidas pela operação da Bandeirante para a
+estação de Guarulhos.
+
+                                      ESTADO DOS DISJUNTORES- INTERLIGAÇAO E SECUNDÁRIOS
+
+   SITUAÇÕES              DJ10 DJ20 DJ3 DJ30 DJ4 DJ40 DJ50 DJ5 DJ60                                    DJ6
+
+1  Normal                 DESL.       LIG.   LIG.  DESL.  LIG.  LIG.        DESL.  LIG.   DESL.         LIG.
+                                                                                                        LIG.
+2  TR1 impedido           LIG.        DESL. DESL.  LIG.   LIG.  DESL.       LIG.   LIG.   DESL.         LIG.
+                                                                                                        LIG.
+3  TR2 impedido           LIG.        DESL.  LIG.  LIG.   DESL. DESL.       LIG.   LIG.   DESL.        DESL.
+                                                                                                        LIG.
+4  TR3 impedido           DESL.       LIG.   LIG.  DESL.  LIG.  LIG.        DESL. DESL.   LIG.          LIG.
+                                                                                                       DESL.
+5  TR4 impedido           DESL.       LIG.   LIG.  DESL.  LIG.  LIG.        DESL.  LIG.   LIG.          LIG.
+                                                                                                       DESL.
+6 TR1 e TR2 impedidos     LIG.        LIG.   DESL. DESL. DESL.  LIG.        LIG.   LIG.   DESL.        DESL.
+                                                                                                        LIG.
+7 TR1 e TR3 impedidos     LIG.        DESL. DESL.  LIG.   LIG.  LIG.        DESL. DESL.   LIG.          LIG.
+
+8 TR1 e TR4 impedidos     LIG.        DESL. DESL.  LIG.   LIG.  LIG.        DESL.  LIG.   LIG.
+
+9 TR2 e TR3 impedidos     DESL.       LIG.   LIG.  LIG.   DESL. DESL.       LIG.   DESL.  LIG.
+
+10 TR2 e TR4 impedidos    DESL.       LIG.   LIG.  LIG.   DESL. DESL.       LIG.   LIG.   LIG.
+
+11 TR3 e TR4 impedidos    LIG.        LIG.   LIG.  DESL.  LIG.  LIG.        LIG.   DESL. DESL.
+
+12 B1A transferida P/B4A  LIG.        DESL.  LIG.  DESL.  LIG.  LIG.        DESL.  LIG.   DESL.
+
+13 B2B transferida P/B3A DESL.        LIG.   LIG.  DESL.  LIG.  DESL.       LIG.   LIG.   DESL.
+
+Tabela 1 - Estado dos disjuntores.
+
+1.2 Alimentação dos barramentos pelos transformadores.
+
+Na tabela abaixo vemos quais são os transformadores a alimentarem os barramentos nas combinações pré-
+estabelecidas pela operação da Bandeirante para a estação de Guarulhos.
+
+                                             TRANSFORMADORES QUE ALIMENTAM AS BARRAS
+
+   SITUAÇÕES                    B1A          B1B          B2A          B2B         B3A           B4A
+
+1  Normal                        TR1         TR1          TR2          TR2         TR3                 TR4
+
+2  TR1 impedido                  TR4         TR2          TR2          TR3         TR3                 TR4
+
+3  TR2 impedido                  TR4         TR1          TR1          TR3         TR3                 TR4
+
+4  TR3 impedido                  TR1         TR1          TR2          TR2         TR4                 TR4
+
+5  TR4 impedido                  TR1         TR1          TR2          TR2         TR3                 TR3
+
+6 TR1 e TR2 impedidos            TR4         TR4          TR3          TR3         TR3                 TR4
+
+7 TR1 e TR3 impedidos            TR4         TR2          TR2          TR2         TR4                 TR4
+
+8 TR1 e TR4 impedidos            TR3         TR2          TR2          TR2         TR3                 TR3
+
+9 TR2 e TR3 impedidos            TR1         TR1          TR1          TR4         TR4                 TR4
+
+10 TR2 e TR4 impedidos           TR1         TR1          TR1          TR3         TR3                 TR3
+
+11 TR3 e TR4 impedidos           TR1         TR1          TR2          TR2         TR2                 TR1
+
+12 B1A transferida P/B4A         TR4         TR1          TR2          TR2         TR3                 TR4
+
+13 B2B transferida P/B3A         TR1         TR1          TR2          TR3         TR3                 TR4
+
+Tabela 2 - Transformadores que alimentam as barras.
+
+1.3 Proteções de barra e falha de disjuntor. (Ver Tabela 3 e 4)
+1.3.1 Considerações gerais.
+
+A estação de Guarulhos tem uma topologia diferenciada das demais estações da Bandeirante, conforme pode
+ser visto nos diagrama unifilares da estação.
+Nos três conjuntos blindados existentes, a Bandeirante optou pela disposição de seis barramentos interligáveis
+em anel, divididos da seguinte maneira:
+
+Barra 1A, circuitos 11, 12 e 13.
+
+Barra 1B, circuitos 14, 15 e 16.
+
+Barra 2A, circuitos 21, 22 e 23.
+
+Barra 2B, circuitos 24, 25 e 26.
+
+Barra 3A, circuitos 31, 32 e 33.
+
+Barra 4A, circuitos 34, 35 e 36.
+
+As barras que são alimentadas diretamente por transformador, como aquelas via interbarras (barras 1A, 1B, 2A,
+2B, 3A e 4A), terão CR de barra implementada através de relé biestáveis idênticos aos que vem sendo usados
+nas demais estações.
+A explicação mais detalhada de cada caso é dada a seguir.
+
+1.3.2 CRBA1A.
+1.3.2.1 Pontos de atuação chave relé CRBA1A.
+
+     · Desliga os disjuntores de interligação de barras (DJ10 e DJ20) via fiação convencional e bloqueia via
+          fiação também;
+
+     · Desliga os disjuntores dos circuitos (DJ11, DJ12 e DJ13) conectados na barra e bloqueia via fiação,
+          bloqueando também o religamento dos circuitos.
+
+     · Todos os comandos de desligamento passarão obrigatoriamente por borne seccionável, possibilitando
+          assim ensaios da CR sem desligamentos indevidos. A identificação desses bornes deve deixar claro
+          qual circuito que sofrerá o desligamento.
+
+1.3.2.2 Alarmes
+
+     · Defeito na bobina de acionamento da CRBA1A;
+     · CRBA1A atuada;
+
+1.3.3 CRBA1B.
+1.3.3.1 Pontos de atuação chave relé CRBA1B.
+
+     · Desliga o disjuntor de secundário DJ3 via fiação convencional e bloqueia via fiação também;
+     · Desliga os disjuntores de interligação de barras (DJ20 e DJ30) via fiação convencional e bloqueia via
+
+          fiação também;
+     · Desliga os disjuntores dos circuitos (DJ14, DJ15 e DJ16) conectados na barra e bloqueia via fiação,
+
+          bloqueando também o religamento dos circuitos.
+     · Todos os comandos de desligamento passarão obrigatoriamente por borne seccionável, possibilitando
+
+          assim ensaios da CR sem desligamentos indevidos. A identificação desses bornes deve deixar claro
+          qual circuito que sofrerá o desligamento.
+
+1.3.3.2 Alarmes
+
+     · Defeito na bobina de acionamento da CRBA1B;
+     · CRBA1B atuada;
+
+1.3.4 CRBA2A.
+1.3.4.1 Pontos de atuação chave relé CRBA2A.
+
+     · Desliga o disjuntor de secundário DJ4 via fiação convencional e bloqueia via fiação também;
+     · Desliga os disjuntores de interligação de barras (DJ30 e DJ40) via fiação convencional e bloqueia via
+
+          fiação também;
+     · Desliga os disjuntores dos circuitos (DJ21, DJ22 e DJ23) conectados na barra e bloqueia via fiação,
+
+          bloqueando também o religamento dos circuitos.
+     · Todos os comandos de desligamento passarão obrigatoriamente por borne seccionável, possibilitando
+          assim ensaios da CR sem desligamentos indevidos. A identificação desses bornes deve deixar claro
+          qual circuito que sofrerá o desligamento.
+
+1.3.4.2 Alarmes
+
+     · Defeito na bobina de acionamento da CRBA2A;
+     · CRBA2A atuada;
+
+1.3.5 CRBA2B.
+1.3.5.1 Pontos de atuação chave relé CRBA2B.
+
+     · Desliga os disjuntores de interligação de barras (DJ40 e DJ50) via fiação convencional e bloqueia via
+          fiação também;
+
+     · Desliga os disjuntores dos circuitos (DJ24, DJ25 e DJ26) conectados na barra e bloqueia via fiação,
+          bloqueando também o religamento dos circuitos.
+
+     · Todos os comandos de desligamento passarão obrigatoriamente por borne seccionável, possibilitando
+          assim ensaios da CR sem desligamentos indevidos. A identificação desses bornes deve deixar claro
+          qual circuito que sofrerá o desligamento.
+
+1.3.5.2 Alarmes
+
+     · Defeito na bobina de acionamento da CRBA2B;
+     · CRBA2B atuada;
+
+1.3.6 CRBA3A.
+1.3.6.1 Pontos de atuação chave relé CRBA3A.
+
+     · Desliga o disjuntor de secundário DJ5 via fiação convencional e bloqueia via fiação também;
+     · Desliga os disjuntores de interligação de barras (DJ50 e DJ60) via fiação convencional e bloqueia via
+
+          fiação também;
+     · Desliga os disjuntores dos circuitos (DJ31, DJ32 e DJ33) conectados na barra e bloqueia via fiação,
+
+          bloqueando também o religamento dos circuitos.
+     · Todos os comandos de desligamento passarão obrigatoriamente por borne seccionável, possibilitando
+
+          assim ensaios da CR sem desligamentos indevidos. A identificação desses bornes deve deixar claro
+          qual circuito que sofrerá o desligamento.
+
+1.3.6.2 Alarmes
+
+     · Defeito na bobina de acionamento da CRBA3A;
+     · CRBA3A atuada;
+
+1.3.7 CRBA4A.
+1.3.7.1 Pontos de atuação chave relé CRBA4A.
+
+     · Desliga o disjuntor de secundário DJ6 via fiação convencional e bloqueia via fiação também;
+     · Desliga os disjuntores de interligação de barras (DJ60 e DJ10) via fiação convencional e bloqueia via
+
+          fiação também;
+     · Desliga os disjuntores dos circuitos (DJ34, DJ35 e DJ36) conectados na barra e bloqueia via fiação,
+
+          bloqueando também o religamento dos circuitos.
+     · Todos os comandos de desligamento passarão obrigatoriamente por borne seccionável, possibilitando
+
+          assim ensaios da CR sem desligamentos indevidos. A identificação desses bornes deve deixar claro
+          qual circuito que sofrerá o desligamento.
+
+1.3.7.2 Alarmes
+
+     · Defeito na bobina de acionamento da CRBA4A;
+     · CRBA4A atuada;
+1.3.7.3 TABELA 3 ­ ATUAÇÃO DA PROTEÇÃO DE SOBRECORRENTE
+
+Desl Dj 10         Desl Dj 20-  Desl Dj 30-4      Desl Dj 50          Desl Dj 50-5  Desl Dj 60-6
+11-12-12-          3            21-22-23-40       24-25-26-40         31-32-33-60   34-35-36-10
+20                 14-15-16-
+                   30
+
+     SITUACÕES     PROT.DJ-03/CR-BA-1A e 1B  PROT.DJ-04/CR-BA-2A e 2B PROT.DJ-05/CR-BA-3A PROT.DJ-06/CR-BA-4A
+       NORMAL
+                   B1A  B1B                       B2A  B2B            B3A           B4A
+   TR1 IMPEDIDO
+   TR2 IMPEDIDO                              B1B  B2A          B2B B3A              B4A B1A
+   TR3 IMPEDIDO
+   TR4 IMPEDIDO         B1B     B2A                            B2B B3A              B4A B1A
+   TR1 E TR2 IMP.
+   TR1 E TR3 IMP.  B1A  B1B                       B2A  B2B                          B3A B4A
+   TR1 E TR4 IMP.
+   TR2 E TR3 IMP.  B1A  B1B                       B2A  B2B            B3A B4A
+   TR2 E TR4 IMP.
+   TR3 E TR4 IMP.                                              B2B B3A B2A B1B B4A B1A
+B1A TRANSF. P/B4A
+B2B TRANSF. P/B3A                            B1B  B2A  B2B                          B3A B4A B1A
+
+                                             B1B  B2A  B2B B1A B3A B4A
+
+                   B1A  B1B     B2A                                                 B3A B4A B2B
+
+                   B1A  B1B     B2A                            B2B B3A B4A
+
+                   B1A  B1B     B4A          B3A  B2A  B2B
+
+                        B1B                       B2A  B2B            B3A           B4A B1A
+
+                   B1A  B1B                       B2A          B2B B3A              B4A
+
+                                                  BARRAS COM DEFEITO
+
+1.3.7.4            TABELA 4 ­ FALHA DE DISJUNTOR
+
+                                             FALHA DE DISJUNTOR
+
+SETOR       p/ DISJUNTORES CIRCUITOS : ATUA NOS RELES DE BLOQUEIO:         DJ's DESLIGADOS E
+  B1A                                                                         BLOQUEADOS
+ B1B               11-12-13                  CR-BA-1A(BIESTAVEL)
+  B2A              14-15-16                  CR-BA-1B(BIESTAVEL)              10-11-12-13-20
+ B2B               21-22-23                  CR-BA-2A(BIESTAVEL)            20-3-14-15-16-30
+  B3               24-25-26                  CR-BA-2B(BIESTAVEL)            30-21-22-23-4-40
+  B4               31-32-33                  CR-BA-3A(BIESTAVEL)              40-24-25-26-50
+                   34-35-36                  CR-BA-4A(BIESTAVEL)            50-31-32-33-5-60
+                                                                            60-10-6-34-35-36
+
+1.4 DESCRITIVO FUNCIONAL DOS BARRAMENTOS SECUNDÁRIOS (13,8 Kv)
+1.4.1 Seqüência de manobra para impedimento(TMT) e Normalização dos
+
+         Transformadores ­ SITUAÇÃO NORMAL SEM CONTINGÊNCIA
+1.4.1.1 Sequência de comandos de Transferência das cargas do TR1 -"TM TR1":
+
+                             Seqüências  B1A  B1B   B2A                B2B  B3A   B4A
+
+TRANSFERÊNCIA                                 DJ03  DJ04                    DJ05  DJ06
+
+                             1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                             LIGA DJ10   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                             DESLIGA DJ20 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                             LIGA DJ50   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                             DESLIGA DJ40 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                             LIGA DJ30   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                             DESLIGA DJ03 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                             2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                              DJ03  DJ04                    DJ05  DJ06
+
+1º. Transferir as cargas da Barra-1A para a Barra-4A (TMT: B1A ­ B4A)
+          a. Ligar DJ-10
+          b. Desligar DJ-20
+
+2º. Transferir as cargas da Barra-2B para a Barra-3A (TMT: B2B ­ B3A)
+          c. Ligar DJ-50
+          d. Desligar DJ-40
+
+3º. Transferir as cargas da Barra-1B para a Barra-2A (TMT: B1B ­ B2A)
+          e. Ligar DJ-30
+          f. Desligar DJ-3
+
+1.4.1.2 Seqüência de comandos da função de normalização do TR1, "NM TR1":
+
+                             Seqüências  B1A  B1B   B2A                B2B  B3A   B4A
+
+               NORMALIZAÇÃO                   DJ03  DJ04                    DJ05  DJ06
+
+                             1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                             DESLIGA DJ10 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                             LIGA DJ20   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                             DESLIGA DJ50 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                             LIGA DJ40   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                             DESLIGA DJ30 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                             LIGA DJ03   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                             2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                              DJ03  DJ04                    DJ05  DJ06
+
+1º. Retornar as cargas da Barra-2A para a Barra-1B (NORM: B1B - B2A)
+          a. Ligar DJ-3
+          b. Desligar DJ-30
+
+2º. Retornar as cargas da Barra-3A para a Barra-2B (NORM: B2B ­ B3A)
+          c. Ligar DJ-40
+          d. Desligar DJ-50
+
+3º. Retornar as cargas da Barra-4A para a Barra-1A (NORM: B1A ­ B4A)
+          e. Ligar DJ-20
+          f. Desligar DJ-10
+1.4.1.3 Sequência de comandos de Transferência das cargas do TR2 - "TM TR2":
+
+               Seqüências  B1A  B1B   B2A                              B2B  B3A   B4A
+
+TRANSFERÊNCIA                   DJ03  DJ04                                  DJ05  DJ06
+
+               1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ10   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ20 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ50   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ40 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ30   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ04 DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                DJ03  DJ04                                  DJ05  DJ06
+
+1º. Transferir as cargas da Barra-1A para a Barra-4A (TMT: B1A ­ B4A)
+          a. Ligar DJ-10
+          b. Desligar DJ-20
+
+2º. Transferir as cargas da Barra-2B para a Barra-3A (TMT: B2B ­ B3A)
+          c. Ligar DJ-50
+          d. Desligar DJ-40
+
+3º. Transferir as cargas da Barra-2A para a Barra-1B (TMT: B2A ­ B1B)
+          g. Ligar DJ-30
+          h. Desligar DJ-4
+
+1.4.1.4 Seqüência de comandos da função de normalização do TR2, "NM TR2":
+
+               Seqüências  B1A  B1B   B2A                              B2B  B3A   B4A
+
+NORMALIZAÇÃO                    DJ03  DJ04                                  DJ05  DJ06
+
+               1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ10 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ20   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ50 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ40   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ30 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ04   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                DJ03  DJ04                                  DJ05  DJ06
+
+1º. Retornar as cargas da Barra-1B para a Barra-2A (NORM: B2A ­ B1B)
+          a. Ligar DJ-4
+          b. Desligar DJ-30
+
+2º. Retornar as cargas da Barra-3A para a Barra-2B (NORM: B2B ­ B3A)
+          c. Ligar DJ-40
+          d. Desligar DJ-50
+
+3º. Retornar as cargas da Barra-4A para a Barra-1A (NORM: B1A ­ B4A)
+          e. Ligar DJ-20
+          f. Desligar DJ-10
+1.4.1.5 Sequência de comandos de Transferência das cargas do TR3 - "TM-TR3":
+
+TRANSFERÊNCIA  Seqüências  B1A  B1B   B2A                              B2B  B3A   B4A
+
+                                DJ03  DJ04                                  DJ05  DJ06
+
+               1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ60   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ05 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                                DJ03  DJ04                                  DJ05  DJ06
+
+1º. Transferir as cargas da Barra-3A para a Barra-4A (TMT: B3A ­ B4A)
+          g. Ligar DJ-60
+          h. Desligar DJ-05
+
+1.4.1.6 Seqüência de comandos da função de normalização do TR3, "NM TR3":
+
+               Seqüências  B1A  B1B   B2A                              B2B  B3A   B4A
+
+NORMALIZAÇÃO                    DJ03  DJ04                                  DJ05  DJ06
+
+               1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ60 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ05   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                                DJ03  DJ04                                  DJ05  DJ06
+
+2º. Transferir as cargas da Barra-3A para a Barra-4A (TMT: B3A ­ B4A)
+          i. Ligar DJ-05
+          j. Desliga DJ-60
+
+1.4.1.7 Sequência de comandos de Transferência das cargas do TR4 - "TM TR4":
+
+TRANSFERÊNCIA  Seqüências  B1A  B1B   B2A                              B2B  B3A   B4A
+
+                                DJ03  DJ04                                  DJ05  DJ06
+
+               1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ60   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ06 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                                DJ03  DJ04                                  DJ05  DJ06
+
+1º. Transferir as cargas da Barra-4A para a Barra-3A (TMT: B4A ­ B3A)
+                a. Ligar DJ-60
+                b. Desligar DJ-06
+
+1.4.1.8 Seqüência de comandos da função de normalização do TR4 "NM TR4":
+
+               Seqüências  B1A  B1B   B2A                              B2B  B3A   B4A
+
+NORMALIZAÇÃO                    DJ03  DJ04                                  DJ05  DJ06
+
+               1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ60 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ06   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                                DJ03  DJ04                                  DJ05  DJ06
+
+1º. Retornar as cargas da Barra-3A para a Barra-4A (NORM: B4A ­ B3A)
+               a. Ligar DJ-06
+               b. Desligar DJ-60
+
+1.4.1.9 Sequência de comandos de Transferência das cargas da barra B1A para B4A
+"TM B1A-B4A":
+TRANSFERÊNCIA
+               Seqüências         B1A  B1B   B2A   B2B  B3A          B4A
+
+                                       DJ03  DJ04       DJ05         DJ06
+
+               1 Normal           DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ10          DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ20 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               12 B1A transferida PD/BJ41A0 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                                       DJ03  DJ04       DJ05         DJ06
+
+1.4.1.10Seqüência de comandos da função de normalização do TR1 NM B1A-B4A":
+
+NORMALIZAÇÃO   Seqüências         B1A  B1B   B2A   B2B  B3A          B4A
+
+                                       DJ03  DJ04       DJ05         DJ06
+
+               1 Normal           DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ10 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ20          DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               12 B1A transferida PD/BJ41A0 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                                       DJ03  DJ04       DJ05         DJ06
+
+1.4.1.11Sequência de comandos de Transferência das cargas da barra B2B para B3A
+"TM B2B-B3A":
+TRANSFERÊNCIA
+               Seqüências         B1A  B1B   B2A   B2B  B3A          B4A
+
+                                       DJ03  DJ04       DJ05         DJ06
+
+               1 Normal           DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ50          DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ40 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               13 B2B transferida PD/BJ31A0 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                       DJ03  DJ04       DJ05         DJ06
+
+1.4.1.12Seqüência de comandos da função de normalização do TR2 - "NM B2B-B3A":
+
+NORMALIZAÇÃO   Seqüências         B1A  B1B   B2A   B2B  B3A          B4A
+
+                                       DJ03  DJ04       DJ05         DJ06
+
+               1 Normal           DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ50 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ40          DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               13 B2B transferida PD/BJ31A0 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                       DJ03  DJ04       DJ05         DJ06
+
+1.4.2 Seqüência de manobra para impedimento(TMT) e Normalização dos
+         Transformadores ­ SITUAÇÃO COM CONTINGÊNCIA
+1.4.2.1 Sequência de comandos de Transferência das cargas do TR1 com TR2 impedido
+"TM TR1-TR2"
+
+TRANSFERÊNCIA  Seqüências         B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+               3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ20   DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ03 DJ10 TR4 DJ20 TR4 DJ30 TR4 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ40   DJ10 TR4 DJ20 TR4 DJ30 TR4 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ30 DJ10 TR4 DJ20 TR4 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               6 TR1/TR2 imped. DJ10 TR4 DJ20 TR4 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-20 e desligar DJ-03
+3º. Ligar DJ-40 e desligar DJ-30
+
+1.4.2.2 Sequência de comandos da função de normalização do TR1 com TR2 impedido
+" NM TR1-TR2"
+
+NORMALIZAÇÃO   Seqüências         B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+               3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ40 DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ30   DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ20 DJ10 TR4 DJ20 TR1 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ03   DJ10 TR4 DJ20 TR1 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               6 TR1/TR2 imped. DJ10 TR4 DJ20 TR4 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Ligar DJ-03 e desligar DJ-20
+2º. Ligar DJ-30 e desligar DJ-40
+
+1.4.2.3 Sequência de comandos de Transferência das cargas do TR1 com TR3 impedido
+" TM TR1-TR3"
+
+TRANSFERÊNCIA  Seqüências         B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+               4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               LIGA DJ10   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ20 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               LIGA DJ30   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ03 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               7 TR1 e TR3 impedDidJo1s0 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-10 e desligar DJ-20
+3º. Ligar DJ-30 e desligar DJ-03
+1.4.2.4 Seqüência de comandos da função de normalização do TR1 com TR3 impedido
+"NM TR1-TR3":
+
+NORMALIZAÇÃO   Seqüências         B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+               4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ10 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               LIGA DJ20   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ30 DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               LIGA DJ03   DJ10 TR4 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               7 TR1 e TR3 impedDidJo1s0 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Ligar DJ-03 e desligar DJ-30
+2º. Ligar DJ-20 e desligar DJ-10
+
+1.4.2.5 Sequência de comandos de Transferência das cargas do TR1 com TR4 impedido
+" TM TR1-TR4"
+
+TRANSFERÊNCIA  Seqüências         B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+               5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               LIGA DJ10   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               DESLIGA DJ20 DJ10 TR3 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               LIGA DJ30   DJ10 TR3 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               DESLIGA DJ03 DJ10 TR3 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               8 TR1 e TR4 impedDidJo1s0 TR3 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-10 e desligar DJ-20
+3º. Ligar DJ-30 e desligar DJ-03
+
+1.4.2.6 Seqüência de comandos da função de normalização do TR1 com TR4 impedido
+"NM TR1-TR4":
+
+NORMALIZAÇÃO   Seqüências         B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+               5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               DESLIGA DJ10 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               LIGA DJ20   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               DESLIGA DJ30 DJ10 TR3 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               LIGA DJ03   DJ10 TR3 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               8 TR1 e TR4 impedDidJo1s0 TR3 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Ligar DJ-03 e desligar DJ-30
+2º. Ligar DJ-20 e desligar DJ-10
+1.4.2.7 Sequência de comandos de Transferência das cargas do TR2 com TR1 impedido
+"TM TR2-TR1"
+
+TRANSFERÊNCIA  Seqüências         B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+               2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ20   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ30 DJ10 TR4 DJ20 TR4 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ40   DJ10 TR4 DJ20 TR4 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ04 DJ10 TR4 DJ20 TR4 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               6 TR1/TR2 imped. DJ10 TR4 DJ20 TR4 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-20 e desligar DJ-30
+3º. Ligar DJ-40 e desligar DJ-04
+
+1.4.2.8 Seqüência de comandos da função de normalização do TR1 com TR2 impedido
+"NM TR2-TR1":
+
+NORMALIZAÇÃO   Seqüências         B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+               2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ20 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ30   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ40 DJ10 TR4 DJ20 TR4 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ04   DJ10 TR4 DJ20 TR4 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               6 TR1/TR2 imped. DJ10 TR4 DJ20 TR4 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+3º. Ligar DJ-03 e desligar DJ-20
+4º. Ligar DJ-30 e desligar DJ-40
+
+1.4.2.9 Sequência de comandos de Transferência das cargas do TR2 com TR3 impedido
+"TM TR2-TR3"
+
+TRANSFERÊNCIA  Seqüências         B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+               4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               LIGA DJ50   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ40 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+               LIGA DJ30   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ04 DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+               9 TR2/TR3 imped. DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-50 e desligar DJ-40
+3º. Ligar DJ-30 e desligar DJ-04
+1.4.2.10Seqüência de comandos da função de normalização do TR2 com TR3 impedido
+
+NORMALIZAÇÃO   Seqüências         B1A  B1B   B2A   B2B  B3A   B4A
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+               4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ50 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               LIGA DJ40      DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ30 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+               LIGA DJ04      DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+               9 TR2/TR3 imped. DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+               "NM TR2-TR3":
+
+1º. Ligar DJ-04 e desligar DJ-30
+2º. Ligar DJ-40 e desligar DJ-50
+
+1.4.2.11Sequência de comandos de Transferência das cargas do TR2 com TR4 impedido
+          "TM TR2-TR4"
+
+TRANSFERÊNCIA  Seqüências         B1A  B1B   B2A   B2B  B3A   B4A
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+               5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               LIGA DJ50      DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               DESLIGA DJ40 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+               LIGA DJ30      DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+               DESLIGA DJ04       TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+               10 TR2 e TR4 impedDidJo1s0 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-50 e desligar DJ-40
+3º. Ligar DJ-30 e desligar DJ-04
+
+1.4.2.12Seqüência de comandos da função de normalização do TR2 com TR4 impedido
+           "NM TR2-TR4":
+
+NORMALIZAÇÃO   Seqüências         B1A  B1B   B2A   B2B  B3A   B4A
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+               5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               DESLIGA DJ50 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               LIGA DJ40      DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               DESLIGA DJ30 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+               LIGA DJ04          TR1 DJ20 TR1 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+               10 TR2 e TR4 impedDidJo1s0 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+1º. Ligar DJ-04 e desligar DJ-30
+2º. Ligar DJ-40 e desligar DJ-50
+1.4.2.13Sequência de comandos de Transferência das cargas do TR3 com TR1 impedido
+          "TM TR3-TR1"
+
+TRANSFERÊNCI A  Seqüências        B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+                2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ40   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ50 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ60   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ05 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                7 TR1/TR3 imped. DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-40 e desligar DJ-50
+3º. Ligar DJ-60 e desligar DJ-05
+
+1.4.2.14Seqüência de comandos da função de normalização do TR3 com TR1 impedido
+           "NM TR3-TR1":
+
+NORMALIZAÇÃO    Seqüências        B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+                2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ40 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ50   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ60 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ05   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                7 TR1/TR3 imped. DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Ligar DJ-05 e desligar DJ-60
+2º. Ligar DJ-50 e desligar DJ-40
+
+1.4.2.15Sequência de comandos de Transferência das cargas do TR3 com TR2 impedido
+           "TM TR3-TR2"
+
+TRANSFERÊNCIA   Seqüências        B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+                3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ20   DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ10 DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ60   DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ05 DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+                9 TR2/TR3 imped. DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-20 e desligar DJ-10
+3º. Ligar DJ-60 e desligar DJ-05
+1.4.2.16Seqüência de comandos da função de normalização do TR3 com TR2
+          impedido - "NMTR3-TR2":
+
+NORMALIZAÇÃO   Seqüências         B1A  B1B   B2A   B2B  B3A   B4A
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+               3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ20 DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ10   DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ60 DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ05   DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               9 TR2/TR3 imped. DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+1º. Ligar DJ-05 e desligar DJ-60
+2º. Ligar DJ-10 e desligar DJ-20
+
+1.4.2.17Sequência de comandos de Transferência das cargas do TR3 com TR4
+          impedido ­ "TM TR3-TR4"
+
+TRANSFERÊNCIA  Seqüências         B1A  B1B   B2A   B2B  B3A   B4A
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+               5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               LIGA DJ10   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               DESLIGA DJ60 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR1
+
+               LIGA DJ50   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR1
+
+               DESLIGA DJ05 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+               11 TR3/TR4 imped. DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-10 e desligar DJ-60
+3º. Ligar DJ-50 e desligar DJ-05
+
+1.4.2.18Seqüência de comandos da função de normalização do TR3 com TR4
+          impedido - "NM TR3-TR4":
+
+NORMALIZAÇÃO   Seqüências         B1A  B1B   B2A   B2B  B3A   B4A
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+               5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               DESLIGA DJ10 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               LIGA DJ60   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+               DESLIGA DJ50 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR1
+
+               LIGA DJ05   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR1
+
+               11 TR3/TR4 imped. DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+                                       DJ03  DJ04       DJ05  DJ06
+
+1º. Ligar DJ-05 e desligar DJ-50
+2º. Ligar DJ-60 e desligar DJ-10
+
+1.4.2.19Sequência de comandos de Transferência das cargas do TR4 com TR1
+          impedido ­ "TM TR4-TR1"
+TRANSFERÊNCI A  Seqüências        B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+                2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ40   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ50 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ60   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ06 DJ10 TR3 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                8 TR1/TR4 imped. DJ10 TR3 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-40 e desligar DJ-50
+3º. Ligar DJ-60 e desligar DJ-06
+
+1.4.2.20Seqüência de comandos da função de normalização do TR4 com TR1
+          impedido - "NM TR4-TR1":
+
+NORMALIZAÇÃO    Seqüências        B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+                2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ40 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ50   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ60 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ06   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                8 TR1/TR4 imped. DJ10 TR3 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Ligar DJ-06 e desligar DJ-60
+2º. Ligar DJ-50 e desligar DJ-40
+
+1.4.2.21Sequência de comandos de Transferência das cargas do TR4 com TR2
+          impedido ­ "TM TR4-TR2"
+
+TRANSFERÊNCIA   Seqüências        B1A  B1B   B2A                    B2B  B3A   B4A
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+                3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ20   DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ10 DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ60   DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ06 DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+                10 TR2/TR4 imped. DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+                                       DJ03  DJ04                        DJ05  DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-20 e desligar DJ-10
+3º. Ligar DJ-60 e desligar DJ-06
+
+1.4.2.22Seqüência de comandos da função de normalização do TR4 com TR2 impedido -
+          "NM TR4-TR2":
+NORMALIZAÇÃO   Seqüências         B1A  B1B   B2A                    B2B       B3A         B4A
+
+                                       DJ03  DJ04                             DJ05        DJ06
+
+               3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ20 DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ10   DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               DESLIGA DJ60 DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               LIGA DJ06   DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+               10 TR2/TR4 imped. DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+                                       DJ03  DJ04                             DJ05        DJ06
+
+1º. Ligar DJ-06 e desligar DJ-60
+2º. Ligar DJ-10 e desligar DJ-20
+
+1.4.2.23Sequência de comandos de Transferência das cargas do TR4 com TR3 impedido
+          ­ "TM TR4-TR3"
+
+TRANSFERÊNCIA  Seqüências         B1A  B1B        B2A                    B2B        B3A         B4A
+
+                                       DJ03       DJ04                              DJ05        DJ06
+
+               4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               LIGA DJ50   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ60 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR4
+
+               LIGA DJ10   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR4
+
+               DESLIGA DJ05 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+               11 TR3/TR4 imped. DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+                                       DJ03       DJ04                              DJ05        DJ06
+
+1º. Verificar potencia disponível e aliviar carga caso necessário.
+2º. Ligar DJ-50 e desligar DJ-60
+3º. Ligar DJ-10 e desligar DJ-06
+
+1.4.2.24Seqüência de comandos da função de normalização do TR4 com TR3 impedido -
+          "NM TR4-TR3":
+
+NORMALIZAÇÃO   Seqüências         B1A  B1B        B2A                    B2B        B3A         B4A
+
+                                       DJ03       DJ04                              DJ05        DJ06
+
+               4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ50 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               LIGA DJ60   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ10 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+               LIGA DJ06   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+               11 TR3/TR4 imped. DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+                                       DJ03       DJ04                              DJ05        DJ06
+
+1º. Ligar DJ-06 e desligar DJ-10
+
+2º. Ligar DJ-60 e desligar DJ-50
+
+1.4.3 TRANSFERÊNCIA AUTOMÁTICA ( TA ) ­ BARRAMENTO SECUNDÁRIO
+       13,8 kV
+1.4.3.1 Seqüência de comandos da função para transferência do TR1 ­ atuação CR1 "TA
+          TR1":
+
+                Seqüências         B1A        B1B         B2A      B2B  B3A   B4A
+
+TRANSFERÊNCIA                                 DJ03        DJ04          DJ05  DJ06
+
+                1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ03 DJ10       DJ20        DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ20 DJ10       DJ20        DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ10   DJ10 TR4 DJ20           DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ40 DJ10 TR4 DJ20          DJ30 TR2 DJ40       DJ50 TR3 DJ60 TR4
+
+                LIGA DJ50   DJ10 TR4 DJ20           DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ30   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                              DJ03        DJ04          DJ05  DJ06
+
+1.4.3.2 Seqüência de comandos da função para transferência do TR1 ( atuação CR1)
+          com TR2 impedido ­"TA TR1-TR2":
+
+TRANSFERÊNCI A  Seqüências         B1A        B1B         B2A      B2B  B3A   B4A
+
+                                              DJ03        DJ04          DJ05  DJ06
+
+                3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ03 DJ10 TR4 DJ20          DJ30        DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ30 DJ10 TR4 DJ20          DJ30        DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ20   DJ10 TR4 DJ20 TR4 DJ30              DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ40   DJ10 TR4 DJ20 TR4 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                6 TR1/TR2 imped. DJ10 TR4 DJ20 TR4 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                              DJ03        DJ04          DJ05  DJ06
+
+1.4.3.3 Seqüência de comandos da função para transferência do TR1 ( atuação CR1)
+          com TR3 impedido ­"TA TR1-TR3":
+
+TRANSFERÊNCIA   Seqüências         B1A        B1B         B2A      B2B  B3A   B4A
+
+                                              DJ03        DJ04          DJ05  DJ06
+
+                4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                DESLIGA DJ03 DJ10       DJ20        DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                DESLIGA DJ20 DJ10       DJ20              TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                LIGA DJ10   DJ10 TR4 DJ20           DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                LIGA DJ30   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                7 TR1 e TR3 impedDidJo1s0 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                                              DJ03        DJ04          DJ05  DJ06
+
+1.4.3.4 Seqüência de comandos da função para transferência do TR1 ( atuação CR1)
+          com TR4 impedido ­"TA TR1-TR4":
+TRANSFERÊNCIA   Seqüências         B1A        B1B   B2A         B2B        B3A         B4A
+
+                                              DJ03  DJ04                   DJ05        DJ06
+
+                5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                DESLIGA DJ03 DJ10       DJ20        DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                DESLIGA DJ20 DJ10       DJ20        DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                LIGA DJ10   DJ10 TR3 DJ20           DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                LIGA DJ30   DJ10 TR3 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                8 TR1 e TR4 impedDidJo1s0 TR3 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                                              DJ03  DJ04                   DJ05        DJ06
+
+1.4.3.5 Seqüência de comandos da função para transferência do TR2 ­ atuação CR1
+          "TA TR2":
+
+                Seqüências         B1A        B1B         B2A         B2B        B3A         B4A
+
+TRANSFERÊNCIA                                 DJ03        DJ04                   DJ05        DJ06
+
+                1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ04 DJ10 TR1 DJ20 TR1 DJ30             DJ40       DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ40 DJ10 TR1 DJ20 TR1 DJ30             DJ40       DJ50 TR3 DJ60 TR4
+
+                LIGA DJ50   DJ10 TR1 DJ20 TR1 DJ30              DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ20 DJ10       DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ10   DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ30   DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                              DJ03        DJ04                   DJ05        DJ06
+
+1.4.3.6 Seqüência de comandos para transferência do transformador TR2 (atuação CR1)
+          com TR1 impedido "TA TR2-TR1":
+
+TRANSFERÊNCIA   Seqüências         B1A        B1B         B2A         B2B        B3A         B4A
+
+                                              DJ03        DJ04                   DJ05        DJ06
+
+                2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ04 DJ10 TR4 DJ20          DJ30        DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ30 DJ10 TR4 DJ20          DJ30        DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ20   DJ10 TR4 DJ20 TR4 DJ30              DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                LIGA DJ40   DJ10 TR4 DJ20 TR4 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                6 TR1/TR2 imped. DJ10 TR4 DJ20 TR4 DJ30 TR3 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                                              DJ03        DJ04                   DJ05        DJ06
+
+1.4.3.7 Seqüência de comandos para transferência do transformador TR2 (atuação CR1)
+          com TR3 impedido "TA TR2-TR3":
+
+TRANSFERÊNCI A  Seqüências         B1A        B1B         B2A         B2B        B3A         B4A
+
+                                              DJ03        DJ04                   DJ05        DJ06
+
+                4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                DESLIGA DJ04 DJ10 TR1 DJ20 TR1 DJ30             DJ40       DJ50 TR4 DJ60 TR4
+
+                DESLIGA DJ40 DJ10 TR1 DJ20 TR1 DJ30             DJ40       DJ50 TR4 DJ60 TR4
+
+                LIGA DJ50   DJ10 TR1 DJ20 TR1 DJ30              DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+                LIGA DJ30   DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+                9 TR2/TR3 imped. DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+                                              DJ03        DJ04                   DJ05        DJ06
+1.4.3.8 Seqüência de comandos para transferência do transformador TR2 ( atuação CR1)
+          com TR4 impedido ­ "TA TR2-TR4":
+
+TRANSFERÊNCI A  Seqüências         B1A  B1B          B2A         B2B        B3A   B4A
+
+                                        DJ03         DJ04                   DJ05  DJ06
+
+                5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                DESLIGA DJ04 DJ10 TR1 DJ20 TR1 DJ30        DJ40       DJ50 TR3 DJ60 TR3
+
+                DESLIGA DJ40 DJ10 TR1 DJ20 TR1 DJ30        DJ40       DJ50 TR3 DJ60 TR3
+
+                LIGA DJ50   DJ10 TR1 DJ20 TR1 DJ30         DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+                LIGA DJ30   DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+                10 TR2 e TR4 impedDidJo1s0 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+                                        DJ03         DJ04                   DJ05  DJ06
+
+1.4.3.9 Seqüência de comandos para transferência do transformador TR3 ( atuação CR1)
+          "TA TR3":
+
+TRANSFERÊNCIA   Seqüências         B1A  B1B          B2A         B2B        B3A   B4A
+
+                                        DJ03         DJ04                   DJ05  DJ06
+
+                1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ05 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50             DJ60 TR4
+
+                LIGA DJ60   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                                        DJ03         DJ04                   DJ05  DJ06
+
+1.4.3.10Seqüência de comandos para transferência do transformador TR3 ( atuação CR1)
+          com TR1 impedido "TA TR3-TR1":
+
+TRANSFERÊNCI A  Seqüências         B1A  B1B          B2A         B2B        B3A   B4A
+
+                                        DJ03         DJ04                   DJ05  DJ06
+
+                2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ05 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40          DJ50        DJ60 TR4
+
+                DESLIGA DJ50 DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40          DJ50        DJ60 TR4
+
+                LIGA DJ60   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40           DJ50 TR4 DJ60 TR4
+
+                LIGA DJ40   DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                7 TR1/TR3 imped. DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+                                        DJ03         DJ04                   DJ05  DJ06
+
+1.4.3.11Seqüência de comandos para transferência do transformador TR3 (atuação CR1)
+          com TR2 impedido ­"TA TR3-TR2":
+
+TRANSFERÊNCIA   Seqüências         B1A  B1B          B2A         B2B        B3A   B4A
+
+                                        DJ03         DJ04                   DJ05  DJ06
+
+                3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ05 DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40          DJ50        DJ60 TR4
+
+                DESLIGA DJ10 DJ10       DJ20 TR1 DJ30 TR1 DJ40        DJ50        DJ60 TR4
+
+                LIGA DJ20   DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40           DJ50        DJ60 TR4
+
+                LIGA DJ60   DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+                9 TR2/TR3 imped. DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR4 DJ50 TR4 DJ60 TR4
+
+                                        DJ03         DJ04                   DJ05  DJ06
+1.4.3.12Seqüência de comandos para transferência do transformador TR3 (atuação CR1)
+          "TA TR3-TR4":
+
+TRANSFERÊNCIA   Seqüências         B1A  B1B   B2A               B2B    B3A          B4A
+
+                                        DJ03  DJ04                     DJ05         DJ06
+
+                5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                DESLIGA DJ05 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50        DJ60
+
+                DESLIGA DJ60 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50        DJ60
+
+                LIGA DJ10   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50         DJ60 TR1
+
+                LIGA DJ50   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+                11 TR3/TR4 imped. DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+                                        DJ03  DJ04                     DJ05         DJ06
+
+1.4.3.13Seqüência de comandos para transferência do transformador TR4 (atuação CR1)
+          "TA TR4":
+
+TRANSFERÊNCIA   Seqüências         B1A  B1B   B2A               B2B    B3A          B4A
+
+                                        DJ03  DJ04                     DJ05         DJ06
+
+                1 Normal    DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ06 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60
+
+                LIGA DJ60   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                5 TR4 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                                        DJ03  DJ04                     DJ05         DJ06
+
+1.4.3.14Seqüência de comandos para transferência do transformador TR4 (atuação CR1)
+          com TR1 impedido "TA TR4-TR1":
+
+TRANSFERÊNCI A  Seqüências         B1A  B1B   B2A               B2B    B3A          B4A
+
+                                        DJ03  DJ04                     DJ05         DJ06
+
+                2 TR1 impedido DJ10 TR4 DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ06 DJ10       DJ20 TR2 DJ30 TR2 DJ40 TR3 DJ50 TR3 DJ60
+
+                DESLIGA DJ50 DJ10       DJ20 TR2 DJ30 TR2 DJ40       DJ50 TR3 DJ60
+
+                LIGA DJ60   DJ10 TR3 DJ20 TR2 DJ30 TR2 DJ40          DJ50 TR3 DJ60 TR3
+
+                LIGA DJ40   DJ10 TR3 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                8 TR1/TR4 imped. DJ10 TR3 DJ20 TR2 DJ30 TR2 DJ40 TR2 DJ50 TR3 DJ60 TR3
+
+                                        DJ03  DJ04                     DJ05         DJ06
+
+1.4.3.15Seqüência de comandos para transferência do transformador TR4 (atuação CR1)
+          com TR2 impedido "TA TR4-TR2":
+
+TRANSFERÊNCIA   Seqüências         B1A  B1B   B2A               B2B    B3A          B4A
+
+                                        DJ03  DJ04                     DJ05         DJ06
+
+                3 TR2 impedido DJ10 TR4 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR4
+
+                DESLIGA DJ06 DJ10       DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60
+
+                DESLIGA DJ10 DJ10       DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60
+
+                LIGA DJ60   DJ10        DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+                LIGA DJ20   DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+                10 TR2/TR4 imped. DJ10 TR1 DJ20 TR1 DJ30 TR1 DJ40 TR3 DJ50 TR3 DJ60 TR3
+
+                                        DJ03  DJ04                     DJ05         DJ06
+1.4.3.16Seqüência de comandos para transferência do transformador TR4 (atuação CR1)
+          com TR3 impedido "TA TR4-TR3":
+
+TRANSFERÊNCIA  Seqüências  B1A  B1B   B2A   B2B                       B3A         B4A
+
+                                DJ03  DJ04                            DJ05        DJ06
+
+               4 TR3 impedido DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR4 DJ60 TR4
+
+               DESLIGA DJ05 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50        DJ60
+
+               DESLIGA DJ60 DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50        DJ60
+
+               LIGA DJ10   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50         DJ60 TR1
+
+               LIGA DJ50   DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+               11 TR3/TR4 imped. DJ10 TR1 DJ20 TR1 DJ30 TR2 DJ40 TR2 DJ50 TR2 DJ60 TR1
+
+                                DJ03  DJ04                            DJ05        DJ06
+
