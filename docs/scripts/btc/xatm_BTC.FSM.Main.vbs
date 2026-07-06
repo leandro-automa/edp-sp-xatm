@@ -241,27 +241,47 @@ Sub Main_Step00()
 End Sub
 
 ' Human-readable summary of the running automation for the step log,
-' e.g. "TM TR1 - T200 locked out".
+' using transformer names, e.g. "TM TR-01 - TR-02 locked out".
 Function DescribeAutomation()
 
-	Dim autoType, triggerId, lockouts, i, lockedList
-
+	Dim autoType
 	autoType  = Parent.Item("AutomationType").Value
+	
+	Dim triggerId
 	triggerId = Parent.Item("TriggerTransformerId").Value
+	
+	Dim lockouts
 	lockouts  = ReadLockouts()
-
+	
+	Dim lockedList
 	lockedList = ""
+
+	Dim i
 	For i = 1 To 4
 		If lockouts(i) Then
 			If lockedList <> "" Then lockedList = lockedList & ", "
-			lockedList = lockedList & "T" & (i * 100)
+			lockedList = lockedList & TransformerName(i * 100)
 		End If
 	Next
 
 	If lockedList = "" Then
-		DescribeAutomation = autoType & " TR" & (triggerId \ 100) & " - no transformer locked out"
+		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - no transformer locked out"
 	Else
-		DescribeAutomation = autoType & " TR" & (triggerId \ 100) & " - " & lockedList & " locked out"
+		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - " & lockedList & " locked out"
+	End If
+
+End Function
+
+' Transformer name for an id, falling back to "ID <n>" when not found.
+Function TransformerName(id)
+
+	Dim transformer, exists
+	Set transformer = GetDeviceById(id, exists)
+
+	If exists Then
+		TransformerName = transformer.Name
+	Else
+		TransformerName = "ID " & id
 	End If
 
 End Function
