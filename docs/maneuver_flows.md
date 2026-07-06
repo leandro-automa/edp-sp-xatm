@@ -139,15 +139,19 @@ flowchart LR
 
 ---
 
-### NM — TR1 / TR2  *(restore from standard impedido state → normal)*
+NM (Normalização Manual) is the inverse of TM — it restores the substation to the
+normal state. The spec tables are read **bottom-to-top** (the reverse of TM). Step
+actions still alternate close/open (odd close, even open), and **Step 1 always
+re-closes the trigger transformer's own secondary breaker** regardless of contingency.
 
-Inverse of TM Path A. Each CLOSE step re-energises a busbar via its normal source;
-each OPEN step removes the backup connection established during TM.
+> Verified against spec §1.4.1.2/.4/.6/.8 (normal) and §1.4.2.2…§1.4.2.24 (contingencies).
+
+### NM — TR1  *(3 paths)*
 
 ```mermaid
 flowchart TD
     subgraph G0["Step 0"]
-        P0["Init — TR1 impedido → Normal"]
+        P0["Init — read impedimentos"]
     end
 
     subgraph G1["Step 1"]
@@ -155,39 +159,158 @@ flowchart TD
     end
 
     subgraph G2["Step 2"]
-        P2["OPEN TIE[2A,1B]"]
+        P2A["OPEN TIE[2A,1B]"]
+        P2B["OPEN TIE[1B,1A]"]
     end
 
     subgraph G3["Step 3"]
-        P3["CLOSE TIE[2B,2A]"]
+        P3A["CLOSE TIE[2B,2A]"]
+        P3B["CLOSE TIE[2A,1B]"]
+        P3C["CLOSE TIE[1B,1A]"]
     end
 
     subgraph G4["Step 4"]
-        P4["OPEN TIE[3A,2B]"]
+        P4A["OPEN TIE[3A,2B]"]
+        P4B["OPEN TIE[2B,2A]"]
+        P4C["OPEN TIE[1A,4A]"]
     end
 
     subgraph G5["Step 5"]
-        P5["CLOSE TIE[1B,1A]"]
+        P5A["CLOSE TIE[1B,1A]"]
     end
 
     subgraph G6["Step 6"]
-        P6["OPEN TIE[1A,4A]"]
+        P6A["OPEN TIE[1A,4A]"]
     end
 
-    G0 --> P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> F["Done — Normal state"]
+    G0 --> P1
+
+    P1 -->|"imp(2) — TR2 out"| P2B
+    P1 -->|"no contingency\nTR3 or TR4 out"| P2A
+
+    P2B --> P3B
+    P2A -->|"TR3 or TR4 out"| P3C
+    P2A -->|"no contingency"| P3A
+
+    P3A --> P4A
+    P3B --> P4B
+    P3C --> P4C
+
+    P4A --> P5A --> P6A
+
+    P4B --> F["Done"]
+    P4C --> F
+    P6A --> F
 ```
 
-> **Contingency NM paths (B and C):** correspond to the inverse of TM Paths B and C.
-> They start from the dual-impedimento state left by that TM path. To be specified in `NM_TR1.md`.
-
-### NM — TR3 / TR4  *(single path)*
+### NM — TR2  *(3 paths)*
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph G0["Step 0"] P0["Init"] end
-    subgraph G1["Step 1"] P1["CLOSE CB[3]  or  CB[4]"] end
-    subgraph G2["Step 2"] P2["OPEN TIE[4A,3A]"] end
-    G0 --> P1 --> P2 --> DONE(["Done"])
+    subgraph G1["Step 1"] P1["CLOSE CB[2]"] end
+
+    subgraph G2["Step 2"]
+        P2A["OPEN TIE[2A,1B]"]
+        P2B["OPEN TIE[2B,2A]"]
+    end
+    subgraph G3["Step 3"]
+        P3A["CLOSE TIE[2B,2A]"]
+        P3B["CLOSE TIE[2A,1B]"]
+    end
+    subgraph G4["Step 4"]
+        P4A["OPEN TIE[3A,2B]"]
+        P4B["OPEN TIE[1B,1A]"]
+    end
+    subgraph G5["Step 5"] P5A["CLOSE TIE[1B,1A]"] end
+    subgraph G6["Step 6"] P6A["OPEN TIE[1A,4A]"] end
+
+    G0 --> P1
+    P1 -->|"imp(1) — TR1 out"| P2B
+    P1 -->|"no contingency\nTR3 or TR4 out"| P2A
+    P2B --> P3B
+    P2A --> P3A
+    P3B --> P4B
+    P3A --> P4A
+    P4A -->|"no contingency"| P5A
+    P4A -->|"TR3 or TR4 out"| F["Done"]
+    P5A --> P6A
+    P4B --> F
+    P6A --> F
+```
+
+### NM — TR3  *(4 paths — contingencies all distinct)*
+
+```mermaid
+flowchart TD
+    subgraph G0["Step 0"] P0["Init"] end
+    subgraph G1["Step 1"] P1["CLOSE CB[3]"] end
+
+    subgraph G2["Step 2"]
+        P2A["OPEN TIE[4A,3A]"]
+        P2B["OPEN TIE[3A,2B]"]
+    end
+    subgraph G3["Step 3"]
+        P3A["CLOSE TIE[3A,2B]"]
+        P3B["CLOSE TIE[1A,4A]"]
+        P3C["CLOSE TIE[4A,3A]"]
+    end
+    subgraph G4["Step 4"]
+        P4A["OPEN TIE[2B,2A]"]
+        P4B["OPEN TIE[1B,1A]"]
+        P4C["OPEN TIE[1A,4A]"]
+    end
+
+    G0 --> P1
+    P1 -->|"imp(4) — TR4 out"| P2B
+    P1 -->|"no contingency\nTR1 or TR2 out"| P2A
+    P2A -->|"no contingency"| F["Done"]
+    P2A -->|"imp(1) — TR1 out"| P3A
+    P2A -->|"imp(2) — TR2 out"| P3B
+    P2B --> P3C
+    P3A --> P4A
+    P3B --> P4B
+    P3C --> P4C
+    P4A --> F
+    P4B --> F
+    P4C --> F
+```
+
+### NM — TR4  *(4 paths — contingencies all distinct)*
+
+```mermaid
+flowchart TD
+    subgraph G0["Step 0"] P0["Init"] end
+    subgraph G1["Step 1"] P1["CLOSE CB[4]"] end
+
+    subgraph G2["Step 2"]
+        P2A["OPEN TIE[4A,3A]"]
+        P2B["OPEN TIE[1A,4A]"]
+    end
+    subgraph G3["Step 3"]
+        P3A["CLOSE TIE[3A,2B]"]
+        P3B["CLOSE TIE[1A,4A]"]
+        P3C["CLOSE TIE[4A,3A]"]
+    end
+    subgraph G4["Step 4"]
+        P4A["OPEN TIE[2B,2A]"]
+        P4B["OPEN TIE[1B,1A]"]
+        P4C["OPEN TIE[3A,2B]"]
+    end
+
+    G0 --> P1
+    P1 -->|"imp(3) — TR3 out"| P2B
+    P1 -->|"no contingency\nTR1 or TR2 out"| P2A
+    P2A -->|"no contingency"| F["Done"]
+    P2A -->|"imp(1) — TR1 out"| P3A
+    P2A -->|"imp(2) — TR2 out"| P3B
+    P2B --> P3C
+    P3A --> P4A
+    P3B --> P4B
+    P3C --> P4C
+    P4A --> F
+    P4B --> F
+    P4C --> F
 ```
 
 ---

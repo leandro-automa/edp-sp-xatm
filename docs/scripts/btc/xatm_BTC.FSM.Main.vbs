@@ -325,6 +325,10 @@ Sub Main_Step01()
 
 			S1TM triggerId
 
+		Case "NM"
+
+			S1NM triggerId
+
 	End Select
 
 End Sub
@@ -451,6 +455,10 @@ Sub Main_Step02()
 		Case "TM"
 
 			S2TM triggerId
+
+		Case "NM"
+
+			S2NM triggerId
 
 	End Select
 
@@ -581,6 +589,10 @@ Sub Main_Step03()
 
 			S3TM triggerId
 
+		Case "NM"
+
+			S3NM triggerId
+
 	End Select
 
 End Sub
@@ -695,6 +707,10 @@ Sub Main_Step04()
 
 			S4TM triggerId
 
+		Case "NM"
+
+			S4NM triggerId
+
 	End Select
 
 End Sub
@@ -808,6 +824,10 @@ Sub Main_Step05()
 
 			S5TM triggerId
 
+		Case "NM"
+
+			S5NM triggerId
+
 	End Select
 
 End Sub
@@ -894,6 +914,10 @@ Sub Main_Step06()
 
 			S6TM triggerId
 
+		Case "NM"
+
+			S6NM triggerId
+
 	End Select
 
 End Sub
@@ -925,6 +949,489 @@ Sub S6TM(triggerId)
 	Else
 
 		action = 1
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 6: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 6: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 99
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+
+' ================================
+' NM - Manual restore (inverse of TM: restores the substation to normal)
+' Read from the spec bottom-to-top. Step actions alternate close/open
+' (odd close, even open), same as TM; the breaker selection differs.
+' ================================
+Sub S1NM(triggerId)
+
+	Dim breakerId, action
+	action = 2
+
+	' NM always starts by re-closing the trigger transformer's own breaker.
+	breakerId = triggerId + 20
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 1: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 1: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 2
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+Sub S2NM(triggerId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action, nextStep
+	nextStep = 3
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 1
+
+		Dim lockouts
+		lockouts = ReadLockouts()
+
+		Select Case triggerId
+
+			Case 100
+				If lockouts(2) Then
+					breakerId = 700
+				Else
+					breakerId = 710
+				End If
+
+			Case 200
+				If lockouts(1) Then
+					breakerId = 720
+				Else
+					breakerId = 710
+				End If
+
+			Case 300
+				If lockouts(4) Then
+					breakerId = 730
+				ElseIf lockouts(1) Or lockouts(2) Then
+					breakerId = 740
+				Else
+					breakerId = 740
+					nextStep = 99    ' no contingency: sequence ends here
+				End If
+
+			Case 400
+				If lockouts(3) Then
+					breakerId = 900
+				ElseIf lockouts(1) Or lockouts(2) Then
+					breakerId = 740
+				Else
+					breakerId = 740
+					nextStep = 99    ' no contingency: sequence ends here
+				End If
+
+		End Select
+
+	Else
+
+		' ==============
+		' DEFAULT
+		' ==============
+		action = 1
+		breakerId = 700
+		nextStep = 99
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 2: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 2: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+Sub S3NM(triggerId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 2
+
+		Dim lockouts
+		lockouts = ReadLockouts()
+
+		Select Case triggerId
+
+			Case 100
+				If lockouts(2) Then
+					breakerId = 710
+				ElseIf lockouts(3) Or lockouts(4) Then
+					breakerId = 700
+				Else
+					breakerId = 720
+				End If
+
+			Case 200
+				If lockouts(1) Then
+					breakerId = 710
+				Else
+					breakerId = 720
+				End If
+
+			Case 300
+				If lockouts(1) Then
+					breakerId = 730
+				ElseIf lockouts(2) Then
+					breakerId = 900
+				ElseIf lockouts(4) Then
+					breakerId = 740
+				End If
+
+			Case 400
+				If lockouts(1) Then
+					breakerId = 730
+				ElseIf lockouts(2) Then
+					breakerId = 900
+				ElseIf lockouts(3) Then
+					breakerId = 740
+				End If
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 3: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 3: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 4
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+Sub S4NM(triggerId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action, nextStep
+	nextStep = 99
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 1
+
+		Dim lockouts
+		lockouts = ReadLockouts()
+
+		Select Case triggerId
+
+			Case 100
+				If lockouts(2) Then
+					breakerId = 720
+				ElseIf lockouts(3) Or lockouts(4) Then
+					breakerId = 900
+				Else
+					breakerId = 730
+					nextStep = 5    ' sequence continues
+				End If
+
+			Case 200
+				If lockouts(1) Then
+					breakerId = 700
+				ElseIf lockouts(3) Or lockouts(4) Then
+					breakerId = 730
+				Else
+					breakerId = 730
+					nextStep = 5    ' sequence continues
+				End If
+
+			Case 300
+				If lockouts(1) Then
+					breakerId = 720
+				ElseIf lockouts(2) Then
+					breakerId = 700
+				ElseIf lockouts(4) Then
+					breakerId = 900
+				End If
+
+			Case 400
+				If lockouts(1) Then
+					breakerId = 720
+				ElseIf lockouts(2) Then
+					breakerId = 700
+				ElseIf lockouts(3) Then
+					breakerId = 730
+				End If
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 4: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 4: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+Sub S5NM(triggerId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 2
+
+		Select Case triggerId
+
+			Case 100, 200
+				breakerId = 700
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 5: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 5: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 6
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+Sub S6NM(triggerId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 1
+
+		Select Case triggerId
+
+			Case 100, 200
+				breakerId = 900
+
+		End Select
 
 	End If
 
