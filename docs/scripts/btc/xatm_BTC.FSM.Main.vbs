@@ -230,9 +230,9 @@ End Sub
 Sub Main_Step00()
 
 	' ===============
-	' Snapshot the substation transformers lockout state at trigger time.
+	' Snapshot the substation transformers out-of-service state at trigger time.
 	' ===============
-	StoreLockouts()
+	StoreImpediments()
 
 	WriteLog "Starting " & DescribeAutomation()
 
@@ -241,7 +241,7 @@ Sub Main_Step00()
 End Sub
 
 ' Human-readable summary of the running automation for the step log,
-' using transformer names, e.g. "TM TR-01 - TR-02 locked out".
+' using transformer names, e.g. "TM TR-01 - TR-02 out of service".
 Function DescribeAutomation()
 
 	Dim autoType
@@ -250,24 +250,24 @@ Function DescribeAutomation()
 	Dim triggerId
 	triggerId = Parent.Item("TriggerTransformerId").Value
 	
-	Dim lockouts
-	lockouts  = ReadLockouts()
+	Dim impediments
+	impediments  = ReadImpediments()
 	
-	Dim lockedList
-	lockedList = ""
+	Dim outList
+	outList = ""
 
 	Dim i
 	For i = 1 To 4
-		If lockouts(i) Then
-			If lockedList <> "" Then lockedList = lockedList & ", "
-			lockedList = lockedList & TransformerName(i * 100)
+		If impediments(i) Then
+			If outList <> "" Then outList = outList & ", "
+			outList = outList & TransformerName(i * 100)
 		End If
 	Next
 
-	If lockedList = "" Then
-		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - no transformer locked out"
+	If outList = "" Then
+		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - no transformer out of service"
 	Else
-		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - " & lockedList & " locked out"
+		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - " & outList & " out of service"
 	End If
 
 End Function
@@ -286,15 +286,15 @@ Function TransformerName(id)
 
 End Function
 
-Function ReadLockouts()
+Function ReadImpediments()
 
-    ReadLockouts = Parent.Item("TransformerLockouts").Value
+    ReadImpediments = Parent.Item("TransformerImpediments").Value
 
 End Function
 
-Sub StoreLockouts()
+Sub StoreImpediments()
 
-	Dim lockouts(4)
+	Dim impediments(4)
 	Dim i, transformer, transformerExists
 
 	For i = 1 To 4
@@ -302,14 +302,14 @@ Sub StoreLockouts()
 		Set transformer = GetDeviceById(i * 100, transformerExists)
 
 		If transformerExists Then
-			lockouts(i) = transformer.Lockout
+			impediments(i) = transformer.OutOfService
 		Else
-			lockouts(i) = False
+			impediments(i) = False
 		End If
 
 	Next
 
-	Parent.Item("TransformerLockouts").WriteEx lockouts
+	Parent.Item("TransformerImpediments").WriteEx impediments
 
 End Sub
 
@@ -347,44 +347,44 @@ Sub S1TM(triggerId)
 
 		action = 2
 
-		Dim lockouts
-		lockouts = ReadLockouts()
+		Dim impediments
+		impediments = ReadImpediments()
 
 		Select Case triggerId
 
 			Case 100
-				If lockouts(2) Then
+				If impediments(2) Then
 					breakerId = 700
 				Else
 					breakerId = 900
 				End If
 
 			Case 200
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 700
-				ElseIf lockouts(3) Or lockouts(4) Then
+				ElseIf impediments(3) Or impediments(4) Then
 					breakerId = 730
 				Else
 					breakerId = 900
 				End If
 
 			Case 300
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 720
-				ElseIf lockouts(2) Then
+				ElseIf impediments(2) Then
 					breakerId = 700
-				ElseIf lockouts(4) Then
+				ElseIf impediments(4) Then
 					breakerId = 900
 				Else
 					breakerId = 740
 				End If
 
 			Case 400
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 720
-				ElseIf lockouts(2) Then
+				ElseIf impediments(2) Then
 					breakerId = 700
-				ElseIf lockouts(3) Then
+				ElseIf impediments(3) Then
 					breakerId = 730
 				Else
 					breakerId = 740
@@ -475,35 +475,35 @@ Sub S2TM(triggerId)
 
 		action = 1
 
-		Dim lockouts
-		lockouts = ReadLockouts()
+		Dim impediments
+		impediments = ReadImpediments()
 
 		nextStep = 3
 
 		Select Case triggerId
 
 			Case 100
-				If lockouts(2) Then
+				If impediments(2) Then
 					breakerId = 120
 				Else
 					breakerId = 700
 				End If
 
 			Case 200
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 710
-				ElseIf lockouts(3) Or lockouts(4) Then
+				ElseIf impediments(3) Or impediments(4) Then
 					breakerId = 720
 				Else
 					breakerId = 700
 				End If
 
 			Case 300
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 730
-				ElseIf lockouts(2) Then
+				ElseIf impediments(2) Then
 					breakerId = 900
-				ElseIf lockouts(4) Then
+				ElseIf impediments(4) Then
 					breakerId = 740
 				Else
 					breakerId = 320
@@ -511,11 +511,11 @@ Sub S2TM(triggerId)
 				End If
 
 			Case 400
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 730
-				ElseIf lockouts(2) Then
+				ElseIf impediments(2) Then
 					breakerId = 900
-				ElseIf lockouts(3) Then
+				ElseIf impediments(3) Then
 					breakerId = 740
 				Else
 					breakerId = 420
@@ -608,40 +608,40 @@ Sub S3TM(triggerId)
 
 		action = 2
 
-		Dim lockouts
-		lockouts = ReadLockouts()
+		Dim impediments
+		impediments = ReadImpediments()
 
 		Select Case triggerId
 
 			Case 100
-				If lockouts(2) Then
+				If impediments(2) Then
 					breakerId = 720
-				ElseIf lockouts(3) Or lockouts(4) Then
+				ElseIf impediments(3) Or impediments(4) Then
 					breakerId = 710
 				Else
 					breakerId = 730
 				End If
 
 			Case 200
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 720
-				ElseIf lockouts(3) Or lockouts(4) Then
+				ElseIf impediments(3) Or impediments(4) Then
 					breakerId = 710
 				Else
 					breakerId = 730
 				End If
 
 			Case 300
-				If lockouts(1) Or lockouts(2) Then
+				If impediments(1) Or impediments(2) Then
 					breakerId = 740
-				ElseIf lockouts(4) Then
+				ElseIf impediments(4) Then
 					breakerId = 730
 				End If
 
 			Case 400
-				If lockouts(1) Or lockouts(2) Then
+				If impediments(1) Or impediments(2) Then
 					breakerId = 740
-				ElseIf lockouts(3) Then
+				ElseIf impediments(3) Then
 					breakerId = 900
 				End If
 
@@ -729,15 +729,15 @@ Sub S4TM(triggerId)
 
 		action = 1
 
-		Dim lockouts
-		lockouts = ReadLockouts()
+		Dim impediments
+		impediments = ReadImpediments()
 
 		Select Case triggerId
 
 			Case 100
-				If lockouts(2) Then
+				If impediments(2) Then
 					breakerId = 710
-				ElseIf lockouts(3) Or lockouts(4) Then
+				ElseIf impediments(3) Or impediments(4) Then
 					breakerId = 120
 				Else
 					breakerId = 720
@@ -745,7 +745,7 @@ Sub S4TM(triggerId)
 				End If
 
 			Case 200
-				If lockouts(1) Or lockouts(3) Or lockouts(4) Then
+				If impediments(1) Or impediments(3) Or impediments(4) Then
 					breakerId = 220
 				Else
 					breakerId = 720
@@ -756,7 +756,7 @@ Sub S4TM(triggerId)
 				breakerId = 320
 
 			Case 400
-				If lockouts(3) Then
+				If impediments(3) Then
 					breakerId = 320
 				Else
 					breakerId = 420
@@ -843,8 +843,8 @@ Sub S5TM(triggerId)
 
 		action = 2
 
-		Dim lockouts
-		lockouts = ReadLockouts()
+		Dim impediments
+		impediments = ReadImpediments()
 
 		Select Case triggerId
 
@@ -933,8 +933,8 @@ Sub S6TM(triggerId)
 
 		action = 1
 
-		Dim lockouts
-		lockouts = ReadLockouts()
+		Dim impediments
+		impediments = ReadImpediments()
 
 		Select Case triggerId
 
@@ -1062,29 +1062,29 @@ Sub S2NM(triggerId)
 
 		action = 1
 
-		Dim lockouts
-		lockouts = ReadLockouts()
+		Dim impediments
+		impediments = ReadImpediments()
 
 		Select Case triggerId
 
 			Case 100
-				If lockouts(2) Then
+				If impediments(2) Then
 					breakerId = 700
 				Else
 					breakerId = 710
 				End If
 
 			Case 200
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 720
 				Else
 					breakerId = 710
 				End If
 
 			Case 300
-				If lockouts(4) Then
+				If impediments(4) Then
 					breakerId = 730
-				ElseIf lockouts(1) Or lockouts(2) Then
+				ElseIf impediments(1) Or impediments(2) Then
 					breakerId = 740
 				Else
 					breakerId = 740
@@ -1092,9 +1092,9 @@ Sub S2NM(triggerId)
 				End If
 
 			Case 400
-				If lockouts(3) Then
+				If impediments(3) Then
 					breakerId = 900
-				ElseIf lockouts(1) Or lockouts(2) Then
+				ElseIf impediments(1) Or impediments(2) Then
 					breakerId = 740
 				Else
 					breakerId = 740
@@ -1167,42 +1167,42 @@ Sub S3NM(triggerId)
 
 		action = 2
 
-		Dim lockouts
-		lockouts = ReadLockouts()
+		Dim impediments
+		impediments = ReadImpediments()
 
 		Select Case triggerId
 
 			Case 100
-				If lockouts(2) Then
+				If impediments(2) Then
 					breakerId = 710
-				ElseIf lockouts(3) Or lockouts(4) Then
+				ElseIf impediments(3) Or impediments(4) Then
 					breakerId = 700
 				Else
 					breakerId = 720
 				End If
 
 			Case 200
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 710
 				Else
 					breakerId = 720
 				End If
 
 			Case 300
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 730
-				ElseIf lockouts(2) Then
+				ElseIf impediments(2) Then
 					breakerId = 900
-				ElseIf lockouts(4) Then
+				ElseIf impediments(4) Then
 					breakerId = 740
 				End If
 
 			Case 400
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 730
-				ElseIf lockouts(2) Then
+				ElseIf impediments(2) Then
 					breakerId = 900
-				ElseIf lockouts(3) Then
+				ElseIf impediments(3) Then
 					breakerId = 740
 				End If
 
@@ -1264,15 +1264,15 @@ Sub S4NM(triggerId)
 
 		action = 1
 
-		Dim lockouts
-		lockouts = ReadLockouts()
+		Dim impediments
+		impediments = ReadImpediments()
 
 		Select Case triggerId
 
 			Case 100
-				If lockouts(2) Then
+				If impediments(2) Then
 					breakerId = 720
-				ElseIf lockouts(3) Or lockouts(4) Then
+				ElseIf impediments(3) Or impediments(4) Then
 					breakerId = 900
 				Else
 					breakerId = 730
@@ -1280,9 +1280,9 @@ Sub S4NM(triggerId)
 				End If
 
 			Case 200
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 700
-				ElseIf lockouts(3) Or lockouts(4) Then
+				ElseIf impediments(3) Or impediments(4) Then
 					breakerId = 730
 				Else
 					breakerId = 730
@@ -1290,20 +1290,20 @@ Sub S4NM(triggerId)
 				End If
 
 			Case 300
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 720
-				ElseIf lockouts(2) Then
+				ElseIf impediments(2) Then
 					breakerId = 700
-				ElseIf lockouts(4) Then
+				ElseIf impediments(4) Then
 					breakerId = 900
 				End If
 
 			Case 400
-				If lockouts(1) Then
+				If impediments(1) Then
 					breakerId = 720
-				ElseIf lockouts(2) Then
+				ElseIf impediments(2) Then
 					breakerId = 700
-				ElseIf lockouts(3) Then
+				ElseIf impediments(3) Then
 					breakerId = 730
 				End If
 
