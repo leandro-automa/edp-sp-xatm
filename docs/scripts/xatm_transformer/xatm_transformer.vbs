@@ -1,5 +1,5 @@
 -----------------------
-Documentação de Scripts
+Documentaï¿½ï¿½o de Scripts
 -----------------------
 xatm_Transformer
 Tue Jul  7 12:11:08 2026
@@ -28,7 +28,8 @@ Sub UndervoltageRelay_Counter()
 	' ================
 	
 	
-	WriteLog "Undervoltage relay counter has reached zero."
+	WriteLog "Undervoltage relay counter has reached zero - requesting TA."
+	RequestBTC "TA"
 	Value = -1
 
 End Sub
@@ -52,6 +53,43 @@ Sub WriteLog(message)
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Parent.Name & "] - " & message
 	End If
 		
+End Sub
+
+' Finds the xatm_BTC bound to this transformer and requests an automation
+' by writing "MODE:Id" to its Commands.Start. The BTC arm routine applies
+' every interlock (Enabled, Running, blocks, CR2 pre-condition) - this only
+' requests; it does not gate.
+Sub RequestBTC(mode)
+
+	Dim obj, bound, tr
+	Set bound = Nothing
+
+	For Each obj In Application.GetObject("XATM_Data.Automation")
+		If TypeName(obj) = "xatm_BTC" Then
+
+			Set tr = Nothing
+			On Error Resume Next
+			Set tr = obj.Transformer          ' may be unbound
+			On Error GoTo 0
+
+			If Not tr Is Nothing Then
+				If tr.Id = xatm_Transformer.Id Then
+					Set bound = obj
+					Exit For
+				End If
+			End If
+
+		End If
+	Next
+
+	If bound Is Nothing Then
+		WriteLog "No BTC bound to this transformer - " & mode & " request ignored."
+		Exit Sub
+	End If
+
+	bound.Item("Commands").Item("Start").WriteEx mode & ":" & xatm_Transformer.Id
+	WriteLog mode & " requested via " & bound.Name & "."
+
 End Sub
 
 <xatm_Transformer.Data.Timers.UndervoltageRelay:UndervoltageRelay_OnChangedValue()>
