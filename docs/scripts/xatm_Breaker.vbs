@@ -53,6 +53,9 @@ Sub CommandOpenClose_OnChangedValue()
 
 	Select Case command
 
+		Case 0   ' Cleared / idle - nothing to issue (used to re-trigger a retry)
+			Exit Sub
+
 		Case 1   ' Open: only when currently closed
 			If position <> 2 Then
 				WriteLog "Open command not executed - position interlock (breaker not closed)."
@@ -509,6 +512,9 @@ Sub CommandTimer_Counter()
 		On Error Resume Next
 		Application.Trace "[" & xatm_Breaker.Name & "] - Command not confirmed, resending (retry)."
 		On Error Goto 0
+		' Clear then re-write so CommandOpenClose_OnChangedValue re-fires and re-issues
+		' the command (a same-value write would not raise OnChangedValue).
+		Parent.Parent.Item("CommandOpenClose").WriteEx 0
 		Parent.Parent.Item("CommandOpenClose").WriteEx command
 	End If
 
