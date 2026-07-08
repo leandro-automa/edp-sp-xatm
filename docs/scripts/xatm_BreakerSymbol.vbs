@@ -18,7 +18,9 @@ Sub xatm_BreakerSymbol_OnSourceChanged()
 	Links.CreateLink "CommunicationFailure", Source.Item("Data").Item("CommunicationFailure").PathName & ".Value"
 	
 	Links.CreateLink "SimulationModeEnabled", Source.Item("Data").Item("SimulationModeEnabled").PathName & ".Value"
-	
+
+	Links.CreateLink "SimulateCommandFailure", Source.Item("Data").Item("SimulateCommandFailure").PathName & ".Value"
+
 End Sub
 
 <xatm_BreakerSymbol.objButton:objButton_Click()>
