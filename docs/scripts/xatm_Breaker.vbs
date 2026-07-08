@@ -74,8 +74,17 @@ Sub CommandOpenClose_OnChangedValue()
 	' --- Issue the command. Handle with position only (no provisional position) ---
 	If CBool(Parent.Item("SimulationModeEnabled").Value) Then
 
-		Parent.Item("Position").WriteEx command      ' 1 -> open, 2 -> closed
-		WriteLog IIf(command = 1, "Open", "Close") & " command sent (Simulation Mode)."
+		If CBool(Parent.Item("SimulateCommandFailure").Value) Then
+
+			' Simulated failure: leave Position unchanged so the command times out.
+			WriteLog IIf(command = 1, "Open", "Close") & " command sent (Simulation Mode) - simulating command failure."
+
+		Else
+
+			Parent.Item("Position").WriteEx command      ' 1 -> open, 2 -> closed
+			WriteLog IIf(command = 1, "Open", "Close") & " command sent (Simulation Mode)."
+
+		End If
 
 	Else
 
@@ -105,6 +114,15 @@ Sub WriteLog(message)
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
 	
+End Sub
+
+<xatm_Breaker.Data.SimulateCommandFailure:SimulateCommandFailure_OnStartRunning()>
+Sub SimulateCommandFailure_OnStartRunning()
+
+	' Clear the simulated-failure flag at startup, so runs never begin
+	' with an unexpected command failure.
+	WriteEx False
+
 End Sub
 
 <xatm_Breaker.Data.CommunicationFailure:CommunicationFailure_E_OnChangedOpenPositionQuality()>
