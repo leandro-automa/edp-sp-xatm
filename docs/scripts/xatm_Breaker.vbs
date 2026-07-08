@@ -2,12 +2,48 @@
 Documenta��o de Scripts
 -----------------------
 xatm_Breaker
-Wed Jul  8 13:58:51 2026
+Wed Jul  8 14:29:15 2026
 -----------------------
+
+<xatm_Breaker.Data.CommandInProgress:CommandInProgress_OnChangedValue()>
+Sub CommandInProgress_OnChangedValue()
+
+	Select Case Value
+
+		Case 2
+			' Command in progress - start the countdown from the configured timeout.
+			Parent.Item("Timers").Item("CommandTimer").WriteEx xatm_Breaker.CommandTimeout
+
+		Case 1
+			' Command execution failed.
+			WriteLog "Command execution failed."
+
+		Case 3
+			' Command completed successfully - back to idle.
+
+	End Select
+	
+End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Name & "] - " & message
+	End If
+	
+End Sub
 
 <xatm_Breaker.Data.CommandOpenClose:CommandOpenClose_OnChangedValue()>
 Sub CommandOpenClose_OnChangedValue()
-
+	
 	Dim command
 	command = Value      ' 1 = open, 2 = close
 
@@ -53,7 +89,7 @@ Sub CommandOpenClose_OnChangedValue()
 		Parent.Item("CommandInProgress").WriteEx 2
 	End If
 
-End Sub
+End Sub	
 	
 Sub WriteLog(message)
 	
@@ -69,42 +105,6 @@ Sub WriteLog(message)
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
 	
-End Sub
-
-<xatm_Breaker.Data.CommandInProgress:CommandInProgress_OnChangedValue()>
-Sub CommandInProgress_OnChangedValue()
-
-	Select Case Value
-
-		Case 2
-			' Command in progress - (re)start the command timer.
-			Parent.Item("Timers").Item("CommandTimer").WriteEx 0
-
-		Case 1
-			' Command execution failed.
-			WriteLog "Command execution failed."
-
-		Case 3
-			' Command completed successfully - back to idle.
-
-	End Select
-
-End Sub
-
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-
 End Sub
 
 <xatm_Breaker.Data.CommunicationFailure:CommunicationFailure_E_OnChangedOpenPositionQuality()>
@@ -458,5 +458,43 @@ Sub Reset_OnChangedTimeStamp()
 	Parent.Item("MemorizedPosition").Value = Parent.Item("Position").Value
 	Parent.Item("MemorizedPosition").DocString = "-1"
 		
+End Sub
+
+<xatm_Breaker.Data.Timers.CommandTimer:CommandTimer_Counter()>
+Sub CommandTimer_Counter()
+
+	' Counts DOWN from CommandTimeout (seeded when CommandInProgress = 2).
+	' Runs every second while Value >= 0.
+
+	Dim command
+	command = Parent.Parent.Item("CommandOpenClose").Value     ' 1 = open, 2 = close
+
+	Dim position
+	position = Parent.Parent.Item("Position").Value            ' 1 = open, 2 = closed
+
+	' --- Completed: position reached the commanded target ---
+	If position = command Then
+		Parent.Parent.Item("CommandInProgress").WriteEx 3
+		Value = -1
+		Exit Sub
+	End If
+
+	' --- Timeout: target not reached in time -> failed ---
+	If Value <= 0 Then
+		Parent.Parent.Item("CommandInProgress").WriteEx 1
+		Value = -1
+		Exit Sub
+	End If
+
+	' --- Retry once, at half the timeout ---
+	If Value = Int(xatm_Breaker.CommandTimeout / 2) Then
+		On Error Resume Next
+		Application.Trace "[" & xatm_Breaker.Name & "] - Command not confirmed, resending (retry)."
+		On Error Goto 0
+		Parent.Parent.Item("CommandOpenClose").WriteEx command
+	End If
+
+	Value = Value - 1
+
 End Sub
 
