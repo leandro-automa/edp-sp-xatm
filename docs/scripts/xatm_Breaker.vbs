@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 xatm_Breaker
-Wed Jul  8 18:04:07 2026
+Thu Jul  9 16:30:37 2026
 -----------------------
 
 <xatm_Breaker.Data.CommandInProgress:CommandInProgress_OnChangedValue()>

@@ -24,6 +24,7 @@
       --s-open:       #14224A;
       --s-open-edge:  #223460;
       --s-fault:      #D61B1A;
+      --s-warn:       #FFCE12;
       --s-sim:        #04EBFF;
 
       --log-sel:      #2364F2;
@@ -140,6 +141,7 @@
     }
     .tile-dot { width: 6px; height: 6px; border-radius: 50%; background: #22335F; flex-shrink: 0; }
     .tile.ok    .tile-dot { background: var(--s-live);  box-shadow: 0 0 5px rgba(47,111,255,.8); }
+    .tile.warn  .tile-dot { background: var(--s-warn);  box-shadow: 0 0 5px rgba(255,206,18,.8); }
     .tile.block .tile-dot { background: var(--s-fault); box-shadow: 0 0 5px rgba(214,27,26,.8); }
 
     /* step rows — pending / active / done / failed */
@@ -172,7 +174,7 @@
     .st-chip-retry {
       font-size: 8px; font-weight: 800; letter-spacing: .5px;
       padding: 2px 5px; border-radius: 3px;
-      background: rgba(255,206,18,.14); color: #FFCE12; flex-shrink: 0;
+      background: rgba(255,206,18,.14); color: var(--s-warn); flex-shrink: 0;
     }
     .st-progress { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding-left: 19px; }
     .st-bar { flex: 1; height: 4px; border-radius: 2px; background: #1A2445; overflow: hidden; }

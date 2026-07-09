@@ -1,29 +1,40 @@
 -----------------------
-Documentaï¿½ï¿½o de Scripts
+Documentação de Scripts
 -----------------------
 xatm_BTC
-Tue Jul  7 14:50:04 2026
+Thu Jul  9 16:30:07 2026
 -----------------------
 
 <xatm_BTC.Commands.Reset:Reset_OnChangedTimeStamp()>
 Sub Reset_OnChangedTimeStamp()
 	
-	If Not CBool(Value) Then
-		Exit Sub
+	If CBool(Value) Then
+		
+		Reset()
+		
 	End If
 	
-	Reset()
-	
-	WriteLog "Reset"
-
 End Sub
 
 Sub Reset()
-
-	ResetDevices Application.GetObject("XATM_Data.Substation")
+	
+	xatm_BTC.Running 		= False
+	xatm_BTC.GeneralBlock	= False
+	
+	' ===============
+	' RESET ALL STEP FAIL POINTS
+	' ===============
+	Dim i
+	For i = 1 To 6
+		Dim propName
+		propName = "StepExecutionFailed" & i
+		
+		On Error Resume Next
+		Execute("xatm_BTC." & propName & " = False")
+		On Error Goto 0
+	Next
 	
 	Dim tag
-	
 	For Each tag In xatm_BTC.Item("FSM")
 		
 		If TypeName(tag) = "InternalTag" Then
@@ -34,6 +45,13 @@ Sub Reset()
 		
 	Next
 	
+	' ================
+	' RESET ALL DEVICES
+	' ================
+	ResetDevices Application.GetObject("XATM_Data.Substation")
+	
+	WriteLog "Reset"
+
 End Sub
 
 Sub ResetDevices(folder)
@@ -333,7 +351,17 @@ End Sub
 <xatm_BTC.FSM.Main:Main_GlobalLockout()>
 Sub Main_GlobalLockout()
 	
-	xatm_BTC.Running = False
+	xatm_BTC.Running 		= False
+	xatm_BTC.GeneralBlock 	= True
+
+	Select Case Value
+		Case 1 : xatm_BTC.StepExecutionFailed1 = True
+		Case 2 : xatm_BTC.StepExecutionFailed2 = True
+		Case 3 : xatm_BTC.StepExecutionFailed3 = True
+		Case 4 : xatm_BTC.StepExecutionFailed4 = True
+		Case 5 : xatm_BTC.StepExecutionFailed5 = True
+		Case 6 : xatm_BTC.StepExecutionFailed6 = True
+	End Select
 	
 	WriteLog "Global lockout activated due to automation failure."
 	
@@ -385,7 +413,9 @@ Sub Main_Main()
             Else
                 
                 WriteLog "Step 2: Execution failed - Timeout exceeded."
-                
+                Main_GlobalLockout
+				Exit Sub
+				
             End If
         
         Case 3
@@ -397,6 +427,8 @@ Sub Main_Main()
             Else
                 
                 WriteLog "Step 3: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
                 
             End If
 
@@ -409,7 +441,9 @@ Sub Main_Main()
             Else
                 
                 WriteLog "Step 4: Execution failed - Timeout exceeded."
-                
+                Main_GlobalLockout
+				Exit Sub
+				
             End If
         
         Case 5
@@ -421,7 +455,9 @@ Sub Main_Main()
             Else
                 
                 WriteLog "Step 5: Execution failed - Timeout exceeded."
-                
+                Main_GlobalLockout
+				Exit Sub
+				
             End If
 
         Case 6
@@ -433,7 +469,9 @@ Sub Main_Main()
             Else
                 
                 WriteLog "Step 6: Execution failed - Timeout exceeded."
-                
+                Main_GlobalLockout
+				Exit Sub
+				
             End If
 
         Case 99
@@ -548,11 +586,11 @@ Sub Main_Step01()
 		Case "NM"
 
 			S1NM triggerId
-
+		
 		Case "TA"
 
 			S1TA triggerId
-
+			
 	End Select
 	
 End Sub
@@ -715,6 +753,59 @@ Sub S1TM(triggerId)
 
 End Sub
 
+Sub S1TA(triggerId)
+
+	Dim breakerId, action
+	action = 1
+
+	' TA always starts by opening the tripped transformer's own secondary
+	' breaker (triggerId + 20) to confirm isolation - same for every layout.
+	' TODO: (Spec 1.4.3.16 mistakenly writes CB3 for the TR4/TR3-out case; 
+	' opening the trigger's own CB is correct and makes that a non-issue.)
+	breakerId = triggerId + 20
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 1: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 1: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 2
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
 <xatm_BTC.FSM.Main:Main_Step02()>
 Sub Main_Step02()
 
@@ -734,7 +825,7 @@ Sub Main_Step02()
 		Case "TA"
 
 			S2TA triggerId
-
+			
 	End Select
 	
 End Sub
@@ -958,6 +1049,118 @@ Sub S2TM(triggerId)
 
 End Sub
 
+Sub S2TA(triggerId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action, nextStep
+	nextStep = 3
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 1                      ' default: open a tie to isolate the dead busbar
+
+		Dim impediments
+		impediments = ReadImpediments()
+
+		Select Case triggerId
+
+			Case 100
+				If impediments(2) Then
+					breakerId = 710
+				Else
+					breakerId = 700
+				End If
+
+			Case 200
+				If impediments(1) Then
+					breakerId = 710
+				Else
+					breakerId = 720
+				End If
+
+			Case 300
+				If impediments(1) Then
+					breakerId = 730
+				ElseIf impediments(2) Then
+					breakerId = 900
+				ElseIf impediments(4) Then
+					breakerId = 740
+				Else
+					breakerId = 740        ' no contingency: 2-step restore
+					action = 2
+					nextStep = 99
+				End If
+
+			Case 400
+				If impediments(1) Then
+					breakerId = 730
+				ElseIf impediments(2) Then
+					breakerId = 900
+				ElseIf impediments(3) Then
+					breakerId = 740
+				Else
+					breakerId = 740        ' no contingency: 2-step restore
+					action = 2
+					nextStep = 99
+				End If
+
+		End Select
+
+	Else
+
+		' ==============
+		' DEFAULT
+		' ==============
+		action = 2
+		breakerId = 700
+		nextStep = 99
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 2: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 2: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
 <xatm_BTC.FSM.Main:Main_Step03()>
 Sub Main_Step03()
 
@@ -973,11 +1176,11 @@ Sub Main_Step03()
 		Case "NM"
 
 			S3NM triggerId
-
+		
 		Case "TA"
 
 			S3TA triggerId
-
+			
 	End Select
 	
 End Sub
@@ -1173,6 +1376,97 @@ Sub S3TM(triggerId)
 			Exit Sub
 
 	End Select
+	
+End Sub
+
+Sub S3TA(triggerId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+	action = 2                          ' restore step: close a tie
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		Dim impediments
+		impediments = ReadImpediments()
+
+		Select Case triggerId
+
+			Case 100
+				If impediments(2) Then
+					breakerId = 700
+				Else
+					breakerId = 900
+				End If
+
+			Case 200
+				If impediments(1) Then
+					breakerId = 700
+				Else
+					breakerId = 730
+				End If
+
+			Case 300
+				If impediments(1) Then
+					breakerId = 740
+				ElseIf impediments(2) Then
+					breakerId = 700
+				ElseIf impediments(4) Then
+					breakerId = 900
+				End If
+
+			Case 400
+				If impediments(3) Then
+					breakerId = 900
+				Else
+					breakerId = 740
+				End If
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 3: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 3: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 4
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
 
 End Sub
 
@@ -1191,11 +1485,11 @@ Sub Main_Step04()
 		Case "NM"
 
 			S4NM triggerId
-
+		
 		Case "TA"
 
 			S4TA triggerId
-
+			
 	End Select
 	
 End Sub
@@ -1342,15 +1636,124 @@ Sub S4TM(triggerId)
 				breakerId = 320
 
 			Case 400
-				' Spec 1.4.2.23 writes CB3 (320) here, but with TR3 out of service
-				' its CB is already open - treated as a spec typo. Open TR4's own CB.
-				breakerId = 420
+				If impediments(3) Then
+					breakerId = 320
+				Else
+					breakerId = 420
+				End If
 
 		End Select
 
 	Else
 
 		action = 1
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 4: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 4: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+	
+End Sub
+
+Sub S4TA(triggerId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action, nextStep
+	nextStep = 99
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		Dim impediments
+		impediments = ReadImpediments()
+
+		Select Case triggerId
+
+			Case 100
+				If impediments(2) Then
+					action = 2
+					breakerId = 720
+				ElseIf impediments(3) Or impediments(4) Then
+					action = 2
+					breakerId = 710
+				Else
+					action = 1             ' no contingency: open, sequence continues
+					breakerId = 720
+					nextStep = 5
+				End If
+
+			Case 200
+				If impediments(1) Then
+					action = 2
+					breakerId = 720
+				ElseIf impediments(3) Or impediments(4) Then
+					action = 2
+					breakerId = 710
+				Else
+					action = 1             ' no contingency: open, sequence continues
+					breakerId = 700
+					nextStep = 5
+				End If
+
+			Case 300
+				action = 2
+				If impediments(1) Then
+					breakerId = 720
+				ElseIf impediments(2) Then
+					breakerId = 740
+				ElseIf impediments(4) Then
+					breakerId = 730
+				End If
+
+			Case 400
+				action = 2
+				If impediments(1) Then
+					breakerId = 720
+				ElseIf impediments(2) Then
+					breakerId = 700
+				ElseIf impediments(3) Then
+					breakerId = 730
+				End If
+
+		End Select
 
 	End If
 
@@ -1411,11 +1814,11 @@ Sub Main_Step05()
 		Case "NM"
 
 			S5NM triggerId
-
+		
 		Case "TA"
 
 			S5TA triggerId
-
+			
 	End Select
 	
 End Sub
@@ -1552,6 +1955,70 @@ Sub S5TM(triggerId)
 
 End Sub
 
+Sub S5TA(triggerId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+	action = 2
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		Select Case triggerId
+
+			Case 100
+				breakerId = 730
+
+			Case 200
+				breakerId = 900
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 5: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 5: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 6
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
 <xatm_BTC.FSM.Main:Main_Step06()>
 Sub Main_Step06()
 
@@ -1567,11 +2034,11 @@ Sub Main_Step06()
 		Case "NM"
 
 			S6NM triggerId
-
+		
 		Case "TA"
 
 			S6TA triggerId
-
+			
 	End Select
 	
 End Sub
@@ -1710,440 +2177,6 @@ Sub S6TM(triggerId)
 
 End Sub
 
-
-' ================================
-' TA - Automatic transfer (transformer already tripped by protection)
-' Reads top-to-bottom like TM, but actions do NOT alternate, so each step
-' carries its own action. Verified against spec 1.4.3.x.
-' ================================
-
-Sub S1TA(triggerId)
-
-	Dim breakerId, action
-	action = 1
-
-	' TA always starts by opening the tripped transformer's own secondary
-	' breaker (triggerId + 20) to confirm isolation - same for every layout.
-	' TODO: (Spec 1.4.3.16 mistakenly writes CB3 for the TR4/TR3-out case; 
-	' opening the trigger's own CB is correct and makes that a non-issue.)
-	breakerId = triggerId + 20
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 1: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 1: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 2
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-Sub S2TA(triggerId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action, nextStep
-	nextStep = 3
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 1                      ' default: open a tie to isolate the dead busbar
-
-		Dim impediments
-		impediments = ReadImpediments()
-
-		Select Case triggerId
-
-			Case 100
-				If impediments(2) Then
-					breakerId = 710
-				Else
-					breakerId = 700
-				End If
-
-			Case 200
-				If impediments(1) Then
-					breakerId = 710
-				Else
-					breakerId = 720
-				End If
-
-			Case 300
-				If impediments(1) Then
-					breakerId = 730
-				ElseIf impediments(2) Then
-					breakerId = 900
-				ElseIf impediments(4) Then
-					breakerId = 740
-				Else
-					breakerId = 740        ' no contingency: 2-step restore
-					action = 2
-					nextStep = 99
-				End If
-
-			Case 400
-				If impediments(1) Then
-					breakerId = 730
-				ElseIf impediments(2) Then
-					breakerId = 900
-				ElseIf impediments(3) Then
-					breakerId = 740
-				Else
-					breakerId = 740        ' no contingency: 2-step restore
-					action = 2
-					nextStep = 99
-				End If
-
-		End Select
-
-	Else
-
-		' ==============
-		' DEFAULT
-		' ==============
-		action = 2
-		breakerId = 700
-		nextStep = 99
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 2: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 2: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = nextStep
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-Sub S3TA(triggerId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-	action = 2                          ' restore step: close a tie
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		Dim impediments
-		impediments = ReadImpediments()
-
-		Select Case triggerId
-
-			Case 100
-				If impediments(2) Then
-					breakerId = 700
-				Else
-					breakerId = 900
-				End If
-
-			Case 200
-				If impediments(1) Then
-					breakerId = 700
-				Else
-					breakerId = 730
-				End If
-
-			Case 300
-				If impediments(1) Then
-					breakerId = 740
-				ElseIf impediments(2) Then
-					breakerId = 700
-				ElseIf impediments(4) Then
-					breakerId = 900
-				End If
-
-			Case 400
-				If impediments(3) Then
-					breakerId = 900
-				Else
-					breakerId = 740
-				End If
-
-		End Select
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 3: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 3: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 4
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-Sub S4TA(triggerId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action, nextStep
-	nextStep = 99
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		Dim impediments
-		impediments = ReadImpediments()
-
-		Select Case triggerId
-
-			Case 100
-				If impediments(2) Then
-					action = 2
-					breakerId = 720
-				ElseIf impediments(3) Or impediments(4) Then
-					action = 2
-					breakerId = 710
-				Else
-					action = 1             ' no contingency: open, sequence continues
-					breakerId = 720
-					nextStep = 5
-				End If
-
-			Case 200
-				If impediments(1) Then
-					action = 2
-					breakerId = 720
-				ElseIf impediments(3) Or impediments(4) Then
-					action = 2
-					breakerId = 710
-				Else
-					action = 1             ' no contingency: open, sequence continues
-					breakerId = 700
-					nextStep = 5
-				End If
-
-			Case 300
-				action = 2
-				If impediments(1) Then
-					breakerId = 720
-				ElseIf impediments(2) Then
-					breakerId = 740
-				ElseIf impediments(4) Then
-					breakerId = 730
-				End If
-
-			Case 400
-				action = 2
-				If impediments(1) Then
-					breakerId = 720
-				ElseIf impediments(2) Then
-					breakerId = 700
-				ElseIf impediments(3) Then
-					breakerId = 730
-				End If
-
-		End Select
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 4: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 4: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = nextStep
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-Sub S5TA(triggerId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-	action = 2
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		Select Case triggerId
-
-			Case 100
-				breakerId = 730
-
-			Case 200
-				breakerId = 900
-
-		End Select
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 5: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 5: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 6
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
 Sub S6TA(triggerId)
 
 	Dim layoutType
@@ -2204,3 +2237,4 @@ Sub S6TA(triggerId)
 	End Select
 
 End Sub
+
