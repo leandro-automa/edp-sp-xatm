@@ -99,10 +99,86 @@
 
     .canvas {
       flex: 1; overflow: hidden;
+      display: flex; align-items: center; gap: 26px;
+      padding: 26px 28px 4px 34px;
+    }
+    .sld-wrap {
+      flex: 1; min-width: 0; height: 100%;
       display: flex; align-items: center; justify-content: center;
-      padding: 26px 34px 4px;
     }
     .sld { max-width: 100%; max-height: 100%; }
+
+    /* ── BTC FACEPLATE — automation follow-up panel ──────── */
+    .panel {
+      width: 300px; flex-shrink: 0; align-self: center;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px 14px 10px;
+    }
+    .pn-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .pn-title { font-size: 13px; font-weight: 700; }
+    .pn-sub   { font-size: 10px; color: var(--tx-2); margin-top: 2px; }
+    .pn-badge {
+      font-size: 9px; font-weight: 800; letter-spacing: .8px;
+      padding: 3px 8px; border-radius: 3px; flex-shrink: 0; margin-top: 1px;
+    }
+    .pn-badge.running   { background: rgba(47,111,255,.16); color: #6E9BFF; }
+    .pn-badge.lockout   { background: var(--s-fault); color: #fff; }
+    .pn-badge.completed { background: rgba(16,232,255,.12); color: var(--s-sim); }
+
+    .pn-ttl {
+      font-size: 9px; font-weight: 700; letter-spacing: 1px;
+      text-transform: uppercase; color: var(--tx-id); margin: 14px 0 7px;
+    }
+
+    /* interlock tiles — each maps to one Start reject reason */
+    .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .tile {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 8px; background: #0E1529; border-radius: 4px;
+      font-size: 10px; color: var(--tx-2);
+    }
+    .tile-dot { width: 6px; height: 6px; border-radius: 50%; background: #22335F; flex-shrink: 0; }
+    .tile.ok    .tile-dot { background: var(--s-live);  box-shadow: 0 0 5px rgba(47,111,255,.8); }
+    .tile.block .tile-dot { background: var(--s-fault); box-shadow: 0 0 5px rgba(214,27,26,.8); }
+
+    /* step rows — pending / active / done / failed */
+    .step {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: 5px; margin-bottom: 3px;
+      font-size: 11px; color: var(--tx-2);
+    }
+    .step .st-ic  { width: 11px; text-align: center; font-size: 10px; color: var(--tx-id); flex-shrink: 0; }
+    .step .st-n   { width: 10px; color: var(--tx-id); font-weight: 700; flex-shrink: 0; }
+    .step .st-act {
+      font-size: 8.5px; font-weight: 800; letter-spacing: .5px;
+      padding: 2px 0; border-radius: 3px; width: 46px; text-align: center; flex-shrink: 0;
+    }
+    .st-act.cl { background: rgba(47,111,255,.16);  color: #6E9BFF; }
+    .st-act.op { background: rgba(98,112,154,.14); color: var(--tx-2); }
+    .step .st-dev { flex: 1; color: var(--tx-1); font-weight: 600; }
+    .step .st-dev em { font-style: normal; color: var(--tx-id); font-weight: 400; margin-left: 5px; }
+    .step .st-meta { font-size: 9.5px; color: var(--tx-id); font-variant-numeric: tabular-nums; }
+
+    .step.done .st-ic { color: var(--s-sim); }
+    .step.pending { opacity: .42; }
+    .step.failed { background: rgba(214,27,26,.10); border: 1px solid rgba(214,27,26,.4); }
+    .step.failed .st-ic { color: var(--s-fault); }
+
+    .step.active { display: block; background: #101A35; border: 1px solid #1D2C55; padding: 7px 8px 8px; }
+    .step.active .st-row { display: flex; align-items: center; gap: 8px; }
+    .step.active .st-ic { color: #6E9BFF; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:.3; } }
+    .st-chip-retry {
+      font-size: 8px; font-weight: 800; letter-spacing: .5px;
+      padding: 2px 5px; border-radius: 3px;
+      background: rgba(255,206,18,.14); color: #FFCE12; flex-shrink: 0;
+    }
+    .st-progress { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding-left: 19px; }
+    .st-bar { flex: 1; height: 4px; border-radius: 2px; background: #1A2445; overflow: hidden; }
+    .st-bar-fill { height: 100%; border-radius: 2px; background: var(--s-live); transition: width 1s linear; }
+    .st-secs { font-size: 9.5px; color: var(--tx-2); font-variant-numeric: tabular-nums; width: 24px; text-align: right; }
+    .st-status { font-size: 9.5px; color: var(--tx-2); margin-top: 5px; padding-left: 19px; }
 
     /* ── CONSOLE LOG + CLOCK ─────────────────────────────── */
     .console {
@@ -154,15 +230,17 @@
   <main class="main">
 
     <div class="canvas">
+      <div class="sld-wrap">
       <!--
-        SLD — ETD Guarulhos (Situação 1 — Normal, Simulation Mode)
+        SLD — ETD Guarulhos (Simulation Mode)
         ───────────────────────────────────────────────────────────
         Bus Y = 400 · ties row Y = 460 · ring bottom Y = 540
         Ring L→R: B1A · B1B · B2A · B2B · B3A · B4A
-        Closed (blue): DJ03 DJ04 DJ05 DJ06 · DJ20 DJ40
-        Open  (dark):  DJ10 DJ30 DJ50 DJ60
-        Scenario shown: TM TR-01 step 2 failed in simulation —
-        DJ03 open command timed out (red CMD flag + red memorized bar).
+        Closed (blue): DJ03 DJ04 DJ05 DJ06 · DJ20 DJ40 · DJ10 (step 1)
+        Open  (dark):  DJ30 DJ50 DJ60
+        Scenario shown: TM TR01 Path A running in simulation —
+        step 1 CLOSE DJ10 confirmed; step 2 OPEN DJ20 waiting
+        confirmation after retry (CMD flag lit on DJ20).
       -->
       <svg class="sld" viewBox="0 0 1500 620" xmlns="http://www.w3.org/2000/svg">
 
@@ -198,16 +276,15 @@
         <rect x="428" y="129" width="26" height="9" rx="2" fill="rgba(98,112,154,.12)"/>
         <text x="441" y="136" text-anchor="middle" font-size="6.5" font-weight="700" fill="#46567F" font-family="'Segoe UI',sans-serif">86</text>
 
-        <!-- DJ03 / 120 — CLOSED · failed open command (red CMD + memorized bar) -->
+        <!-- DJ03 / 120 — CLOSED -->
         <text x="383" y="248" font-size="12" font-weight="600" fill="#C9D3EE" font-family="'Segoe UI',sans-serif">DJ03</text>
         <text x="383" y="261" font-size="10" fill="#40507F" font-family="'Segoe UI',sans-serif">120</text>
-        <rect x="376" y="265" width="4" height="31" fill="#D61B1A"/>
         <rect x="383" y="268" width="26" height="26" rx="5" fill="#2F6FFF" filter="url(#glow)"/>
         <line x1="396" y1="294" x2="396" y2="396" stroke="#15234A" stroke-width="2"/>
         <rect x="414" y="266" width="24" height="10" rx="2" fill="rgba(4,235,255,.14)"/>
         <text x="426" y="274" text-anchor="middle" font-size="7" font-weight="700" fill="#10E8FF" font-family="'Segoe UI',sans-serif">SIM</text>
-        <rect x="414" y="278" width="24" height="10" rx="2" fill="#D61B1A"/>
-        <text x="426" y="286" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="'Segoe UI',sans-serif">CMD</text>
+        <rect x="414" y="278" width="24" height="10" rx="2" fill="rgba(98,112,154,.12)"/>
+        <text x="426" y="286" text-anchor="middle" font-size="7" font-weight="700" fill="#46567F" font-family="'Segoe UI',sans-serif">CMD</text>
 
         <!-- TR02 / 200 → B2A  (x=632) -->
         <text x="570" y="68" font-size="12" font-weight="600" fill="#C9D3EE" font-family="'Segoe UI',sans-serif">TR02</text>
@@ -298,17 +375,17 @@
 
         <!-- ═══ TIE BREAKERS (row Y=460) ══════════════════ -->
 
-        <!-- DJ10 / 900 — ring closure, OPEN — hangs under B1A left end -->
+        <!-- DJ10 / 900 — ring closure — CLOSED by TM step 1 -->
         <line x1="95" y1="404" x2="95" y2="448" stroke="#15234A" stroke-width="2"/>
         <text x="56" y="430" font-size="12" font-weight="600" fill="#C9D3EE" font-family="'Segoe UI',sans-serif">DJ10</text>
         <text x="56" y="443" font-size="10" fill="#40507F" font-family="'Segoe UI',sans-serif">900</text>
-        <rect x="83" y="448" width="24" height="24" rx="5" fill="#14224A" stroke="#223460" stroke-width="1.5"/>
+        <rect x="83" y="448" width="24" height="24" rx="5" fill="#2F6FFF" filter="url(#glow)"/>
         <rect x="111" y="446" width="24" height="10" rx="2" fill="rgba(4,235,255,.14)"/>
         <text x="123" y="454" text-anchor="middle" font-size="7" font-weight="700" fill="#10E8FF" font-family="'Segoe UI',sans-serif">SIM</text>
         <rect x="111" y="458" width="24" height="10" rx="2" fill="rgba(98,112,154,.12)"/>
         <text x="123" y="466" text-anchor="middle" font-size="7" font-weight="700" fill="#46567F" font-family="'Segoe UI',sans-serif">CMD</text>
 
-        <!-- DJ20 / 700 — B1A↔B1B — CLOSED -->
+        <!-- DJ20 / 700 — B1A↔B1B — still CLOSED · open command in progress (CMD lit) -->
         <path d="M260,404 V460 H266" stroke="#15234A" stroke-width="2" fill="none"/>
         <path d="M296,404 V460 H290" stroke="#15234A" stroke-width="2" fill="none"/>
         <text x="227" y="430" font-size="12" font-weight="600" fill="#C9D3EE" font-family="'Segoe UI',sans-serif">DJ20</text>
@@ -316,8 +393,8 @@
         <rect x="266" y="448" width="24" height="24" rx="5" fill="#2F6FFF" filter="url(#glow)"/>
         <rect x="294" y="446" width="24" height="10" rx="2" fill="rgba(4,235,255,.14)"/>
         <text x="306" y="454" text-anchor="middle" font-size="7" font-weight="700" fill="#10E8FF" font-family="'Segoe UI',sans-serif">SIM</text>
-        <rect x="294" y="458" width="24" height="10" rx="2" fill="rgba(98,112,154,.12)"/>
-        <text x="306" y="466" text-anchor="middle" font-size="7" font-weight="700" fill="#46567F" font-family="'Segoe UI',sans-serif">CMD</text>
+        <rect x="294" y="458" width="24" height="10" rx="2" fill="rgba(47,111,255,.3)"/>
+        <text x="306" y="466" text-anchor="middle" font-size="7" font-weight="700" fill="#7FA5FF" font-family="'Segoe UI',sans-serif">CMD</text>
 
         <!-- DJ30 / 710 — B1B↔B2A — OPEN -->
         <path d="M496,404 V460 H502" stroke="#15234A" stroke-width="2" fill="none"/>
@@ -367,15 +444,84 @@
         <path d="M95,472 V540 H1436 V404" stroke="#15234A" stroke-width="2" fill="none"/>
 
       </svg>
+      </div>
+
+      <!-- ══ BTC FACEPLATE PANEL ═══════════════════════════
+           Follow-up of the running automation:
+           header (type + trigger + snapshot) · interlock tiles
+           (one per Start reject reason) · SFC-style step rows
+           (done / active w/ timeout countdown / pending).      -->
+      <aside class="panel">
+        <div class="pn-head">
+          <div>
+            <div class="pn-title">BTC1 — TM TR01</div>
+            <div class="pn-sub">Started 08:23:47 · no transformer out of service</div>
+          </div>
+          <span class="pn-badge running">RUNNING</span>
+        </div>
+
+        <div class="pn-ttl">Interlocks</div>
+        <div class="tiles">
+          <div class="tile ok"><span class="tile-dot"></span>Enabled</div>
+          <div class="tile"><span class="tile-dot"></span>Operator Block</div>
+          <div class="tile"><span class="tile-dot"></span>General Block</div>
+          <div class="tile"><span class="tile-dot"></span>Other Automation</div>
+        </div>
+
+        <div class="pn-ttl">Steps · Path A — 6 steps</div>
+
+        <div class="step done">
+          <span class="st-ic">✓</span><span class="st-n">1</span>
+          <span class="st-act cl">CLOSE</span>
+          <span class="st-dev">DJ10<em>900</em></span>
+          <span class="st-meta">08:23:57</span>
+        </div>
+
+        <div class="step active">
+          <div class="st-row">
+            <span class="st-ic">▶</span><span class="st-n">2</span>
+            <span class="st-act op">OPEN</span>
+            <span class="st-dev">DJ20<em>700</em></span>
+            <span class="st-chip-retry">RETRY</span>
+          </div>
+          <div class="st-progress">
+            <div class="st-bar"><div class="st-bar-fill" id="stepBar" style="width:60%"></div></div>
+            <span class="st-secs" id="stepSecs">18s</span>
+          </div>
+          <div class="st-status">Waiting confirmation — command resent</div>
+        </div>
+
+        <div class="step pending">
+          <span class="st-ic">·</span><span class="st-n">3</span>
+          <span class="st-act cl">CLOSE</span>
+          <span class="st-dev">DJ50<em>730</em></span>
+        </div>
+        <div class="step pending">
+          <span class="st-ic">·</span><span class="st-n">4</span>
+          <span class="st-act op">OPEN</span>
+          <span class="st-dev">DJ40<em>720</em></span>
+        </div>
+        <div class="step pending">
+          <span class="st-ic">·</span><span class="st-n">5</span>
+          <span class="st-act cl">CLOSE</span>
+          <span class="st-dev">DJ30<em>710</em></span>
+        </div>
+        <div class="step pending">
+          <span class="st-ic">·</span><span class="st-n">6</span>
+          <span class="st-act op">OPEN</span>
+          <span class="st-dev">DJ03<em>120</em></span>
+        </div>
+      </aside>
     </div>
 
     <!-- ══ CONSOLE LOG + CLOCK ═══════════════════════════ -->
     <div class="console">
       <div class="log">
-        <div class="log-row sel"><span class="log-ts">09/07/2026 08:24:35</span><span class="log-msg">[DJ03] - Command execution failed.</span></div>
-        <div class="log-row"><span class="log-ts">09/07/2026 08:24:15</span><span class="log-msg">[DJ03] - Open command sent (Simulation Mode).</span></div>
-        <div class="log-row"><span class="log-ts">09/07/2026 08:24:15</span><span class="log-msg">[DJ03] - Command not confirmed, resending (retry).</span></div>
-        <div class="log-row"><span class="log-ts">09/07/2026 08:23:55</span><span class="log-msg">[DJ03] - Open command sent (Simulation Mode).</span></div>
+        <div class="log-row sel"><span class="log-ts">09/07/2026 08:24:15</span><span class="log-msg">[DJ20] - Open command sent (Simulation Mode).</span></div>
+        <div class="log-row"><span class="log-ts">09/07/2026 08:24:15</span><span class="log-msg">[DJ20] - Command not confirmed, resending (retry).</span></div>
+        <div class="log-row"><span class="log-ts">09/07/2026 08:23:57</span><span class="log-msg">[BTC1] - Step 1: DJ10 closed - Proceeding to the next step.</span></div>
+        <div class="log-row"><span class="log-ts">09/07/2026 08:23:55</span><span class="log-msg">[DJ10] - Close command sent (Simulation Mode).</span></div>
+        <div class="log-row"><span class="log-ts">09/07/2026 08:23:47</span><span class="log-msg">[BTC1] - Starting TM TR01 - no transformer out of service.</span></div>
       </div>
       <div class="clockbox">
         <div class="clock-t" id="clk">08:24:40</div>
@@ -389,6 +535,20 @@
 
 <script>
   function pad(n){ return String(n).padStart(2,'0'); }
+
+  // BTC panel demo — step-2 countdown toward the 30 s step timeout
+  // (loops for demo purposes; in the real HMI it runs once, then
+  //  the row flips to failed and the badge to GLOBAL LOCKOUT)
+  (function stepCountdown(){
+    const bar  = document.getElementById('stepBar');
+    const secs = document.getElementById('stepSecs');
+    let t = 18;
+    setInterval(() => {
+      t = (t <= 0) ? 30 : t - 1;
+      bar.style.width = (t / 30 * 100) + '%';
+      secs.textContent = t + 's';
+    }, 1000);
+  })();
 
   (function tick(){
     const d = new Date();
