@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 xatm_Breaker
-Thu Jul  9 16:30:37 2026
+Tue Jul 28 16:07:31 2026
 -----------------------
 
 <xatm_Breaker.Data.CommandInProgress:CommandInProgress_OnChangedValue()>
@@ -72,6 +72,9 @@ Sub CommandOpenClose_OnChangedValue()
 	End Select
 
 	' --- Issue the command. Handle with position only (no provisional position) ---
+	Dim commandSent
+	commandSent = False
+
 	If CBool(Parent.Item("SimulationModeEnabled").Value) Then
 
 		WriteLog IIf(command = 1, "Open", "Close") & " command sent (Simulation Mode)."
@@ -83,10 +86,30 @@ Sub CommandOpenClose_OnChangedValue()
 			Parent.Item("Position").WriteEx command      ' 1 -> open, 2 -> closed
 		End If
 
+		commandSent = True
+
 	Else
 
-		' TODO: write the real command output IOTag(s) here
-		WriteLog IIf(command = 1, "Open", "Close") & " command sent."
+		' Route the command to a relay that is actually communicating: try the
+		' configured priority source first, then fall back to the redundant one.
+		Dim useAlt
+		'useAlt = CBool(xatm_Breaker.PreferAlternateSource)
+		useAlt = False
+
+		If IsSourceHealthy(useAlt) Then
+			commandSent = SendCommand(useAlt, command)
+		End If
+
+		If Not commandSent Then
+			If IsSourceHealthy(Not useAlt) Then
+				commandSent = SendCommand(Not useAlt, command)
+			End If
+		End If
+
+		If Not commandSent Then
+			WriteLog IIf(command = 1, "Open", "Close") & " command not executed - no relay available."
+			Exit Sub
+		End If
 
 	End If
 
@@ -95,8 +118,151 @@ Sub CommandOpenClose_OnChangedValue()
 		Parent.Item("CommandInProgress").WriteEx 2
 	End If
 
-End Sub	
+End Sub
+
+' Writes the command output of one relay - main (useAlt = False) or redundant
+' (useAlt = True). Returns True only when the output tag was actually written.
+Function SendCommand(useAlt, command)
+
+	SendCommand = False
+
+	Dim outputTag
+	Set outputTag = Nothing
 	
+	Dim selectTag
+	Set selectTag = Nothing
+	
+	Dim sourceName
+	If useAlt Then
+		sourceName = "relay 2"
+	Else
+		sourceName = "relay 1"
+	End If
+	
+	Dim rawValue
+		
+	On Error Resume Next
+	
+	If command = 1 Then
+
+		' ======================
+		' Open
+		' ======================
+		rawValue = xatm_Breaker.RawValueCommandOpen
+
+		If useAlt Then
+			Set outputTag = xatm_Breaker.CommandOpenAlt
+			Set selectTag = xatm_Breaker.CommandSBOOpenAlt
+		Else
+			Set outputTag = xatm_Breaker.CommandOpen
+			Set selectTag = xatm_Breaker.CommandSBOOpen
+		End If
+
+	Else
+
+		' ======================
+		' Close
+		' ======================
+		rawValue = xatm_Breaker.RawValueCommandClose
+
+		If useAlt Then
+			Set outputTag = xatm_Breaker.CommandCloseAlt
+			Set selectTag = xatm_Breaker.CommandSBOCloseAlt
+		Else
+			Set outputTag = xatm_Breaker.CommandClose
+			Set selectTag = xatm_Breaker.CommandSBOClose
+		End If
+
+	End If
+
+	Err.Clear
+	On Error Goto 0
+
+	If Not IsTagLinked(outputTag) Then
+		WriteLog IIf(command = 1, "Open", "Close") & " command not executed - output not linked (" & sourceName & ")."
+		Exit Function
+	End If
+
+	' Select-Before-Operate: only performed when a select tag is configured.
+	If IsTagLinked(selectTag) Then
+		selectTag.WriteEx rawValue
+	End If
+
+	outputTag.WriteEx rawValue
+
+	WriteLog IIf(command = 1, "Open", "Close") & " command sent (" & sourceName & ") - value = " & rawValue & "."
+
+	SendCommand = True
+
+End Function
+
+' Communication check for a single relay, same criteria used by CommunicationFailure:
+' double point needs one readable tag, single point needs the whole contact pair.
+Function IsSourceHealthy(useAlt)
+
+	Dim tagOpen
+	Dim tagClosed
+
+	Set tagOpen = Nothing
+	Set tagClosed = Nothing
+
+	On Error Resume Next
+
+	If useAlt Then
+		Set tagOpen   = xatm_Breaker.PositionOpenAlt
+		Set tagClosed = xatm_Breaker.PositionClosedAlt
+	Else
+		Set tagOpen   = xatm_Breaker.PositionOpen
+		Set tagClosed = xatm_Breaker.PositionClosed
+	End If
+
+	Err.Clear
+	On Error Goto 0
+
+	If xatm_Breaker.UseDoublePoints Then
+		IsSourceHealthy = IsTagHealthy(tagOpen) Or IsTagHealthy(tagClosed)
+	Else
+		IsSourceHealthy = IsTagHealthy(tagOpen) And IsTagHealthy(tagClosed)
+	End If
+
+End Function
+
+Function IsTagHealthy(tag)
+
+	IsTagHealthy = False
+
+	If tag Is Nothing Then
+		Exit Function
+	End If
+
+	Dim quality
+	On Error Resume Next
+	quality = tag.Quality
+	IsTagHealthy = (Err.Number = 0) And (quality >= 192)
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
+' An unassociated XObject property yields Nothing (or an object that cannot be read),
+' which is how an unused redundant relay / missing SBO tag is detected.
+Function IsTagLinked(tag)
+
+	IsTagLinked = False
+
+	If tag Is Nothing Then
+		Exit Function
+	End If
+
+	Dim probe
+	On Error Resume Next
+	probe = tag.Value
+	IsTagLinked = (Err.Number = 0)
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
 Sub WriteLog(message)
 	
 	Dim consoleLogEngine
