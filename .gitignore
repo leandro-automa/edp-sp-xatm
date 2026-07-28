@@ -12,3 +12,6 @@ EDP_SP.txt
 /*.lib
 !/xatm_*.prj
 !/xatm_*.lib
+
+# Ignore old files
+docs/scripts/old/*
