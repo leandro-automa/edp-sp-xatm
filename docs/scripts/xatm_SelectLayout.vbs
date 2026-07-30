@@ -39,11 +39,14 @@ Sub btnPrevious_Click()
 
 	If count = 0 Then Exit Sub
 
-	Dim previous
-	previous = current - 1
-	If previous < 0 Then previous = count - 1
+	If current < 0 Then
+		xatm_SelectLayout.Index = layouts(0)
+		Exit Sub
+	End If
 
-	xatm_SelectLayout.Index = layouts(previous)
+	If current = 0 Then Exit Sub
+
+	xatm_SelectLayout.Index = layouts(current - 1)
 
 End Sub
 
@@ -82,11 +85,14 @@ Sub btnNext_Click()
 
 	If count = 0 Then Exit Sub
 
-	Dim nextOne
-	nextOne = current + 1
-	If nextOne > count - 1 Then nextOne = 0
+	If current < 0 Then
+		xatm_SelectLayout.Index = layouts(0)
+		Exit Sub
+	End If
 
-	xatm_SelectLayout.Index = layouts(nextOne)
+	If current = count - 1 Then Exit Sub
+
+	xatm_SelectLayout.Index = layouts(current + 1)
 
 End Sub
 
