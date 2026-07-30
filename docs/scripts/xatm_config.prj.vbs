@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Thu Jul 30 17:04:58 2026
+Thu Jul 30 17:41:13 2026
 -----------------------
 
 <xatm_config_data.PropertiesHelper.xatm_BTC:xatm_BTC_OnStartRunning()>
@@ -819,12 +819,30 @@ Sub btnBTC_Click()
 		
 End Sub
 
+<xatm_config_screens.Menu.btnConfig:btnConfig_Click()>
+Sub btnConfig_Click()
+	
+	Dim fr
+	Set fr = Application.GetFrame("Superior")
+	fr.OpenScreen "xatm_config_screens.Config?4?0", 0
+		
+End Sub
+
 <xatm_config_screens.Menu.btnSimulationMode:btnSimulationMode_Click()>
 Sub btnSimulationMode_Click()
 	
 	Dim tag
 	Set tag = Application.GetObject("xatm_config_data.SimulationMode")
 	tag.WriteEx (Not CBool(tag.Value))
+		
+End Sub
+
+<xatm_config_screens.Menu.btnSupervision:btnSupervision_Click()>
+Sub btnSupervision_Click()
+	
+	Dim fr
+	Set fr = Application.GetFrame("Superior")
+	fr.OpenScreen "xatm_config_screens.SingleLineDiagram?4?0", 0
 		
 End Sub
 
