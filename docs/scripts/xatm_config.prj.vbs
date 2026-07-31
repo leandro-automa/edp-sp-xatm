@@ -463,7 +463,8 @@ Function ExportObject(obj, bag, indent)
 
 	Dim xml
 	xml = indent & "<object name=""" & EscapeXml(obj.Name) & """" & _
-	                    " type=""" & EscapeXml(TypeName(obj)) & """>" & vbCrLf
+	                    " type=""" & EscapeXml(TypeName(obj)) & """" & _
+	                    " path=""" & EscapeXml(obj.PathName) & """>" & vbCrLf
 
 	Dim key
 	For Each key In bag.Keys
