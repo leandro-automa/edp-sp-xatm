@@ -1,8 +1,8 @@
 -----------------------
-Documentaï¿½ï¿½o de Scripts
+Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Fri Jul 31 17:15:45 2026
+Mon Aug  3 16:54:25 2026
 -----------------------
 
 <xatm_config_data.PropertiesHelper.xatm_BTC:xatm_BTC_OnStartRunning()>
@@ -13,30 +13,30 @@ Sub xatm_BTC_OnStartRunning()
 
 	AddProperty bag, "Enabled", "Boolean", True, _
 		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
-		"Habilitaï¿½ï¿½o geral deste automatismo. Pedidos de partida sï¿½o recusados e a sequï¿½ncia em andamento para enquanto estiver False."
+		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
 
 	AddProperty bag, "Running", "Boolean", False, _
 		"True while a sequence is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
-		"True enquanto uma sequï¿½ncia estï¿½ em andamento. Lido pelos demais automatismos para exclusï¿½o mï¿½tua, de modo que apenas um execute por vez."
+		"True enquanto uma sequência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
 
 	AddProperty bag, "Transformer", "xatm_Transformer", Empty, _
 		"Transformer XObject this automation instance is bound to.", _
-		"XObject do transformador ao qual esta instï¿½ncia do automatismo estï¿½ vinculada."
+		"XObject do transformador ao qual esta instância do automatismo está vinculada."
 
 	AddProperty bag, "OperatorBlock", "Boolean", False, _
 		"Operator lock. Blocks the start until the operator releases it.", _
-		"Bloqueio do operador. Impede a partida atï¿½ que o operador libere."
+		"Bloqueio do operador. Impede a partida até que o operador libere."
 
 	AddProperty bag, "GeneralBlock", "Boolean", False, _
 		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
-		"Intertravamento geral. Impede a partida e ï¿½ selado por uma falha de passo atï¿½ que o Reset o apague."
+		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
 
 	Dim i
 	For i = 1 To 6
 
 		AddProperty bag, "StepExecutionFailed" & i, "Boolean", Empty, _
 			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
-			"Falha selada do passo " & i & ". Marcada quando o passo nï¿½o executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
+			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
 
 	Next
 
@@ -89,27 +89,27 @@ Sub xatm_Breaker_OnStartRunning()
 
 	AddProperty bag, "Id", "Integer", Empty, _
 		"Unique numeric identifier used by the automation to locate this breaker.", _
-		"Identificador numï¿½rico ï¿½nico usado pelo automatismo para localizar este disjuntor."
+		"Identificador numérico único usado pelo automatismo para localizar este disjuntor."
 
 	AddProperty bag, "PositionOpen", "IOTag", Empty, _
 		"Open-position input of relay 1. Double-point word, or the 52b contact when UseDoublePoints is False.", _
-		"Entrada de posiï¿½ï¿½o aberto do relï¿½ 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
+		"Entrada de posição aberto do relé 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
 
 	AddProperty bag, "PositionClosed", "IOTag", Empty, _
 		"Closed-position input of relay 1. Double-point word, or the 52a contact when UseDoublePoints is False.", _
-		"Entrada de posiï¿½ï¿½o fechado do relï¿½ 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
+		"Entrada de posição fechado do relé 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
 
 	AddProperty bag, "PositionOpenAlt", "IOTag", Empty, _
 		"Open-position input of relay 2. Leave empty when there is no redundant relay.", _
-		"Entrada de posiï¿½ï¿½o aberto do relï¿½ 2. Deixe vazio quando nï¿½o houver relï¿½ redundante."
+		"Entrada de posição aberto do relé 2. Deixe vazio quando não houver relé redundante."
 
 	AddProperty bag, "PositionClosedAlt", "IOTag", Empty, _
 		"Closed-position input of relay 2. Leave empty when there is no redundant relay.", _
-		"Entrada de posiï¿½ï¿½o fechado do relï¿½ 2. Deixe vazio quando nï¿½o houver relï¿½ redundante."
+		"Entrada de posição fechado do relé 2. Deixe vazio quando não houver relé redundante."
 
 	AddProperty bag, "UseDoublePoints", "Boolean", True, _
 		"True - position comes from a double-point word. False - position comes from the 52a/52b contact pair.", _
-		"True - a posiï¿½ï¿½o vem de uma palavra de duplo ponto. False - a posiï¿½ï¿½o vem do par de contatos 52a/52b."
+		"True - a posição vem de uma palavra de duplo ponto. False - a posição vem do par de contatos 52a/52b."
 
 	AddProperty bag, "RawValueOpen", "Integer", 2, _
 		"Raw value from the driver that means OPEN.", _
@@ -121,51 +121,51 @@ Sub xatm_Breaker_OnStartRunning()
 
 	AddProperty bag, "NormalState", "EdbSwitchState", 1, _
 		"Normal state of the equipment. Reference for normalisation and for Simulation Mode.", _
-		"Estado normal do equipamento. Referï¿½ncia para a normalizaï¿½ï¿½o e para o Modo Simulaï¿½ï¿½o."
+		"Estado normal do equipamento. Referência para a normalização e para o Modo Simulação."
 
 	AddProperty bag, "CommandTimeout", "Integer", 40, _
 		"Command supervision window in seconds. The command is re-sent once at half the window and fails when it expires.", _
-		"Janela de supervisï¿½o do comando em segundos. O comando ï¿½ reenviado uma vez na metade da janela e falha ao expirar."
+		"Janela de supervisão do comando em segundos. O comando é reenviado uma vez na metade da janela e falha ao expirar."
 
 	AddProperty bag, "RawValueCommandOpen", "Integer", 0, _
 		"Raw value written to the open (trip) output.", _
-		"Valor bruto escrito na saï¿½da de abertura (trip)."
+		"Valor bruto escrito na saída de abertura (trip)."
 
 	AddProperty bag, "RawValueCommandClose", "Integer", 1, _
 		"Raw value written to the close output.", _
-		"Valor bruto escrito na saï¿½da de fechamento."
+		"Valor bruto escrito na saída de fechamento."
 
 	AddProperty bag, "CommandOpen", "IOTag", Empty, _
 		"Open (trip) output of relay 1. Falls back to relay 2 when empty.", _
-		"Saï¿½da de abertura (trip) do relï¿½ 1. Recorre ao relï¿½ 2 quando vazio."
+		"Saída de abertura (trip) do relé 1. Recorre ao relé 2 quando vazio."
 
 	AddProperty bag, "CommandSBOOpen", "IOTag", Empty, _
 		"Select tag for the open command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
-		"Tag de seleï¿½ï¿½o do comando de abertura no relï¿½ 1. Opcional - o Select-Before-Operate sï¿½ ocorre quando preenchido."
+		"Tag de seleção do comando de abertura no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
 
 	AddProperty bag, "CommandOpenAlt", "IOTag", Empty, _
 		"Open (trip) output of relay 2. Used when relay 1 is unavailable.", _
-		"Saï¿½da de abertura (trip) do relï¿½ 2. Usada quando o relï¿½ 1 estï¿½ indisponï¿½vel."
+		"Saída de abertura (trip) do relé 2. Usada quando o relé 1 está indisponível."
 
 	AddProperty bag, "CommandSBOOpenAlt", "IOTag", Empty, _
 		"Select tag for the open command on relay 2. Optional.", _
-		"Tag de seleï¿½ï¿½o do comando de abertura no relï¿½ 2. Opcional."
+		"Tag de seleção do comando de abertura no relé 2. Opcional."
 
 	AddProperty bag, "CommandClose", "IOTag", Empty, _
 		"Close output of relay 1. Falls back to relay 2 when empty.", _
-		"Saï¿½da de fechamento do relï¿½ 1. Recorre ao relï¿½ 2 quando vazio."
+		"Saída de fechamento do relé 1. Recorre ao relé 2 quando vazio."
 
 	AddProperty bag, "CommandSBOClose", "IOTag", Empty, _
 		"Select tag for the close command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
-		"Tag de seleï¿½ï¿½o do comando de fechamento no relï¿½ 1. Opcional - o Select-Before-Operate sï¿½ ocorre quando preenchido."
+		"Tag de seleção do comando de fechamento no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
 
 	AddProperty bag, "CommandCloseAlt", "IOTag", Empty, _
 		"Close output of relay 2. Used when relay 1 is unavailable.", _
-		"Saï¿½da de fechamento do relï¿½ 2. Usada quando o relï¿½ 1 estï¿½ indisponï¿½vel."
+		"Saída de fechamento do relé 2. Usada quando o relé 1 está indisponível."
 
 	AddProperty bag, "CommandSBOCloseAlt", "IOTag", Empty, _
 		"Select tag for the close command on relay 2. Optional.", _
-		"Tag de seleï¿½ï¿½o do comando de fechamento no relï¿½ 2. Opcional."
+		"Tag de seleção do comando de fechamento no relé 2. Opcional."
 
 	Set Value = bag
 
@@ -216,23 +216,23 @@ Sub xatm_Transformer_OnStartRunning()
 
 	AddProperty bag, "OutOfService", "Boolean", False, _
 		"Transformer is out of service (impediment). The automation reads it to plan the maneuver around this transformer.", _
-		"Transformador fora de serviï¿½o (impedimento). O automatismo o lï¿½ para planejar a manobra sem este transformador."
+		"Transformador fora de serviço (impedimento). O automatismo o lê para planejar a manobra sem este transformador."
 
 	AddProperty bag, "Id", "Integer", Empty, _
 		"Unique numeric identifier used by the automation to locate this transformer.", _
-		"Identificador numï¿½rico ï¿½nico usado pelo automatismo para localizar este transformador."
+		"Identificador numérico único usado pelo automatismo para localizar este transformador."
 
 	AddProperty bag, "LockingOutRelay", "Boolean", False, _
 		"Locking out relay (86) of the transformer is actuated.", _
-		"Relï¿½ de bloqueio (86) do transformador atuado."
+		"Relé de bloqueio (86) do transformador atuado."
 
 	AddProperty bag, "UndervoltageRelay", "Boolean", False, _
 		"Undervoltage relay (27) of the transformer is actuated.", _
-		"Relï¿½ de subtensï¿½o (27) do transformador atuado."
+		"Relé de subtensão (27) do transformador atuado."
 
 	AddProperty bag, "UndervoltageDelay", "Integer", 25, _
 		"Time in seconds the undervoltage (27) condition has to persist before the automation acts on it.", _
-		"Tempo em segundos que a condiï¿½ï¿½o de subtensï¿½o (27) deve permanecer antes que o automatismo atue."
+		"Tempo em segundos que a condição de subtensão (27) deve permanecer antes que o automatismo atue."
 
 	Set Value = bag
 
@@ -282,7 +282,7 @@ Sub SimulationMode_OnChangedValue()
 
 End Sub
 
-' Returns True if at least one position tag has good quality ï¿½ breaker does NOT need sim mode.
+' Returns True if at least one position tag has good quality — breaker does NOT need sim mode.
 Function AnyBreakerTagHealthy(breaker)
 
     If TagHealthy(breaker.PositionOpen)      Then AnyBreakerTagHealthy = True : Exit Function
@@ -333,10 +333,159 @@ Sub ScanFolder(folder, simEnabled)
 	
 End Sub
 
-<xatm_config_data.TagInterno1:TagInterno1_OnStartRunning()>
-Sub TagInterno1_OnStartRunning()
+<xatm_config_data.XML.SaveXML:SaveXML_OnChangedValue()>
+Sub SaveXML_OnChangedValue()
+	
+	Dim xmlContent
+	xmlContent = Parent.Item("XMLContent").Value
+	
+	Dim filePath
+	filePath = Parent.Item("XMLFilePath").Value
+	
+	SaveXml xmlContent, filePath
+	
+	WriteLog "XML file saved!"
+	
+End Sub
 
-Sub Foo()
+Const XML_VERSION   = "1"
+Const DATA_ROOT     = "XATM_Data"
+Const ROOT_ELEMENT  = "xatm-config"
+Const CONFIG_DATA   = "xatm_config_data"
+Const HELPER_FOLDER = "PropertiesHelper"
+
+' Writes a document to disk as UTF-8, and answers whether it went.
+' Content that is not a document is not written - it would replace the
+' last good file with something nothing can read back.
+Function SaveXml(content, path)
+
+	SaveXml = False
+
+	' Content that came back from a utf-8 file carries a mark the parser
+	' rejects, and the stream puts a mark of its own in on the way out.
+	Dim text
+	text = StripBom(content)
+
+	Dim problem
+	problem = XmlProblem(text)
+
+	If problem <> "" Then
+		WriteLog "Not saved to " & path & " - " & problem
+		Exit Function
+	End If
+
+	Dim stream
+	Set stream = CreateObject("ADODB.Stream")
+
+	On Error Resume Next
+
+	stream.Type     = 2			' adTypeText
+	stream.Charset  = "utf-8"
+	stream.Open
+	stream.WriteText text
+	stream.SaveToFile path, 2	' adSaveCreateOverWrite
+	stream.Close
+
+	If Err.Number <> 0 Then
+		problem = Err.Description
+		Err.Clear
+		On Error Goto 0
+		WriteLog "Not saved to " & path & " - " & problem
+		Exit Function
+	End If
+
+	On Error Goto 0
+
+	SaveXml = True
+
+End Function
+
+
+' Why the content is not a document worth writing, "" when it is one.
+' An export that fails part way through comes back empty or truncated,
+' and either one parses as something the import can never use.
+Function XmlProblem(content)
+
+	If IsEmpty(content) Or IsNull(content) Then
+		XmlProblem = "the export is empty"
+		Exit Function
+	End If
+
+	If Trim(CStr(content)) = "" Then
+		XmlProblem = "the export is empty"
+		Exit Function
+	End If
+
+	Dim doc
+	Set doc = Nothing
+
+	On Error Resume Next
+	Set doc = CreateObject("MSXML2.DOMDocument.6.0")
+	On Error Goto 0
+
+	If doc Is Nothing Then
+		Set doc = CreateObject("MSXML2.DOMDocument")
+	End If
+
+	doc.async = False
+
+	If Not doc.loadXML(CStr(content)) Then
+		XmlProblem = "it does not parse as XML - " & OneLine(doc.parseError.reason) & _
+		             " (line " & doc.parseError.line & ")"
+		Exit Function
+	End If
+
+	If doc.documentElement.nodeName <> ROOT_ELEMENT Then
+		XmlProblem = "it is not a " & ROOT_ELEMENT & " document, but a " & _
+		             doc.documentElement.nodeName & " one"
+		Exit Function
+	End If
+
+	XmlProblem = ""
+
+End Function
+
+
+' A byte-order mark survives a round trip through a utf-8 file and makes
+' loadXML fail on what looks like perfectly good XML.
+Function StripBom(text)
+
+	StripBom = text
+
+	If IsEmpty(text) Or IsNull(text) Then Exit Function
+	If Len(text) = 0 Then Exit Function
+
+	If AscW(Left(text, 1)) = &HFEFF Then
+		StripBom = Mid(text, 2)
+	End If
+
+End Function
+
+
+' A parse error reason comes with the line break MSXML puts on the end
+' of it, which a one-line log entry has no room for.
+Function OneLine(text)
+
+	OneLine = Trim(Replace(Replace(CStr(text), vbCr, " "), vbLf, " "))
+
+End Function
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+
 End Sub
 
 <xatm_config_data.XML.XMLBuilder:XMLBuilder_OnStartRunning()>
@@ -347,12 +496,13 @@ Sub XMLBuilder_OnStartRunning()
 
 	Parent.Item("XMLContent").WriteEx xmlContent
 	
-	SaveXml "C:\ProjDev\edp_sp\docs\scripts\old\file.xml"
+	Parent.Item("SaveXML").WriteEx True
 	
 End Sub
 
 Const XML_VERSION   = "1"
 Const DATA_ROOT     = "XATM_Data"
+Const ROOT_ELEMENT  = "xatm-config"
 Const CONFIG_DATA   = "xatm_config_data"
 Const HELPER_FOLDER = "PropertiesHelper"
 
@@ -374,33 +524,17 @@ Function ExportXml()
 	Dim xml
 	xml = "<?xml version=""1.0"" encoding=""utf-8""?>" & vbCrLf
 
-	xml = xml & "<xatm-config version=""" & XML_VERSION & """" & _
+	xml = xml & "<" & ROOT_ELEMENT & " version=""" & XML_VERSION & """" & _
 	                    " exported=""" & IsoNow() & """" & _
 	                    " root=""" & EscapeXml(root.Name) & """>" & vbCrLf
 
 	xml = xml & ExportFolder(root, vbTab)
 
-	xml = xml & "</xatm-config>" & vbCrLf
+	xml = xml & "</" & ROOT_ELEMENT & ">" & vbCrLf
 
 	ExportXml = xml
 
 End Function
-
-
-' Writes the document to disk as UTF-8.
-Sub SaveXml(path)
-
-	Dim stream
-	Set stream = CreateObject("ADODB.Stream")
-
-	stream.Type     = 2			' adTypeText
-	stream.Charset  = "utf-8"
-	stream.Open
-	stream.WriteText ExportXml()
-	stream.SaveToFile path, 2	' adSaveCreateOverWrite
-	stream.Close
-
-End Sub
 
 
 ' ------------------------------------------------------------
@@ -456,6 +590,7 @@ Function ExportFolder(folder, indent)
 
 End Function
 
+
 ' One object, in the order its properties are declared in the manifest.
 Function ExportObject(obj, bag, indent)
 
@@ -488,6 +623,7 @@ Function ExportObject(obj, bag, indent)
 	ExportObject = xml
 
 End Function
+
 
 ' The manifest declared for a class, or Nothing when the class has
 ' none - which is how a folder tells itself apart from an object.
@@ -599,52 +735,6 @@ End Function
 
 Sub Foo()
 	
-End Sub
-
-<xatm_config_screens.Config:Config_OnPreShow(Arg)>
-Sub Config_OnPreShow(Arg)
-	
-	' ================================
-	' LAYOUT
-	' ================================
-	
-	Dim imageList, i
-	
-	' ---- TRANSFORMER ----
-	Dim transformerType
-	transformerType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value
-	
-	
-	imageList = Split(Item("SelectLayoutTransformer").ImageList, ",")
-	
-	For i = 0 To UBound(imageList)
-		
-		If Trim(imageList(i)) = transformerType Then
-			
-			Item("SelectLayoutTransformer").Index = Trim(imageList(i))
-			Exit For
-			
-		End If
-		
-	Next
-	
-	' ---- BUSBAR ----
-	Dim busbarType
-	busbarType = Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
-	
-	imageList = Split(Item("SelectLayoutBusbar").ImageList, ",")
-	
-	For i = 0 To UBound(imageList)
-		
-		If Trim(imageList(i)) = busbarType Then
-			
-			Item("SelectLayoutBusbar").Index = Trim(imageList(i))
-			Exit For
-			
-		End If
-		
-	Next
-		
 End Sub
 
 <xatm_config_screens.Config.btnApply:btnApply_Click()>
@@ -1479,6 +1569,63 @@ Function TrailingNumber(name)
 
 End Function
 
+Sub Foo()	
+End Sub
+
+<xatm_config_screens.Config.btnSave:btnSave_Click()>
+Sub btnSave_Click()
+	
+	' Call the SaveXML method to save the XML data to a file
+	Application.GetObject("xatm_config_data.XML.SaveXML").WriteEx True
+		
+End Sub
+
+<xatm_config_screens.Config:Config_OnPreShow(Arg)>
+Sub Config_OnPreShow(Arg)
+	
+	' ================================
+	' LAYOUT
+	' ================================
+	
+	Dim imageList, i
+	
+	' ---- TRANSFORMER ----
+	Dim transformerType
+	transformerType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value
+	
+	
+	imageList = Split(Item("SelectLayoutTransformer").ImageList, ",")
+	
+	For i = 0 To UBound(imageList)
+		
+		If Trim(imageList(i)) = transformerType Then
+			
+			Item("SelectLayoutTransformer").Index = Trim(imageList(i))
+			Exit For
+			
+		End If
+		
+	Next
+	
+	' ---- BUSBAR ----
+	Dim busbarType
+	busbarType = Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
+	
+	imageList = Split(Item("SelectLayoutBusbar").ImageList, ",")
+	
+	For i = 0 To UBound(imageList)
+		
+		If Trim(imageList(i)) = busbarType Then
+			
+			Item("SelectLayoutBusbar").Index = Trim(imageList(i))
+			Exit For
+			
+		End If
+		
+	Next
+		
+End Sub
+
 <xatm_config_screens.Footer.ListBox:ListBox_MouseUp(Button, Shift, X, Y)>
 Sub ListBox_MouseUp(Button, Shift, X, Y)
 	
@@ -1571,7 +1718,7 @@ Sub AddArrayContentToList()
     Dim arrSize
     arrSize = UBound(contentArr) + 1
 
-    ' If ListCount >= arrSize, buffer is full and shifted ï¿½ full redraw needed
+    ' If ListCount >= arrSize, buffer is full and shifted — full redraw needed
     If ListCount >= arrSize Then
         Clear()
     End If
