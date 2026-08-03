@@ -1,5 +1,5 @@
 -----------------------
-Documentação de Scripts
+Documentaï¿½ï¿½o de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
 Fri Jul 31 17:15:45 2026
@@ -13,30 +13,30 @@ Sub xatm_BTC_OnStartRunning()
 
 	AddProperty bag, "Enabled", "Boolean", True, _
 		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
-		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
+		"Habilitaï¿½ï¿½o geral deste automatismo. Pedidos de partida sï¿½o recusados e a sequï¿½ncia em andamento para enquanto estiver False."
 
 	AddProperty bag, "Running", "Boolean", False, _
 		"True while a sequence is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
-		"True enquanto uma sequência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
+		"True enquanto uma sequï¿½ncia estï¿½ em andamento. Lido pelos demais automatismos para exclusï¿½o mï¿½tua, de modo que apenas um execute por vez."
 
 	AddProperty bag, "Transformer", "xatm_Transformer", Empty, _
 		"Transformer XObject this automation instance is bound to.", _
-		"XObject do transformador ao qual esta instância do automatismo está vinculada."
+		"XObject do transformador ao qual esta instï¿½ncia do automatismo estï¿½ vinculada."
 
 	AddProperty bag, "OperatorBlock", "Boolean", False, _
 		"Operator lock. Blocks the start until the operator releases it.", _
-		"Bloqueio do operador. Impede a partida até que o operador libere."
+		"Bloqueio do operador. Impede a partida atï¿½ que o operador libere."
 
 	AddProperty bag, "GeneralBlock", "Boolean", False, _
 		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
-		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
+		"Intertravamento geral. Impede a partida e ï¿½ selado por uma falha de passo atï¿½ que o Reset o apague."
 
 	Dim i
 	For i = 1 To 6
 
 		AddProperty bag, "StepExecutionFailed" & i, "Boolean", Empty, _
 			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
-			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
+			"Falha selada do passo " & i & ". Marcada quando o passo nï¿½o executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
 
 	Next
 
@@ -89,27 +89,27 @@ Sub xatm_Breaker_OnStartRunning()
 
 	AddProperty bag, "Id", "Integer", Empty, _
 		"Unique numeric identifier used by the automation to locate this breaker.", _
-		"Identificador numérico único usado pelo automatismo para localizar este disjuntor."
+		"Identificador numï¿½rico ï¿½nico usado pelo automatismo para localizar este disjuntor."
 
 	AddProperty bag, "PositionOpen", "IOTag", Empty, _
 		"Open-position input of relay 1. Double-point word, or the 52b contact when UseDoublePoints is False.", _
-		"Entrada de posição aberto do relé 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
+		"Entrada de posiï¿½ï¿½o aberto do relï¿½ 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
 
 	AddProperty bag, "PositionClosed", "IOTag", Empty, _
 		"Closed-position input of relay 1. Double-point word, or the 52a contact when UseDoublePoints is False.", _
-		"Entrada de posição fechado do relé 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
+		"Entrada de posiï¿½ï¿½o fechado do relï¿½ 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
 
 	AddProperty bag, "PositionOpenAlt", "IOTag", Empty, _
 		"Open-position input of relay 2. Leave empty when there is no redundant relay.", _
-		"Entrada de posição aberto do relé 2. Deixe vazio quando não houver relé redundante."
+		"Entrada de posiï¿½ï¿½o aberto do relï¿½ 2. Deixe vazio quando nï¿½o houver relï¿½ redundante."
 
 	AddProperty bag, "PositionClosedAlt", "IOTag", Empty, _
 		"Closed-position input of relay 2. Leave empty when there is no redundant relay.", _
-		"Entrada de posição fechado do relé 2. Deixe vazio quando não houver relé redundante."
+		"Entrada de posiï¿½ï¿½o fechado do relï¿½ 2. Deixe vazio quando nï¿½o houver relï¿½ redundante."
 
 	AddProperty bag, "UseDoublePoints", "Boolean", True, _
 		"True - position comes from a double-point word. False - position comes from the 52a/52b contact pair.", _
-		"True - a posição vem de uma palavra de duplo ponto. False - a posição vem do par de contatos 52a/52b."
+		"True - a posiï¿½ï¿½o vem de uma palavra de duplo ponto. False - a posiï¿½ï¿½o vem do par de contatos 52a/52b."
 
 	AddProperty bag, "RawValueOpen", "Integer", 2, _
 		"Raw value from the driver that means OPEN.", _
@@ -121,51 +121,51 @@ Sub xatm_Breaker_OnStartRunning()
 
 	AddProperty bag, "NormalState", "EdbSwitchState", 1, _
 		"Normal state of the equipment. Reference for normalisation and for Simulation Mode.", _
-		"Estado normal do equipamento. Referência para a normalização e para o Modo Simulação."
+		"Estado normal do equipamento. Referï¿½ncia para a normalizaï¿½ï¿½o e para o Modo Simulaï¿½ï¿½o."
 
 	AddProperty bag, "CommandTimeout", "Integer", 40, _
 		"Command supervision window in seconds. The command is re-sent once at half the window and fails when it expires.", _
-		"Janela de supervisão do comando em segundos. O comando é reenviado uma vez na metade da janela e falha ao expirar."
+		"Janela de supervisï¿½o do comando em segundos. O comando ï¿½ reenviado uma vez na metade da janela e falha ao expirar."
 
 	AddProperty bag, "RawValueCommandOpen", "Integer", 0, _
 		"Raw value written to the open (trip) output.", _
-		"Valor bruto escrito na saída de abertura (trip)."
+		"Valor bruto escrito na saï¿½da de abertura (trip)."
 
 	AddProperty bag, "RawValueCommandClose", "Integer", 1, _
 		"Raw value written to the close output.", _
-		"Valor bruto escrito na saída de fechamento."
+		"Valor bruto escrito na saï¿½da de fechamento."
 
 	AddProperty bag, "CommandOpen", "IOTag", Empty, _
 		"Open (trip) output of relay 1. Falls back to relay 2 when empty.", _
-		"Saída de abertura (trip) do relé 1. Recorre ao relé 2 quando vazio."
+		"Saï¿½da de abertura (trip) do relï¿½ 1. Recorre ao relï¿½ 2 quando vazio."
 
 	AddProperty bag, "CommandSBOOpen", "IOTag", Empty, _
 		"Select tag for the open command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
-		"Tag de seleção do comando de abertura no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
+		"Tag de seleï¿½ï¿½o do comando de abertura no relï¿½ 1. Opcional - o Select-Before-Operate sï¿½ ocorre quando preenchido."
 
 	AddProperty bag, "CommandOpenAlt", "IOTag", Empty, _
 		"Open (trip) output of relay 2. Used when relay 1 is unavailable.", _
-		"Saída de abertura (trip) do relé 2. Usada quando o relé 1 está indisponível."
+		"Saï¿½da de abertura (trip) do relï¿½ 2. Usada quando o relï¿½ 1 estï¿½ indisponï¿½vel."
 
 	AddProperty bag, "CommandSBOOpenAlt", "IOTag", Empty, _
 		"Select tag for the open command on relay 2. Optional.", _
-		"Tag de seleção do comando de abertura no relé 2. Opcional."
+		"Tag de seleï¿½ï¿½o do comando de abertura no relï¿½ 2. Opcional."
 
 	AddProperty bag, "CommandClose", "IOTag", Empty, _
 		"Close output of relay 1. Falls back to relay 2 when empty.", _
-		"Saída de fechamento do relé 1. Recorre ao relé 2 quando vazio."
+		"Saï¿½da de fechamento do relï¿½ 1. Recorre ao relï¿½ 2 quando vazio."
 
 	AddProperty bag, "CommandSBOClose", "IOTag", Empty, _
 		"Select tag for the close command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
-		"Tag de seleção do comando de fechamento no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
+		"Tag de seleï¿½ï¿½o do comando de fechamento no relï¿½ 1. Opcional - o Select-Before-Operate sï¿½ ocorre quando preenchido."
 
 	AddProperty bag, "CommandCloseAlt", "IOTag", Empty, _
 		"Close output of relay 2. Used when relay 1 is unavailable.", _
-		"Saída de fechamento do relé 2. Usada quando o relé 1 está indisponível."
+		"Saï¿½da de fechamento do relï¿½ 2. Usada quando o relï¿½ 1 estï¿½ indisponï¿½vel."
 
 	AddProperty bag, "CommandSBOCloseAlt", "IOTag", Empty, _
 		"Select tag for the close command on relay 2. Optional.", _
-		"Tag de seleção do comando de fechamento no relé 2. Opcional."
+		"Tag de seleï¿½ï¿½o do comando de fechamento no relï¿½ 2. Opcional."
 
 	Set Value = bag
 
@@ -216,23 +216,23 @@ Sub xatm_Transformer_OnStartRunning()
 
 	AddProperty bag, "OutOfService", "Boolean", False, _
 		"Transformer is out of service (impediment). The automation reads it to plan the maneuver around this transformer.", _
-		"Transformador fora de serviço (impedimento). O automatismo o lê para planejar a manobra sem este transformador."
+		"Transformador fora de serviï¿½o (impedimento). O automatismo o lï¿½ para planejar a manobra sem este transformador."
 
 	AddProperty bag, "Id", "Integer", Empty, _
 		"Unique numeric identifier used by the automation to locate this transformer.", _
-		"Identificador numérico único usado pelo automatismo para localizar este transformador."
+		"Identificador numï¿½rico ï¿½nico usado pelo automatismo para localizar este transformador."
 
 	AddProperty bag, "LockingOutRelay", "Boolean", False, _
 		"Locking out relay (86) of the transformer is actuated.", _
-		"Relé de bloqueio (86) do transformador atuado."
+		"Relï¿½ de bloqueio (86) do transformador atuado."
 
 	AddProperty bag, "UndervoltageRelay", "Boolean", False, _
 		"Undervoltage relay (27) of the transformer is actuated.", _
-		"Relé de subtensão (27) do transformador atuado."
+		"Relï¿½ de subtensï¿½o (27) do transformador atuado."
 
 	AddProperty bag, "UndervoltageDelay", "Integer", 25, _
 		"Time in seconds the undervoltage (27) condition has to persist before the automation acts on it.", _
-		"Tempo em segundos que a condição de subtensão (27) deve permanecer antes que o automatismo atue."
+		"Tempo em segundos que a condiï¿½ï¿½o de subtensï¿½o (27) deve permanecer antes que o automatismo atue."
 
 	Set Value = bag
 
@@ -282,7 +282,7 @@ Sub SimulationMode_OnChangedValue()
 
 End Sub
 
-' Returns True if at least one position tag has good quality — breaker does NOT need sim mode.
+' Returns True if at least one position tag has good quality ï¿½ breaker does NOT need sim mode.
 Function AnyBreakerTagHealthy(breaker)
 
     If TagHealthy(breaker.PositionOpen)      Then AnyBreakerTagHealthy = True : Exit Function
@@ -693,71 +693,119 @@ Sub btnApply_Click()
 		Exit Sub
 	End If
 
-	Dim removed, missing
-	removed = ""
-	missing = ""
+	gNewLine = DocumentNewLine(doc)
 
-	PruneById doc, TRANSFORMER_PATH, TransformerIds(transformerType), removed, missing
-	PruneById doc, BUSBAR_PATH, BusbarIds(busbarType), removed, missing
-	PruneAutomation doc, AutomationCount(transformerType), removed, missing
+	Dim removed, added, failed
+	removed = ""
+	added   = ""
+	failed  = ""
+
+	SyncFolder doc, TRANSFORMER_PATH, TransformerDevices(transformerType), removed, added, failed
+	SyncFolder doc, BUSBAR_PATH, BusbarDevices(busbarType), removed, added, failed
+	SyncAutomation doc, AutomationCount(transformerType), removed, added, failed
 
 	SetLayoutTag doc, "Transformer", transformerType
 	SetLayoutTag doc, "Busbar", busbarType
 
 	contentTag.WriteEx DocumentText(doc)
 
-	MsgBox ApplyReport(transformerType, busbarType, removed, missing), vbInformation, "Apply"
+	MsgBox ApplyReport(transformerType, busbarType, removed, added, failed), vbInformation, "Apply"
 
 End Sub
 
 Const CONFIG_DATA      = "xatm_config_data"
+Const HELPER_FOLDER    = "PropertiesHelper"
 Const AUTOMATION_PATH  = "/xatm-config/folder[@name='Automation']"
 Const LAYOUT_PATH      = "/xatm-config/folder[@name='Automation']/folder[@name='Layout']"
 Const TRANSFORMER_PATH = "/xatm-config/folder[@name='Substation']/folder[@name='Transformer']"
 Const BUSBAR_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Busbar']"
 
-Const NODE_TEXT = 3
+Const BTC_CLASS         = "xatm_BTC"
+Const TRANSFORMER_CLASS = "xatm_Transformer"
+
+Const NODE_ELEMENT = 1
+Const NODE_TEXT    = 3
+
+
+' Line break of the document being applied, so a node added to it breaks
+' its lines the same way the rest of the document already does.
+Dim gNewLine
 
 
 ' ------------------------------------------------------------
 '  LAYOUTS
 ' ------------------------------------------------------------
 
-' Every Id the transformer layout expects to find in the Transformer
-' folder - the transformers themselves and their secondary breakers.
-Function TransformerIds(layoutType)
+' Every device the transformer layout expects to find in the Transformer
+' folder, as "class:Id" - the transformers themselves and their
+' secondary breakers.
+Function TransformerDevices(layoutType)
 
 	Select Case UCase(layoutType)
 
 		Case "4TR4LV"
-			TransformerIds = Array(100, 200, 300, 400, 120, 220, 320, 420)
+			TransformerDevices = Array("xatm_Transformer:100", "xatm_Transformer:200", _
+			                           "xatm_Transformer:300", "xatm_Transformer:400", _
+			                           "xatm_Breaker:120", "xatm_Breaker:220", _
+			                           "xatm_Breaker:320", "xatm_Breaker:420")
 
 		Case "2TR2LV"
-			TransformerIds = Array(100, 200, 120, 220)
+			TransformerDevices = Array("xatm_Transformer:100", "xatm_Transformer:200", _
+			                           "xatm_Breaker:120", "xatm_Breaker:220")
 
 		Case Else
-			TransformerIds = Array()
+			TransformerDevices = Array()
 
 	End Select
 
 End Function
 
 
-' Every Id the busbar layout expects to find in the Busbar folder.
-Function BusbarIds(layoutType)
+' Every device the busbar layout expects to find in the Busbar folder,
+' as "class:Id" - the bus-tie and bus-section breakers.
+Function BusbarDevices(layoutType)
 
 	Select Case UCase(layoutType)
 
 		Case "6BB6TIERING"
-			BusbarIds = Array(700, 710, 720, 730, 740, 900)
+			BusbarDevices = Array("xatm_Breaker:700", "xatm_Breaker:710", _
+			                      "xatm_Breaker:720", "xatm_Breaker:730", _
+			                      "xatm_Breaker:740", "xatm_Breaker:900")
 
 		Case "2BB1TIE"
-			BusbarIds = Array(700)
+			BusbarDevices = Array("xatm_Breaker:700")
 
 		Case Else
-			BusbarIds = Array()
+			BusbarDevices = Array()
 
 	End Select
+
+End Function
+
+
+' The two letters a device name starts with. A device the layout adds is
+' named prefix & Id, which is unique because the Id is.
+Function TypePrefix(className)
+
+	Select Case LCase(className)
+
+		Case "xatm_breaker"      : TypePrefix = "DJ"
+		Case "xatm_transformer"  : TypePrefix = "TR"
+
+		' A class with no tag of its own falls back to the first two
+		' letters of its name - XATM_Feeder is FE.
+		Case Else                : TypePrefix = UCase(Left(Replace(LCase(className), "xatm_", ""), 2))
+
+	End Select
+
+End Function
+
+
+' Transformer n is Id n00, the way the layouts hand the Ids out, so a
+' BTC the layout adds knows which transformer it drives.
+Function AutomationTransformerId(n)
+
+	AutomationTransformerId = n * 100
 
 End Function
 
@@ -839,23 +887,40 @@ End Function
 '  DOCUMENT
 ' ------------------------------------------------------------
 
-' Drops every object in the folder whose Id the layout does not name,
-' and reports the Ids the layout names that the document does not have.
-Sub PruneById(doc, folderPath, ids, removed, missing)
+' Brings a device folder to the layout. An object whose Id the layout
+' does not name is dropped, an Id it names that the folder does not have
+' is created, and an object that stays is left alone - it keeps its
+' name, its Id and everything configured on it.
+Sub SyncFolder(doc, folderPath, devices, removed, added, failed)
+
+	Dim folder
+	Set folder = doc.selectSingleNode(folderPath)
+
+	If folder Is Nothing Then
+		failed = failed & vbCrLf & "  the " & FolderLabel(folderPath) & _
+		         " folder is not in the document"
+		Exit Sub
+	End If
+
+	' --- Drop what the layout does not name ---------------------------
 
 	Dim wanted
 	Set wanted = CreateObject("Scripting.Dictionary")
 
-	Dim i
-	For i = 0 To UBound(ids)
-		wanted.Add CStr(ids(i)), False
+	Dim i, parts
+	For i = 0 To UBound(devices)
+		parts = Split(devices(i), ":")
+		wanted(Trim(parts(1))) = Trim(parts(0))
 	Next
+
+	Dim present
+	Set present = CreateObject("Scripting.Dictionary")
 
 	Dim doomed
 	Set doomed = CreateObject("Scripting.Dictionary")
 
 	Dim nodes, node, id, n
-	Set nodes = doc.selectNodes(folderPath & "/object")
+	Set nodes = folder.selectNodes("object")
 
 	For n = 0 To nodes.length - 1
 
@@ -863,7 +928,7 @@ Sub PruneById(doc, folderPath, ids, removed, missing)
 		id = PropertyValue(node, "Id")
 
 		If wanted.Exists(id) Then
-			wanted(id) = True
+			present(id) = True
 		Else
 			removed = removed & vbCrLf & "  " & node.getAttribute("name") & _
 			          " (Id " & id & ") from " & FolderLabel(folderPath)
@@ -879,19 +944,49 @@ Sub PruneById(doc, folderPath, ids, removed, missing)
 		DropNode node
 	Next
 
-	Dim key
-	For Each key In wanted.Keys
-		If Not wanted(key) Then
-			missing = missing & vbCrLf & "  Id " & key & " in " & FolderLabel(folderPath)
+	' --- Create what the layout names and the folder does not have ----
+
+	Dim className, name
+	For i = 0 To UBound(devices)
+
+		parts     = Split(devices(i), ":")
+		className = Trim(parts(0))
+		id        = Trim(parts(1))
+
+		If Not present.Exists(id) Then
+
+			name = TypePrefix(className) & id
+
+			Set node = NewObject(folder, className, name, Array("Id", id))
+
+			If node Is Nothing Then
+				failed = failed & vbCrLf & "  " & name & " (Id " & id & ") in " & _
+				         FolderLabel(folderPath) & " - no manifest for " & className
+			Else
+				added = added & vbCrLf & "  " & name & " (Id " & id & ") in " & _
+				        FolderLabel(folderPath)
+			End If
+
 		End If
+
 	Next
 
 End Sub
 
 
-' The BTC instances carry no Id property, so the layout keeps
-' BTC1..BTCn by the number in the name and drops the rest.
-Sub PruneAutomation(doc, keepCount, removed, missing)
+' Brings the Automation folder to the layout. The BTC instances carry no
+' Id property, so they go by the number in the name - BTC1..BTCn stay,
+' the rest are dropped, and a missing one is created bound to the
+' transformer of the same number.
+Sub SyncAutomation(doc, keepCount, removed, added, failed)
+
+	Dim folder
+	Set folder = doc.selectSingleNode(AUTOMATION_PATH)
+
+	If folder Is Nothing Then
+		failed = failed & vbCrLf & "  the Automation folder is not in the document"
+		Exit Sub
+	End If
 
 	Dim kept
 	Set kept = CreateObject("Scripting.Dictionary")
@@ -900,7 +995,7 @@ Sub PruneAutomation(doc, keepCount, removed, missing)
 	Set doomed = CreateObject("Scripting.Dictionary")
 
 	Dim nodes, node, n, num
-	Set nodes = doc.selectNodes(AUTOMATION_PATH & "/object[@type='xatm_BTC']")
+	Set nodes = folder.selectNodes("object[@type='" & BTC_CLASS & "']")
 
 	For n = 0 To nodes.length - 1
 
@@ -921,13 +1016,273 @@ Sub PruneAutomation(doc, keepCount, removed, missing)
 		DropNode node
 	Next
 
+	Dim name, path, overrides
 	For n = 1 To keepCount
+
 		If Not kept.Exists(n) Then
-			missing = missing & vbCrLf & "  BTC" & n & " in Automation"
+
+			name = "BTC" & n
+
+			' The transformer folder is brought to the layout first, so a
+			' transformer this BTC drives is already there to bind to.
+			path = TransformerPath(doc, AutomationTransformerId(n))
+
+			If path = "" Then
+				overrides = Array()
+			Else
+				overrides = Array("Transformer", path)
+			End If
+
+			Set node = NewObject(folder, BTC_CLASS, name, overrides)
+
+			If node Is Nothing Then
+				failed = failed & vbCrLf & "  " & name & " in Automation - no manifest for " & BTC_CLASS
+			ElseIf path = "" Then
+				added = added & vbCrLf & "  " & name & " in Automation, with no transformer to bind to"
+			Else
+				added = added & vbCrLf & "  " & name & " in Automation, bound to " & path
+			End If
+
 		End If
+
 	Next
 
 End Sub
+
+
+' The path of the transformer carrying an Id, "" when the document has
+' no such transformer.
+Function TransformerPath(doc, id)
+
+	TransformerPath = ""
+
+	Dim nodes, node, n
+	Set nodes = doc.selectNodes(TRANSFORMER_PATH & "/object[@type='" & TRANSFORMER_CLASS & "']")
+
+	For n = 0 To nodes.length - 1
+
+		Set node = nodes.item(n)
+
+		If PropertyValue(node, "Id") = CStr(id) Then
+			TransformerPath = node.getAttribute("path")
+			Exit Function
+		End If
+
+	Next
+
+End Function
+
+
+' ------------------------------------------------------------
+'  NEW OBJECTS
+' ------------------------------------------------------------
+
+' Creates an object in a folder, with the properties its class declares
+' at the initial values the manifest gives them - the same manifest the
+' export reads, so a created object is shaped like an exported one.
+' Nothing when the class has no manifest, which is the only way this
+' fails.
+'
+' Overrides is a flat name, value, name, value list of the properties
+' the caller sets itself, the Id among them.
+Function NewObject(folder, className, objectName, overrides)
+
+	Set NewObject = Nothing
+
+	Dim bag
+	Set bag = ManifestOf(className)
+	If bag Is Nothing Then Exit Function
+
+	Dim doc
+	Set doc = folder.ownerDocument
+
+	Dim indent
+	indent = ChildIndent(folder)
+
+	Dim node
+	Set node = doc.createElement("object")
+
+	node.setAttribute "name", objectName
+	node.setAttribute "type", className
+	node.setAttribute "path", ObjectPath(folder, objectName)
+
+	Dim key, p, property, value
+	For Each key In bag.Keys
+
+		Set p = bag(key)
+
+		Set property = doc.createElement("property")
+		property.setAttribute "name", p.Name
+		property.setAttribute "type", p.DataType
+
+		value = Override(overrides, p.Name)
+
+		' A link is an association the operator makes, never an initial
+		' value, so it is left unset unless the caller names it.
+		If IsEmpty(value) And Not IsLinkType(p.DataType) Then value = p.InitialValue
+
+		If Not (IsEmpty(value) Or IsNull(value)) Then
+			property.setAttribute "value", CStr(value)
+		End If
+
+		node.appendChild doc.createTextNode(gNewLine & indent & vbTab)
+		node.appendChild property
+
+	Next
+
+	node.appendChild doc.createTextNode(gNewLine & indent)
+
+	Place folder, node, LastOfType(folder, className), indent
+
+	Set NewObject = node
+
+End Function
+
+
+' The value an override list gives for a property, Empty when it names
+' none.
+Function Override(overrides, propertyName)
+
+	Override = Empty
+
+	Dim i
+	For i = 0 To UBound(overrides) - 1 Step 2
+		If LCase(overrides(i)) = LCase(propertyName) Then
+			Override = overrides(i + 1)
+			Exit Function
+		End If
+	Next
+
+End Function
+
+
+' Puts an element in a folder after the last object of its own class, so
+' the folder stays grouped by type, with the line break and indentation
+' in front of it that ExportXml would have written.
+Sub Place(folder, node, after, indent)
+
+	Dim doc
+	Set doc = folder.ownerDocument
+
+	Dim anchor
+	Set anchor = Nothing
+
+	If after Is Nothing Then
+		If Not folder.lastChild Is Nothing Then
+			If folder.lastChild.nodeType = NODE_TEXT Then Set anchor = folder.lastChild
+		End If
+	Else
+		If Not after.nextSibling Is Nothing Then Set anchor = after.nextSibling
+	End If
+
+	If anchor Is Nothing Then
+
+		' Nothing to insert in front of - the folder was empty or ends on
+		' an element, so the closing tag needs a line of its own too.
+		folder.appendChild doc.createTextNode(gNewLine & indent)
+		folder.appendChild node
+		folder.appendChild doc.createTextNode(gNewLine & Left(indent, Len(indent) - 1))
+
+	Else
+
+		' Anchor is the whitespace in front of the next element, or in
+		' front of the closing tag when there is no next element.
+		folder.insertBefore doc.createTextNode(gNewLine & indent), anchor
+		folder.insertBefore node, anchor
+
+	End If
+
+End Sub
+
+
+' The last object of a class in a folder, Nothing when it holds none.
+Function LastOfType(folder, className)
+
+	Set LastOfType = Nothing
+
+	Dim nodes
+	Set nodes = folder.selectNodes("object[@type='" & className & "']")
+
+	If nodes.length > 0 Then
+		Set LastOfType = nodes.item(nodes.length - 1)
+	End If
+
+End Function
+
+
+' The indentation ExportXml gives a child of this folder - one tab per
+' element the child sits inside.
+Function ChildIndent(folder)
+
+	Dim depth, n
+	depth = 0
+
+	Set n = folder
+
+	Do While Not n Is Nothing
+		If n.nodeType <> NODE_ELEMENT Then Exit Do
+		depth = depth + 1
+		Set n = n.parentNode
+	Loop
+
+	ChildIndent = String(depth, vbTab)
+
+End Function
+
+
+' The E3 path an object in this folder would have - the root the
+' document was exported from, then the folders down to the object.
+Function ObjectPath(folder, objectName)
+
+	Dim path
+	path = objectName
+
+	Dim n
+	Set n = folder
+
+	Do While n.nodeType = NODE_ELEMENT And n.nodeName = "folder"
+		path = n.getAttribute("name") & "." & path
+		Set n = n.parentNode
+	Loop
+
+	ObjectPath = folder.ownerDocument.documentElement.getAttribute("root") & "." & path
+
+End Function
+
+
+' The manifest declared for a class, or Nothing when the class has
+' none - the same lookup the export does.
+Function ManifestOf(className)
+
+	Set ManifestOf = Nothing
+
+	On Error Resume Next
+	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
+	On Error Goto 0
+
+End Function
+
+
+' A property whose configuration is an association, not a value.
+Function IsLinkType(dataType)
+
+	IsLinkType = (LCase(dataType) = "iotag")
+
+End Function
+
+
+' The line break the document already uses. MSXML normalises CRLF to LF
+' when it loads a string, and a document that mixes the two reads badly
+' everywhere it is opened afterwards.
+Function DocumentNewLine(doc)
+
+	If InStr(doc.xml, vbCrLf) > 0 Then
+		DocumentNewLine = vbCrLf
+	Else
+		DocumentNewLine = vbLf
+	End If
+
+End Function
 
 
 ' Records the applied selection on the Layout tags of the document.
@@ -952,7 +1307,7 @@ Sub DropNode(node)
 
 	If Not ws Is Nothing Then
 		If ws.nodeType = NODE_TEXT Then
-			If Trim(ws.text) = "" Then
+			If IsWhitespace(ws.text) Then
 				ws.parentNode.removeChild ws
 			End If
 		End If
@@ -961,6 +1316,20 @@ Sub DropNode(node)
 	node.parentNode.removeChild node
 
 End Sub
+
+
+' True when a text node holds nothing but layout. Trim only takes spaces
+' off, and what separates two elements is tabs and line breaks.
+Function IsWhitespace(text)
+
+	Dim s
+	s = Replace(text, vbTab, "")
+	s = Replace(s, vbCr, "")
+	s = Replace(s, vbLf, "")
+
+	IsWhitespace = (Trim(s) = "")
+
+End Function
 
 
 ' The value attribute of a named property - "" when the property is
@@ -1050,7 +1419,7 @@ End Function
 '  REPORT
 ' ------------------------------------------------------------
 
-Function ApplyReport(transformerType, busbarType, removed, missing)
+Function ApplyReport(transformerType, busbarType, removed, added, failed)
 
 	Dim text
 	text = "Applied " & transformerType & " + " & busbarType & "."
@@ -1059,12 +1428,16 @@ Function ApplyReport(transformerType, busbarType, removed, missing)
 		text = text & vbCrLf & vbCrLf & "Removed from the document:" & removed
 	End If
 
-	If missing <> "" Then
-		text = text & vbCrLf & vbCrLf & _
-		       "Expected by the layout and not in the document:" & missing
+	If added <> "" Then
+		text = text & vbCrLf & vbCrLf & "Added to the document:" & added
 	End If
 
-	If removed = "" And missing = "" Then
+	If failed <> "" Then
+		text = text & vbCrLf & vbCrLf & _
+		       "Expected by the layout and could not be added:" & failed
+	End If
+
+	If removed = "" And added = "" And failed = "" Then
 		text = text & vbCrLf & vbCrLf & "The document already matched the layout."
 	End If
 
@@ -1198,7 +1571,7 @@ Sub AddArrayContentToList()
     Dim arrSize
     arrSize = UBound(contentArr) + 1
 
-    ' If ListCount >= arrSize, buffer is full and shifted — full redraw needed
+    ' If ListCount >= arrSize, buffer is full and shifted ï¿½ full redraw needed
     If ListCount >= arrSize Then
         Clear()
     End If
