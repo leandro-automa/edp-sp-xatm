@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Thu Jul 30 17:41:13 2026
+Fri Jul 31 17:15:45 2026
 -----------------------
 
 <xatm_config_data.PropertiesHelper.xatm_BTC:xatm_BTC_OnStartRunning()>
@@ -336,7 +336,6 @@ End Sub
 <xatm_config_data.TagInterno1:TagInterno1_OnStartRunning()>
 Sub TagInterno1_OnStartRunning()
 
-
 Sub Foo()
 End Sub
 
@@ -457,7 +456,6 @@ Function ExportFolder(folder, indent)
 
 End Function
 
-
 ' One object, in the order its properties are declared in the manifest.
 Function ExportObject(obj, bag, indent)
 
@@ -490,7 +488,6 @@ Function ExportObject(obj, bag, indent)
 	ExportObject = xml
 
 End Function
-
 
 ' The manifest declared for a class, or Nothing when the class has
 ' none - which is how a folder tells itself apart from an object.
@@ -604,19 +601,510 @@ Sub Foo()
 	
 End Sub
 
-<xatm_config_screens.Config.CommandButton1:CommandButton1_Click()>
-Sub CommandButton1_Click()
-	Set o = Application.GetObject("xatm_config_data.PropertiesHelper.xatm_Breaker")	
+<xatm_config_screens.Config:Config_OnPreShow(Arg)>
+Sub Config_OnPreShow(Arg)
 	
-	For Each key In o.value
+	' ================================
+	' LAYOUT
+	' ================================
+	
+	Dim imageList, i
+	
+	' ---- TRANSFORMER ----
+	Dim transformerType
+	transformerType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value
+	
+	
+	imageList = Split(Item("SelectLayoutTransformer").ImageList, ",")
+	
+	For i = 0 To UBound(imageList)
 		
-		msgbox (o.value(key).HelpEn),,key
-		exit for
+		If Trim(imageList(i)) = transformerType Then
+			
+			Item("SelectLayoutTransformer").Index = Trim(imageList(i))
+			Exit For
+			
+		End If
 		
 	Next
+	
+	' ---- BUSBAR ----
+	Dim busbarType
+	busbarType = Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
+	
+	imageList = Split(Item("SelectLayoutBusbar").ImageList, ",")
+	
+	For i = 0 To UBound(imageList)
+		
+		If Trim(imageList(i)) = busbarType Then
+			
+			Item("SelectLayoutBusbar").Index = Trim(imageList(i))
+			Exit For
+			
+		End If
+		
+	Next
+		
+End Sub
 
+<xatm_config_screens.Config.btnApply:btnApply_Click()>
+Sub btnApply_Click()
+
+	Dim transformerType, busbarType
+	transformerType = SelectedLayout("SelectLayoutTransformer")
+	busbarType      = SelectedLayout("SelectLayoutBusbar")
+
+	' If Not IsTransformerLayout(transformerType) Then
+	' 	MsgBox "'" & transformerType & "' is not a transformer layout this screen can apply.", _
+	' 	       vbExclamation, "Apply"
+	' 	Exit Sub
+	' End If
+
+	' If Not IsBusbarLayout(busbarType) Then
+	' 	MsgBox "'" & busbarType & "' is not a busbar layout this screen can apply.", _
+	' 	       vbExclamation, "Apply"
+	' 	Exit Sub
+	' End If
+
+	Dim contentTag
+	Set contentTag = Nothing
+	On Error Resume Next
+	Set contentTag = Application.GetObject(CONFIG_DATA).Item("XML").Item("XMLContent")
+	On Error Goto 0
+
+	If contentTag Is Nothing Then
+		MsgBox "No 'XMLContent' tag was found under '" & CONFIG_DATA & ".XML'.", _
+		       vbExclamation, "Apply"
+		Exit Sub
+	End If
+
+	If IsEmpty(contentTag.Value) Or CStr(contentTag.Value) = "" Then
+		MsgBox "'XMLContent' is empty - run the XML export before applying a layout.", _
+		       vbExclamation, "Apply"
+		Exit Sub
+	End If
+
+	Dim doc
+	Set doc = NewDomDocument()
+
+	If Not doc.loadXML(StripBom(CStr(contentTag.Value))) Then
+		MsgBox "'XMLContent' does not parse as XML:" & vbCrLf & vbCrLf & _
+		       doc.parseError.reason, vbCritical, "Apply"
+		Exit Sub
+	End If
+
+	Dim removed, missing
+	removed = ""
+	missing = ""
+
+	PruneById doc, TRANSFORMER_PATH, TransformerIds(transformerType), removed, missing
+	PruneById doc, BUSBAR_PATH, BusbarIds(busbarType), removed, missing
+	PruneAutomation doc, AutomationCount(transformerType), removed, missing
+
+	SetLayoutTag doc, "Transformer", transformerType
+	SetLayoutTag doc, "Busbar", busbarType
+
+	contentTag.WriteEx DocumentText(doc)
+
+	MsgBox ApplyReport(transformerType, busbarType, removed, missing), vbInformation, "Apply"
 
 End Sub
+
+Const CONFIG_DATA      = "xatm_config_data"
+Const AUTOMATION_PATH  = "/xatm-config/folder[@name='Automation']"
+Const LAYOUT_PATH      = "/xatm-config/folder[@name='Automation']/folder[@name='Layout']"
+Const TRANSFORMER_PATH = "/xatm-config/folder[@name='Substation']/folder[@name='Transformer']"
+Const BUSBAR_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Busbar']"
+
+Const NODE_TEXT = 3
+
+
+' ------------------------------------------------------------
+'  LAYOUTS
+' ------------------------------------------------------------
+
+' Every Id the transformer layout expects to find in the Transformer
+' folder - the transformers themselves and their secondary breakers.
+Function TransformerIds(layoutType)
+
+	Select Case UCase(layoutType)
+
+		Case "4TR4LV"
+			TransformerIds = Array(100, 200, 300, 400, 120, 220, 320, 420)
+
+		Case "2TR2LV"
+			TransformerIds = Array(100, 200, 120, 220)
+
+		Case Else
+			TransformerIds = Array()
+
+	End Select
+
+End Function
+
+
+' Every Id the busbar layout expects to find in the Busbar folder.
+Function BusbarIds(layoutType)
+
+	Select Case UCase(layoutType)
+
+		Case "6BB6TIERING"
+			BusbarIds = Array(700, 710, 720, 730, 740, 900)
+
+		Case "2BB1TIE"
+			BusbarIds = Array(700)
+
+		Case Else
+			BusbarIds = Array()
+
+	End Select
+
+End Function
+
+
+' One BTC automation per transformer, so the transformer layout sets
+' the count.
+Function AutomationCount(layoutType)
+
+	Select Case UCase(layoutType)
+		Case "4TR4LV" : AutomationCount = 4
+		Case "2TR2LV" : AutomationCount = 2
+		Case Else     : AutomationCount = 0
+	End Select
+
+End Function
+
+
+Function IsTransformerLayout(layoutType)
+
+	Select Case UCase(layoutType)
+		Case "4TR4LV", "2TR2LV" : IsTransformerLayout = True
+		Case Else               : IsTransformerLayout = False
+	End Select
+
+End Function
+
+
+Function IsBusbarLayout(layoutType)
+
+	Select Case UCase(layoutType)
+		Case "6BB6TIERING", "2BB1TIE" : IsBusbarLayout = True
+		Case Else                     : IsBusbarLayout = False
+	End Select
+
+End Function
+
+
+' The layout a selector is showing. The names live in the control's
+' ImageList, so Index resolves through it - whether Index carries the
+' position in the list or the name itself, which is what OnPreShow
+' writes into it.
+Function SelectedLayout(controlName)
+
+	SelectedLayout = ""
+
+	Dim ctl
+	Set ctl = Nothing
+	On Error Resume Next
+	Set ctl = Screen.Item(controlName)
+	On Error Goto 0
+
+	If ctl Is Nothing Then Exit Function
+
+	Dim names
+	names = Split(ctl.ImageList, ",")
+
+	Dim idx
+	idx = ctl.Index
+
+	If IsNumeric(idx) Then
+		If CLng(idx) >= 0 And CLng(idx) <= UBound(names) Then
+			SelectedLayout = Trim(names(CLng(idx)))
+			Exit Function
+		End If
+	End If
+
+	Dim i
+	For i = 0 To UBound(names)
+		If Trim(names(i)) = Trim(CStr(idx)) Then
+			SelectedLayout = Trim(names(i))
+			Exit Function
+		End If
+	Next
+
+End Function
+
+
+' ------------------------------------------------------------
+'  DOCUMENT
+' ------------------------------------------------------------
+
+' Drops every object in the folder whose Id the layout does not name,
+' and reports the Ids the layout names that the document does not have.
+Sub PruneById(doc, folderPath, ids, removed, missing)
+
+	Dim wanted
+	Set wanted = CreateObject("Scripting.Dictionary")
+
+	Dim i
+	For i = 0 To UBound(ids)
+		wanted.Add CStr(ids(i)), False
+	Next
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim nodes, node, id, n
+	Set nodes = doc.selectNodes(folderPath & "/object")
+
+	For n = 0 To nodes.length - 1
+
+		Set node = nodes.item(n)
+		id = PropertyValue(node, "Id")
+
+		If wanted.Exists(id) Then
+			wanted(id) = True
+		Else
+			removed = removed & vbCrLf & "  " & node.getAttribute("name") & _
+			          " (Id " & id & ") from " & FolderLabel(folderPath)
+			doomed.Add n, node
+		End If
+
+	Next
+
+	' Removed in a second pass - the node list is not walked while the
+	' tree under it is being changed.
+	For Each n In doomed.Keys
+		Set node = doomed(n)
+		DropNode node
+	Next
+
+	Dim key
+	For Each key In wanted.Keys
+		If Not wanted(key) Then
+			missing = missing & vbCrLf & "  Id " & key & " in " & FolderLabel(folderPath)
+		End If
+	Next
+
+End Sub
+
+
+' The BTC instances carry no Id property, so the layout keeps
+' BTC1..BTCn by the number in the name and drops the rest.
+Sub PruneAutomation(doc, keepCount, removed, missing)
+
+	Dim kept
+	Set kept = CreateObject("Scripting.Dictionary")
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim nodes, node, n, num
+	Set nodes = doc.selectNodes(AUTOMATION_PATH & "/object[@type='xatm_BTC']")
+
+	For n = 0 To nodes.length - 1
+
+		Set node = nodes.item(n)
+		num = TrailingNumber(node.getAttribute("name"))
+
+		If num >= 1 And num <= keepCount Then
+			kept(num) = True
+		Else
+			removed = removed & vbCrLf & "  " & node.getAttribute("name") & " from Automation"
+			doomed.Add n, node
+		End If
+
+	Next
+
+	For Each n In doomed.Keys
+		Set node = doomed(n)
+		DropNode node
+	Next
+
+	For n = 1 To keepCount
+		If Not kept.Exists(n) Then
+			missing = missing & vbCrLf & "  BTC" & n & " in Automation"
+		End If
+	Next
+
+End Sub
+
+
+' Records the applied selection on the Layout tags of the document.
+Sub SetLayoutTag(doc, tagName, value)
+
+	Dim node
+	Set node = doc.selectSingleNode(LAYOUT_PATH & "/tag[@name='" & tagName & "']")
+
+	If node Is Nothing Then Exit Sub
+
+	node.setAttribute "value", value
+
+End Sub
+
+
+' Removes an element together with the indentation in front of it, so
+' pruning leaves no blank lines behind.
+Sub DropNode(node)
+
+	Dim ws
+	Set ws = node.previousSibling
+
+	If Not ws Is Nothing Then
+		If ws.nodeType = NODE_TEXT Then
+			If Trim(ws.text) = "" Then
+				ws.parentNode.removeChild ws
+			End If
+		End If
+	End If
+
+	node.parentNode.removeChild node
+
+End Sub
+
+
+' The value attribute of a named property - "" when the property is
+' absent or unset, which never matches a layout Id.
+Function PropertyValue(objectNode, propertyName)
+
+	PropertyValue = ""
+
+	Dim p
+	Set p = objectNode.selectSingleNode("property[@name='" & propertyName & "']")
+	If p Is Nothing Then Exit Function
+
+	Dim a
+	Set a = p.getAttributeNode("value")
+	If a Is Nothing Then Exit Function
+
+	PropertyValue = a.value
+
+End Function
+
+
+' The document as text, headed the way ExportXml writes it.
+'
+' MSXML serialises a string-loaded document with a bare
+' <?xml version="1.0"?> and no line break after it - it regenerates the
+' declaration from its own encoding and ignores whatever the
+' declaration node says, so the heading is restored here rather than in
+' the tree.
+Function DocumentText(doc)
+
+	Dim text
+	text = doc.xml
+
+	If Left(text, 5) = "<?xml" Then
+		text = Mid(text, InStr(text, "?>") + 2)
+	End If
+
+	Do While Left(text, 1) = vbCr Or Left(text, 1) = vbLf
+		text = Mid(text, 2)
+	Loop
+
+	DocumentText = "<?xml version=""1.0"" encoding=""utf-8""?>" & vbCrLf & text
+
+End Function
+
+
+' A byte-order mark survives a round trip through a utf-8 file and
+' makes loadXML fail on what looks like perfectly good XML.
+Function StripBom(text)
+
+	StripBom = text
+
+	If Len(text) = 0 Then Exit Function
+
+	If AscW(Left(text, 1)) = &HFEFF Then
+		StripBom = Mid(text, 2)
+	End If
+
+End Function
+
+
+' MSXML 6 where the machine has it, the version-independent progid
+' otherwise.
+Function NewDomDocument()
+
+	Set NewDomDocument = Nothing
+
+	On Error Resume Next
+	Set NewDomDocument = CreateObject("MSXML2.DOMDocument.6.0")
+	On Error Goto 0
+
+	If NewDomDocument Is Nothing Then
+		Set NewDomDocument = CreateObject("MSXML2.DOMDocument")
+	End If
+
+	NewDomDocument.async = False
+	NewDomDocument.preserveWhiteSpace = True
+
+	On Error Resume Next
+	NewDomDocument.setProperty "SelectionLanguage", "XPath"
+	On Error Goto 0
+
+End Function
+
+
+' ------------------------------------------------------------
+'  REPORT
+' ------------------------------------------------------------
+
+Function ApplyReport(transformerType, busbarType, removed, missing)
+
+	Dim text
+	text = "Applied " & transformerType & " + " & busbarType & "."
+
+	If removed <> "" Then
+		text = text & vbCrLf & vbCrLf & "Removed from the document:" & removed
+	End If
+
+	If missing <> "" Then
+		text = text & vbCrLf & vbCrLf & _
+		       "Expected by the layout and not in the document:" & missing
+	End If
+
+	If removed = "" And missing = "" Then
+		text = text & vbCrLf & vbCrLf & "The document already matched the layout."
+	End If
+
+	ApplyReport = text
+
+End Function
+
+
+' Last folder name of an XPath, for the operator-facing report.
+Function FolderLabel(folderPath)
+
+	Dim parts
+	parts = Split(folderPath, "@name='")
+
+	FolderLabel = Split(parts(UBound(parts)), "'")(0)
+
+End Function
+
+
+' Trailing digits of a name - BTC12 is 12, a name without them is 0.
+Function TrailingNumber(name)
+
+	Dim i, digits
+	digits = ""
+
+	For i = Len(name) To 1 Step -1
+		If IsNumeric(Mid(name, i, 1)) Then
+			digits = Mid(name, i, 1) & digits
+		Else
+			Exit For
+		End If
+	Next
+
+	If digits = "" Then
+		TrailingNumber = 0
+	Else
+		TrailingNumber = CLng(digits)
+	End If
+
+End Function
 
 <xatm_config_screens.Footer.ListBox:ListBox_MouseUp(Button, Shift, X, Y)>
 Sub ListBox_MouseUp(Button, Shift, X, Y)
