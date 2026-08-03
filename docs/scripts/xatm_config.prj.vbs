@@ -342,9 +342,11 @@ Sub SaveXML_OnChangedValue()
 	Dim filePath
 	filePath = Parent.Item("XMLFilePath").Value
 	
-	SaveXml xmlContent, filePath
+	If SaveXml(xmlContent, filePath) Then
 	
-	WriteLog "XML file saved!"
+		WriteLog "XML file saved to " & filePath
+		
+	End If
 	
 End Sub
 
