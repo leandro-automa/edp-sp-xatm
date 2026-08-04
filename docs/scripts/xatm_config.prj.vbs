@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Tue Aug  4 14:02:05 2026
+Tue Aug  4 14:43:59 2026
 -----------------------
 
 <xatm_config_data.PropertiesHelper.xatm_BTC:xatm_BTC_OnStartRunning()>
@@ -759,18 +759,15 @@ Sub btnApply_Click()
 	transformerType = SelectedLayout("SelectLayoutTransformer")
 	busbarType      = SelectedLayout("SelectLayoutBusbar")
 
-	' If Not IsTransformerLayout(transformerType) Then
-	' 	MsgBox "'" & transformerType & "' is not a transformer layout this screen can apply.", _
-	' 	       vbExclamation, "Apply"
-	' 	Exit Sub
-	' End If
+	If Not IsSupportedCombination(transformerType, busbarType) Then
 
-	' If Not IsBusbarLayout(busbarType) Then
-	' 	MsgBox "'" & busbarType & "' is not a busbar layout this screen can apply.", _
-	' 	       vbExclamation, "Apply"
-	' 	Exit Sub
-	' End If
+		If MsgBox(UnsupportedCombinationText(transformerType, busbarType) & vbCrLf & vbCrLf & _
+		          "Apply it anyway?", vbExclamation + vbYesNo + vbDefaultButton2, "Apply") <> vbYes Then
+			Exit Sub
+		End If
 
+	End If
+	
 	Dim contentTag
 	Set contentTag = Nothing
 	On Error Resume Next
@@ -944,6 +941,42 @@ Function IsBusbarLayout(layoutType)
 		Case "6BB6TIERING", "2BB1TIE" : IsBusbarLayout = True
 		Case Else                     : IsBusbarLayout = False
 	End Select
+
+End Function
+
+
+
+
+' The two pairings the automation logic in xatm_lib has step sequences
+' for. A device tree can be built for any other pairing, but no
+' automation will run on it.
+Function IsSupportedCombination(transformerType, busbarType)
+
+	Select Case UCase(transformerType) & "_" & UCase(busbarType)
+		Case "4TR4LV_6BB6TIERING", "2TR2LV_2BB1TIE" : IsSupportedCombination = True
+		Case Else                                   : IsSupportedCombination = False
+	End Select
+
+End Function
+
+
+' What is wrong with a combination, in the operator's terms.
+Function UnsupportedCombinationText(transformerType, busbarType)
+
+	Dim text
+
+	If Not IsTransformerLayout(transformerType) Then
+		text = "'" & transformerType & "' is not a transformer layout this screen can apply."
+	ElseIf Not IsBusbarLayout(busbarType) Then
+		text = "'" & busbarType & "' is not a busbar layout this screen can apply."
+	Else
+		text = transformerType & " + " & busbarType & " is not a combination the automation logic implements."
+	End If
+
+	UnsupportedCombinationText = text & vbCrLf & vbCrLf & _
+	                             "Only 4TR4LV + 6BB6TIERING and 2TR2LV + 2BB1TIE have step sequences. " & _
+	                             "Any other pairing builds the device tree, but every automation on it " & _
+	                             "refuses to run."
 
 End Function
 
