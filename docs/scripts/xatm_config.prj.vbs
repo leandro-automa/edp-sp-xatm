@@ -811,6 +811,13 @@ Sub btnApply_Click()
 
 	contentTag.WriteEx DocumentText(doc)
 
+	' The document changed, so the tree that shows it is rebuilt - from the
+	' document in hand, not parsed back out of the tag it was just written to.
+	Dim tree
+	Set tree = TreeControl(TREE_CONTROL)
+
+	If Not tree Is Nothing Then PopulateTree tree, doc
+
 	MsgBox ApplyReport(transformerType, busbarType, removed, added, failed), vbInformation, "Apply"
 
 End Sub
@@ -827,6 +834,11 @@ Const TRANSFORMER_CLASS = "xatm_Transformer"
 
 Const NODE_ELEMENT = 1
 Const NODE_TEXT    = 3
+
+' Name of the tree control on the screen, and the Add relationship that
+' hangs a node under another one (tvwChild).
+Const TREE_CONTROL = "TreeView"
+Const TVW_CHILD    = 4
 
 
 ' Line break of the document being applied, so a node added to it breaks
@@ -1554,6 +1566,125 @@ End Function
 
 
 ' ------------------------------------------------------------
+'  TREE
+' ------------------------------------------------------------
+
+' Fills the tree from the document: one node per folder and per object.
+' The two folders at the top of the document - Automation and Substation -
+' become the two roots. A property or a tag configures a node, it is not
+' a node of its own.
+Sub PopulateTree(tree, doc)
+
+	tree.Nodes.Clear
+
+	If doc.documentElement Is Nothing Then Exit Sub
+
+	Dim child
+	For Each child In doc.documentElement.childNodes
+		If IsBranch(child) Then AddBranch tree, child, 0
+	Next
+
+End Sub
+
+
+' One node for an element, then the same for the elements under it.
+' A parentIndex of 0 makes a root - VBScript cannot leave out the two
+' arguments Add wants for that, so the call is split in two instead.
+Sub AddBranch(tree, element, parentIndex)
+
+	Dim node
+
+	If parentIndex = 0 Then
+		Set node = tree.Nodes.Add()
+	Else
+		Set node = tree.Nodes.Add(parentIndex, TVW_CHILD)
+	End If
+
+	node.Text = NodeText(element)
+
+	Dim child, children
+	children = 0
+
+	For Each child In element.childNodes
+
+		If IsBranch(child) Then
+			AddBranch tree, child, node.Index
+			children = children + 1
+		End If
+
+	Next
+
+	' A folder opens so what is in it is in view. An object is a leaf and
+	' has nothing to open.
+	If children > 0 Then node.Expanded = True
+
+End Sub
+
+
+' The elements that are nodes of the tree.
+Function IsBranch(element)
+
+	IsBranch = False
+
+	If element.nodeType <> NODE_ELEMENT Then Exit Function
+
+	Select Case element.nodeName
+		Case "folder", "object" : IsBranch = True
+	End Select
+
+End Function
+
+
+' What a node is called. Every folder and object carries a name, so the
+' element name is only ever a fallback for a malformed document.
+Function NodeText(element)
+
+	Dim name
+	name = element.getAttribute("name")
+
+	If IsNull(name) Then
+		NodeText = "<" & element.nodeName & ">"
+	Else
+		NodeText = name
+	End If
+
+End Function
+
+
+' The tree control on the screen, Nothing when the screen has none. E3
+' forwards the members of an ActiveX, but not in every version, so
+' whichever of the two answers Nodes is the control.
+Function TreeControl(controlName)
+
+	Set TreeControl = Nothing
+
+	Dim ctl
+	Set ctl = Nothing
+	On Error Resume Next
+	Set ctl = Screen.Item(controlName)
+	On Error Goto 0
+
+	If ctl Is Nothing Then Exit Function
+
+	Dim nodes
+	Set nodes = Nothing
+	On Error Resume Next
+	Set nodes = ctl.Nodes
+	On Error Goto 0
+
+	If Not nodes Is Nothing Then
+		Set TreeControl = ctl
+		Exit Function
+	End If
+
+	On Error Resume Next
+	Set TreeControl = ctl.Object
+	On Error Goto 0
+
+End Function
+
+
+' ------------------------------------------------------------
 '  REPORT
 ' ------------------------------------------------------------
 
@@ -1648,6 +1779,211 @@ Sub btnSave_Click()
 	
 End Sub
 
+<xatm_config_screens.Config.btnTree:btnTree_Click()>
+Sub btnTree_Click()
+
+	' Builds the tree by hand, from the export as it stands in the tag. The
+	' same thing Config_OnPreShow does on open and btnApply does after an
+	' Apply - here it says out loud what went wrong instead of doing nothing.
+
+	Dim tree
+	Set tree = TreeControl(TREE_CONTROL)
+
+	If tree Is Nothing Then
+		MsgBox "No tree control named '" & TREE_CONTROL & "' was found on this screen.", _
+		       vbExclamation, "Tree"
+		Exit Sub
+	End If
+
+	Dim content
+	content = Empty
+
+	On Error Resume Next
+	content = Application.GetObject("xatm_config_data.XML.XMLContent").Value
+	On Error Goto 0
+
+	If IsEmpty(content) Or IsNull(content) Then
+		MsgBox "'XMLContent' is empty - run the XML export first.", vbExclamation, "Tree"
+		Exit Sub
+	End If
+
+	Dim doc
+	Set doc = NewDomDocument()
+
+	If Not doc.loadXML(StripBom(CStr(content))) Then
+		MsgBox "'XMLContent' does not parse as XML:" & vbCrLf & vbCrLf & _
+		       doc.parseError.reason, vbCritical, "Tree"
+		Exit Sub
+	End If
+
+	PopulateTree tree, doc
+
+	MsgBox tree.Nodes.Count & " nodes built from the export.", vbInformation, "Tree"
+
+End Sub
+
+
+Const NODE_ELEMENT = 1
+
+' Name of the tree control on the screen, and the Add relationship that
+' hangs a node under another one (tvwChild).
+Const TREE_CONTROL = "TreeView"
+Const TVW_CHILD    = 4
+
+
+' Fills the tree from the document: one node per folder and per object.
+' The two folders at the top of the document - Automation and Substation -
+' become the two roots. A property or a tag configures a node, it is not
+' a node of its own.
+Sub PopulateTree(tree, doc)
+
+	tree.Nodes.Clear
+
+	If doc.documentElement Is Nothing Then Exit Sub
+
+	Dim child
+	For Each child In doc.documentElement.childNodes
+		If IsBranch(child) Then AddBranch tree, child, 0
+	Next
+
+End Sub
+
+
+' One node for an element, then the same for the elements under it.
+' A parentIndex of 0 makes a root - VBScript cannot leave out the two
+' arguments Add wants for that, so the call is split in two instead.
+Sub AddBranch(tree, element, parentIndex)
+
+	Dim node
+
+	If parentIndex = 0 Then
+		Set node = tree.Nodes.Add()
+	Else
+		Set node = tree.Nodes.Add(parentIndex, TVW_CHILD)
+	End If
+
+	node.Text = NodeText(element)
+
+	Dim child, children
+	children = 0
+
+	For Each child In element.childNodes
+
+		If IsBranch(child) Then
+			AddBranch tree, child, node.Index
+			children = children + 1
+		End If
+
+	Next
+
+	' A folder opens so what is in it is in view. An object is a leaf and
+	' has nothing to open.
+	If children > 0 Then node.Expanded = True
+
+End Sub
+
+
+' The elements that are nodes of the tree.
+Function IsBranch(element)
+
+	IsBranch = False
+
+	If element.nodeType <> NODE_ELEMENT Then Exit Function
+
+	Select Case element.nodeName
+		Case "folder", "object" : IsBranch = True
+	End Select
+
+End Function
+
+
+' What a node is called. Every folder and object carries a name, so the
+' element name is only ever a fallback for a malformed document.
+Function NodeText(element)
+
+	Dim name
+	name = element.getAttribute("name")
+
+	If IsNull(name) Then
+		NodeText = "<" & element.nodeName & ">"
+	Else
+		NodeText = name
+	End If
+
+End Function
+
+
+' The tree control on the screen, Nothing when the screen has none. E3
+' forwards the members of an ActiveX, but not in every version, so
+' whichever of the two answers Nodes is the control.
+Function TreeControl(controlName)
+
+	Set TreeControl = Nothing
+
+	Dim ctl
+	Set ctl = Nothing
+	On Error Resume Next
+	Set ctl = Screen.Item(controlName)
+	On Error Goto 0
+
+	If ctl Is Nothing Then Exit Function
+
+	Dim nodes
+	Set nodes = Nothing
+	On Error Resume Next
+	Set nodes = ctl.Nodes
+	On Error Goto 0
+
+	If Not nodes Is Nothing Then
+		Set TreeControl = ctl
+		Exit Function
+	End If
+
+	On Error Resume Next
+	Set TreeControl = ctl.Object
+	On Error Goto 0
+
+End Function
+
+
+' MSXML 6 where the machine has it, the version-independent progid
+' otherwise.
+Function NewDomDocument()
+
+	Set NewDomDocument = Nothing
+
+	On Error Resume Next
+	Set NewDomDocument = CreateObject("MSXML2.DOMDocument.6.0")
+	On Error Goto 0
+
+	If NewDomDocument Is Nothing Then
+		Set NewDomDocument = CreateObject("MSXML2.DOMDocument")
+	End If
+
+	NewDomDocument.async = False
+	NewDomDocument.preserveWhiteSpace = True
+
+	On Error Resume Next
+	NewDomDocument.setProperty "SelectionLanguage", "XPath"
+	On Error Goto 0
+
+End Function
+
+
+' A byte-order mark survives a round trip through a utf-8 file and
+' makes loadXML fail on what looks like perfectly good XML.
+Function StripBom(text)
+
+	StripBom = text
+
+	If Len(text) = 0 Then Exit Function
+
+	If AscW(Left(text, 1)) = &HFEFF Then
+		StripBom = Mid(text, 2)
+	End If
+
+End Function
+
 <xatm_config_screens.Config:Config_OnPreShow(Arg)>
 Sub Config_OnPreShow(Arg)
 	
@@ -1691,8 +2027,205 @@ Sub Config_OnPreShow(Arg)
 		End If
 		
 	Next
-		
+
+	' ================================
+	' TREE
+	' ================================
+
+	RefreshTree()
+
 End Sub
+
+
+' Builds the tree from the exported document. The screen is closed when
+' the project builds the export, and can be closed when an Apply changes
+' it, so the tree is built again every time the screen opens.
+Sub RefreshTree()
+
+	Dim tree
+	Set tree = TreeControl(TREE_CONTROL)
+	If tree Is Nothing Then Exit Sub
+
+	Dim contentTag
+	Set contentTag = Nothing
+	On Error Resume Next
+	Set contentTag = Application.GetObject(CONFIG_DATA).Item("XML").Item("XMLContent")
+	On Error Goto 0
+
+	If contentTag Is Nothing Then Exit Sub
+	If IsEmpty(contentTag.Value) Then Exit Sub
+
+	Dim doc
+	Set doc = NewDomDocument()
+
+	If Not doc.loadXML(StripBom(CStr(contentTag.Value))) Then Exit Sub
+
+	PopulateTree tree, doc
+
+End Sub
+
+
+Const CONFIG_DATA  = "xatm_config_data"
+Const NODE_ELEMENT = 1
+
+' Name of the tree control on this screen, and the Add relationship that
+' hangs a node under another one (tvwChild).
+Const TREE_CONTROL = "TreeView"
+Const TVW_CHILD    = 4
+
+
+' Fills the tree from the document: one node per folder and per object.
+' The two folders at the top of the document - Automation and Substation -
+' become the two roots. A property or a tag configures a node, it is not
+' a node of its own.
+Sub PopulateTree(tree, doc)
+
+	tree.Nodes.Clear
+
+	If doc.documentElement Is Nothing Then Exit Sub
+
+	Dim child
+	For Each child In doc.documentElement.childNodes
+		If IsBranch(child) Then AddBranch tree, child, 0
+	Next
+
+End Sub
+
+
+' One node for an element, then the same for the elements under it.
+' A parentIndex of 0 makes a root - VBScript cannot leave out the two
+' arguments Add wants for that, so the call is split in two instead.
+Sub AddBranch(tree, element, parentIndex)
+
+	Dim node
+
+	If parentIndex = 0 Then
+		Set node = tree.Nodes.Add()
+	Else
+		Set node = tree.Nodes.Add(parentIndex, TVW_CHILD)
+	End If
+
+	node.Text = NodeText(element)
+
+	Dim child, children
+	children = 0
+
+	For Each child In element.childNodes
+
+		If IsBranch(child) Then
+			AddBranch tree, child, node.Index
+			children = children + 1
+		End If
+
+	Next
+
+	' A folder opens so what is in it is in view. An object is a leaf and
+	' has nothing to open.
+	If children > 0 Then node.Expanded = True
+
+End Sub
+
+
+' The elements that are nodes of the tree.
+Function IsBranch(element)
+
+	IsBranch = False
+
+	If element.nodeType <> NODE_ELEMENT Then Exit Function
+
+	Select Case element.nodeName
+		Case "folder", "object" : IsBranch = True
+	End Select
+
+End Function
+
+
+' What a node is called. Every folder and object carries a name, so the
+' element name is only ever a fallback for a malformed document.
+Function NodeText(element)
+
+	Dim name
+	name = element.getAttribute("name")
+
+	If IsNull(name) Then
+		NodeText = "<" & element.nodeName & ">"
+	Else
+		NodeText = name
+	End If
+
+End Function
+
+
+' The tree control on this screen, Nothing when it has none. A screen
+' reaches its own children through Item, where an object on it would go
+' through Screen.Item.
+Function TreeControl(controlName)
+
+	Set TreeControl = Nothing
+
+	Dim ctl
+	Set ctl = Nothing
+	On Error Resume Next
+	Set ctl = Item(controlName)
+	On Error Goto 0
+
+	If ctl Is Nothing Then Exit Function
+
+	Dim nodes
+	Set nodes = Nothing
+	On Error Resume Next
+	Set nodes = ctl.Nodes
+	On Error Goto 0
+
+	If Not nodes Is Nothing Then
+		Set TreeControl = ctl
+		Exit Function
+	End If
+
+	On Error Resume Next
+	Set TreeControl = ctl.Object
+	On Error Goto 0
+
+End Function
+
+
+' MSXML 6 where the machine has it, the version-independent progid
+' otherwise.
+Function NewDomDocument()
+
+	Set NewDomDocument = Nothing
+
+	On Error Resume Next
+	Set NewDomDocument = CreateObject("MSXML2.DOMDocument.6.0")
+	On Error Goto 0
+
+	If NewDomDocument Is Nothing Then
+		Set NewDomDocument = CreateObject("MSXML2.DOMDocument")
+	End If
+
+	NewDomDocument.async = False
+	NewDomDocument.preserveWhiteSpace = True
+
+	On Error Resume Next
+	NewDomDocument.setProperty "SelectionLanguage", "XPath"
+	On Error Goto 0
+
+End Function
+
+
+' A byte-order mark survives a round trip through a utf-8 file and
+' makes loadXML fail on what looks like perfectly good XML.
+Function StripBom(text)
+
+	StripBom = text
+
+	If Len(text) = 0 Then Exit Function
+
+	If AscW(Left(text, 1)) = &HFEFF Then
+		StripBom = Mid(text, 2)
+	End If
+
+End Function
 
 <xatm_config_screens.Footer.ListBox:ListBox_MouseUp(Button, Shift, X, Y)>
 Sub ListBox_MouseUp(Button, Shift, X, Y)
