@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Mon Aug  3 16:54:25 2026
+Tue Aug  4 14:02:05 2026
 -----------------------
 
 <xatm_config_data.PropertiesHelper.xatm_BTC:xatm_BTC_OnStartRunning()>
@@ -346,6 +346,12 @@ Sub SaveXML_OnChangedValue()
 	
 		WriteLog "XML file saved to " & filePath
 		
+		DocString = "EXIT_SUCCESS"
+	
+	Else
+	
+		DocString = "EXIT_FAILURE"
+			
 	End If
 	
 End Sub
@@ -488,6 +494,13 @@ Sub WriteLog(message)
 		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
 	End If
 
+End Sub
+
+<xatm_config_data.XML.SaveXML:SaveXML_OnStartRunning()>
+Sub SaveXML_OnStartRunning()
+
+	DocString = ""
+		
 End Sub
 
 <xatm_config_data.XML.XMLBuilder:XMLBuilder_OnStartRunning()>
@@ -1576,10 +1589,30 @@ End Sub
 
 <xatm_config_screens.Config.btnSave:btnSave_Click()>
 Sub btnSave_Click()
-	
+		
 	' Call the SaveXML method to save the XML data to a file
 	Application.GetObject("xatm_config_data.XML.SaveXML").WriteEx True
+	
+	Dim return
+	return = Application.GetObject("xatm_config_data.XML.SaveXML").DocString
+	
+	If return = "EXIT_SUCCESS" Then
 		
+		Dim layoutFolder
+		Set layoutFolder = Application.GetObject("XATM_Data.Automation.Layout")
+		
+		Dim transformerType
+		transformerType = Screen.Item("SelectLayoutTransformer").Index
+		layoutFolder.Item("Transformer").WriteEx transformerType
+		
+		Dim busbarType
+		busbarType = Screen.Item("SelectLayoutBusbar").Index
+		layoutFolder.Item("Busbar").WriteEx busbarType
+		
+		layoutFolder.Context("Container").Save()
+		
+	End If
+	
 End Sub
 
 <xatm_config_screens.Config:Config_OnPreShow(Arg)>
