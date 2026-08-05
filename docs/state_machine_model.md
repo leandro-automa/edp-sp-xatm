@@ -107,10 +107,22 @@ End Function
 
 ## Layouts Disponíveis
 
-| Layout | Arquivo | Transformadores | Disjuntores de interligação |
-|--------|---------|-----------------|----------------------------|
-| 2T-1TIE | [layouts/2T_1TIE.md](layouts/2T_1TIE.md) | 2 | 1 TIE |
-| 4T-Ring | [layouts/4T_ring_guarulhos.md](layouts/4T_ring_guarulhos.md) | 4 | 6 TIEs em anel |
+O layout ativo é a combinação de duas seleções independentes — `Layout.Transformer`
+e `Layout.Busbar` — e `GetLayoutType()` as concatena com `_`. **Só duas combinações
+têm sequência de passos implementada:**
+
+| Chave (`GetLayoutType`) | Arquivo | Transformadores | Disjuntores de interligação |
+|-------------------------|---------|-----------------|----------------------------|
+| `2TR2LV_2BB1TIE`        | [layouts/2T_1TIE.md](layouts/2T_1TIE.md) | 2 | 1 TIE |
+| `4TR4LV_6BB6TIERING`    | [layouts/4T_ring_guarulhos.md](layouts/4T_ring_guarulhos.md) | 4 | 6 TIEs em anel |
+
+Qualquer outro par (`4TR4LV_2BB1TIE`, `2TR2LV_6BB6TIERING`, …) é **não suportado**.
+A árvore de dispositivos pode ser montada para ele, mas nenhuma automação roda:
+
+- **Configuração** — a tela Config avisa e pede confirmação ao aplicar
+  (`btnApply`) e ao salvar (`btnSave`) uma combinação fora da lista.
+- **Execução** — `Main_Step00` consulta `IsSupportedLayout()` e encerra antes de
+  qualquer comando, com log `"Not executed - layout '<chave>' has no step sequence."`
 
 ---
 
