@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIBCONFIG (C:\ProjDev\edp_sp\xatm_libconfig.lib)
-Thu Jul 30 17:04:40 2026
+Wed Aug  5 15:09:42 2026
 -----------------------
 
 <xatm_BTCStatus.Source:xatm_BTCStatus_OnSourceChanged()>
@@ -83,6 +83,82 @@ Sub objButton_Click()
 			source.Item("Data").Item("Reset").WriteEx True
 
 	End Select	
+	
+End Sub
+
+<xatm_PropertyRow.txtValue:txtValue_Validate(Cancel, NewValue)>
+Sub txtValue_Validate(Cancel, NewValue)
+
+	' Nothing to send when the field comes back the way it was found.
+	If CStr(NewValue) = CStr(xatm_PropertyRow.Value) Then Exit Sub
+
+	Dim command
+	Set command = Nothing
+
+	On Error Resume Next
+	Set command = Application.GetObject(SET_PROPERTY)
+	On Error Goto 0
+
+	Dim valueTag
+	Set valueTag = Nothing
+
+	On Error Resume Next
+	Set valueTag = Application.GetObject(PROPERTY_VALUE)
+	On Error Goto 0
+		
+	If command Is Nothing Or valueTag Is Nothing Then
+		WriteLog "Not sent - " & SET_PROPERTY & " and " & PROPERTY_VALUE & " are what carry an edit."
+		Cancel = True
+		Exit Sub
+	End If
+
+	' The value first, so it is standing by when the command fires, and on
+	' a tag of its own so nothing the operator typed has to be escaped.
+	valueTag.WriteEx NewValue
+	
+	' kind|path|name - tokens of ours, none of which can carry a bar.
+	command.WriteEx xatm_PropertyRow.Kind & "|" & _
+	                xatm_PropertyRow.Source & "|" & _
+	                NewValue
+
+	If command.DocString <> EXIT_SUCCESS Then
+
+		' The document would not take it and has said why on the console.
+		' Cancelling leaves the operator in the field with what they typed,
+		' rather than swallowing the edit.
+		Cancel = True
+		Exit Sub
+
+	End If
+
+	' What the field shows is what the document holds.
+	xatm_PropertyRow.Value = NewValue
+	
+End Sub
+
+
+' The command tag in xatm_config that owns the document. Reached by path
+' because a library has no other way up to the project it runs under -
+' and it is the project that knows what XML is, not this control.
+Const SET_PROPERTY = "xatm_config_data.XML.SetProperty"
+Const PROPERTY_VALUE = "xatm_config_data.XML.PropertyValue"
+Const EXIT_SUCCESS = "EXIT_SUCCESS"
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & xatm_PropertyRow.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & xatm_PropertyRow.Name & "] - " & message
+	End If
 	
 End Sub
 
@@ -180,6 +256,13 @@ Sub btnPrevious_Click()
 	If current = 0 Then Exit Sub
 
 	xatm_SelectLayout.Index = layouts(current - 1)
+		
+End Sub
+
+<xatm_SelectLayout.objArea:objArea_OnStartRunning()>
+Sub objArea_OnStartRunning()
+	
+	Visible = False
 		
 End Sub
 

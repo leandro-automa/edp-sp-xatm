@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Tue Aug  4 16:59:24 2026
+Wed Aug  5 15:09:18 2026
 -----------------------
 
 <xatm_config_data.PropertiesHelper.xatm_BTC:xatm_BTC_OnStartRunning()>
@@ -505,31 +505,34 @@ End Sub
 
 <xatm_config_data.XML.SetProperty:SetProperty_OnChangedValue()>
 Sub SetProperty_OnChangedValue()
-
-	If Trim(Value) = "" Then Exit Sub      ' self-cleared write, ignore
-
+	
+	If Trim(Value) = "" Then 
+		DocString = "EMPTY_VALUE"
+		Exit Sub      ' self-cleared write, ignore
+	End If
+	
 	Dim ts
 	ts = TimeStamp                         ' preserved for the silent clear
 
 	Dim command
 	command = CStr(Value)
 
-	' kind|path|name|value, split four ways so a value carrying a bar
-	' survives as the remainder. Nothing ahead of it may carry one, and
-	' neither a path nor a property name can.
+	' kind|path|name. Only tokens of ours travel here, so none of them can
+	' carry the bar they are split on. The value the operator typed is not
+	' among them - it comes off PropertyValue, whole and unparsed, and can
+	' be anything at all.
 	Dim parts
-	parts = Split(command, "|", 4)
+	parts = Split(command, "|")
 
-	If UBound(parts) <> 3 Then
-		Refuse "malformed command '" & command & "' (expected kind|path|name|value).", ts
+	If UBound(parts) <> 2 Then
+		Refuse "malformed command '" & command & "' (expected kind|path|name).", ts
 		Exit Sub
 	End If
 
-	Dim kind, path, name, value
+	Dim kind, path, name
 	kind  = LCase(Trim(parts(0)))
 	path  = Trim(parts(1))
 	name  = Trim(parts(2))
-	value = parts(3)
 
 	Select Case kind
 
@@ -557,6 +560,23 @@ Sub SetProperty_OnChangedValue()
 		Exit Sub
 	End If
 
+	' Written before the command that fires this, so it is already standing
+	' by. A Variant of its own, so an empty one stays empty and a value
+	' carrying anything at all arrives as it was typed.
+	Dim valueTag
+	Set valueTag = Nothing
+	On Error Resume Next
+	Set valueTag = Parent.Item(VALUE_TAG)
+	On Error Goto 0
+
+	If valueTag Is Nothing Then
+		Refuse "there is no " & VALUE_TAG & " tag to read the value from.", ts
+		Exit Sub
+	End If
+
+	Dim newValue
+	newValue = valueTag.Value
+
 	Dim doc
 	Set doc = NewDomDocument()
 
@@ -576,9 +596,9 @@ Sub SetProperty_OnChangedValue()
 	Dim problem
 
 	If kind = KIND_NAME Then
-		problem = SetName(objectNode, value)
+		problem = SetName(objectNode, newValue)
 	Else
-		problem = SetValue(objectNode, name, value)
+		problem = SetValue(objectNode, name, newValue)
 	End If
 
 	If problem <> "" Then
@@ -606,6 +626,10 @@ Const NODE_ELEMENT  = 1
 Const KIND_NAME     = "name"
 Const KIND_PROPERTY = "property"
 
+' The tag the value is left on. It is a Variant and not part of the
+' command, so nothing the operator types has to be escaped or split.
+Const VALUE_TAG     = "PropertyValue"
+
 
 ' Sets a declared property, or takes the attribute off when the value is
 ' cleared. The export drops it for a property that is unset, so writing
@@ -622,10 +646,12 @@ Function SetValue(objectNode, name, value)
 		Exit Function
 	End If
 
-	If value = "" Then
+	If IsEmpty(value) Or IsNull(value) Then
+		property.removeAttribute "value"
+	ElseIf CStr(value) = "" Then
 		property.removeAttribute "value"
 	Else
-		property.setAttribute "value", value
+		property.setAttribute "value", CStr(value)
 	End If
 
 End Function
@@ -641,7 +667,7 @@ Function SetName(objectNode, value)
 	SetName = ""
 
 	Dim name
-	name = Trim(value)
+	name = Trim(CStr(value) & "")
 
 	If name = "" Then
 		SetName = "an object cannot be left unnamed."
@@ -784,13 +810,13 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
 	End If
-
+	
 End Sub
 
 <xatm_config_data.XML.SetProperty:SetProperty_OnStartRunning()>
 Sub SetProperty_OnStartRunning()
 
-	DocString = ""
+	DocString = "-1"
 
 End Sub
 
@@ -1041,6 +1067,244 @@ End Function
 
 Sub Foo()
 	
+End Sub
+
+<xatm_config_screens.Config.TreeView:TreeView_NodeClick(Node)>
+Sub TreeView_NodeClick(Node)
+
+	' Whatever the node stands for, as an E3 path - AddBranch put it on the
+	' node when it built the tree.
+	Dim path
+	path = ""
+
+	On Error Resume Next
+	path = Node.Tag
+	On Error Goto 0
+
+	' The rows of the last selection go either way, so a click that shows
+	' nothing leaves nothing behind.
+	ClearPropertyRows
+
+	If path = "" Then Exit Sub
+	
+	Dim content
+	content = Empty
+
+	On Error Resume Next
+	content = Application.GetObject("xatm_config_data.XML.XMLContent").Value
+	On Error Goto 0
+
+	If IsEmpty(content) Or IsNull(content) Then Exit Sub
+
+	Dim doc
+	Set doc = NewDomDocument()
+
+	If Not doc.loadXML(StripBom(CStr(content))) Then Exit Sub
+
+	' A folder is a node too, and has no properties of its own to show -
+	' the document answers which kind this is by having an object at the
+	' path, or not.
+	Dim objectNode
+	Set objectNode = doc.selectSingleNode("//object[@path=""" & path & """]")
+
+	If objectNode Is Nothing Then Exit Sub
+
+	BuildPropertyRows objectNode, path
+
+End Sub
+
+
+Const ROW_CLASS = "xatm_PropertyRow"
+
+' The corner the rows stack from, in pixels - Himetric converts. A row
+' keeps the size it was drawn at, so there is no width or height here.
+Const ROW_LEFT_PX = 1024
+Const ROW_TOP_PX  = 16
+Const ROW_GAP_PX  = 0
+
+
+' What the object's own name is shown as. It has no manifest entry, so
+' the row has no help text for it and nothing declares its type.
+Const NAME_PROPERTY = "Name"
+Const NAME_TYPE     = "String"
+
+' The folder whose objects are named by the layout rather than by hand.
+Const AUTOMATION_FOLDER = "Automation"
+
+' Which of the two an edit is asking to change, told to the row when it
+' is built so it never has to work it out from the property name.
+Const KIND_NAME     = "name"
+Const KIND_PROPERTY = "property"
+
+' E3 places and sizes objects in himetric, not pixels.
+Function Himetric(pixels)
+
+	Himetric = CLng((pixels * 2540) / 96)
+
+End Function
+
+
+' One row per property of the selected object, stacked down the panel in
+' the order the export wrote them - which is the order the manifest
+' declares them in.
+Sub BuildPropertyRows(objectNode, path)
+
+	Dim objectType
+	objectType = Attribute(objectNode, "type")
+
+	Dim properties
+	Set properties = objectNode.selectNodes("property")
+
+	Dim i, property, row, y
+	y = Himetric(ROW_TOP_PX)
+
+	' The object's own name goes first. It is the object rather than
+	' something declared on it, so it is neither a property of the document
+	' nor an entry in the manifest, and it is built here instead of coming
+	' out of the loop.
+	'
+	' Not under Automation, though: SyncAutomation finds a BTC by the
+	' number on the end of its name, so the name is structure there and not
+	' the operator's to change.
+	If Not IsAutomation(objectNode) Then
+		Set row = NewRow(KIND_NAME, path, objectType, NAME_PROPERTY, NAME_TYPE, _
+		                 Attribute(objectNode, "name"), y)
+		y = y + row.Height + Himetric(ROW_GAP_PX)
+	End If
+
+	For i = 0 To properties.length - 1
+
+		Set property = properties.item(i)
+
+		Set row = NewRow(KIND_PROPERTY, path, objectType, Attribute(property, "name"), _
+		                 Attribute(property, "type"), Attribute(property, "value"), y)
+
+		' A row comes out at the size it was drawn, so the next one goes
+		' under whatever that turned out to be.
+		y = y + row.Height + Himetric(ROW_GAP_PX)
+
+	Next
+
+End Sub
+
+
+' True for anything under the Automation folder, however deep. Asked of
+' the element and not of the path, so a folder renamed on the way down
+' cannot fool it.
+Function IsAutomation(objectNode)
+
+	IsAutomation = Not (objectNode.selectSingleNode( _
+	               "ancestor::folder[@name='" & AUTOMATION_FOLDER & "']") Is Nothing)
+
+End Function
+
+
+' One row on the screen. Added inactive so every property is set before
+' the control goes up and reads them, and handed back so the caller can
+' step past the height it came out at.
+Function NewRow(kind, path, objectType, propertyName, propertyType, value, y)
+
+	Dim row
+	Set row = Screen.AddObject(ROW_CLASS, False)
+
+	row.X = Himetric(ROW_LEFT_PX)
+	row.Y = y
+	
+	row.Kind         = kind
+	row.Source       = path
+	row.ObjectType   = objectType
+	row.PropertyName = propertyName
+	row.PropertyType = propertyType
+	row.Value        = value
+
+	row.Activate()
+
+	Set NewRow = row
+
+End Function
+
+' Takes the rows of the last selection off the screen. Collected first
+' and deleted second - a collection is not walked while what is in it is
+' being removed.
+Sub ClearPropertyRows()
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim obj, n
+	n = 0
+
+	For Each obj In Screen
+		If UCase(TypeName(obj)) = UCase(ROW_CLASS) Then
+			doomed.Add n, obj.Name
+			n = n + 1
+		End If
+	Next
+
+	For Each n In doomed.Keys
+		On Error Resume Next
+		Screen.DeleteObject doomed(n)
+		On Error Goto 0
+	Next
+
+End Sub
+
+
+' An attribute of an element, Empty when it carries none. The export
+' drops the value attribute of a property that is unset, so an absent one
+' has to come back Empty and not as "".
+Function Attribute(element, name)
+
+	Attribute = Empty
+
+	Dim a
+	Set a = element.getAttributeNode(name)
+	If a Is Nothing Then Exit Function
+
+	Attribute = a.value
+
+End Function
+
+
+' MSXML 6 where the machine has it, the version-independent progid
+' otherwise.
+Function NewDomDocument()
+
+	Set NewDomDocument = Nothing
+
+	On Error Resume Next
+	Set NewDomDocument = CreateObject("MSXML2.DOMDocument.6.0")
+	On Error Goto 0
+
+	If NewDomDocument Is Nothing Then
+		Set NewDomDocument = CreateObject("MSXML2.DOMDocument")
+	End If
+
+	NewDomDocument.async = False
+	NewDomDocument.preserveWhiteSpace = True
+
+	On Error Resume Next
+	NewDomDocument.setProperty "SelectionLanguage", "XPath"
+	On Error Goto 0
+
+End Function
+
+
+' A byte-order mark survives a round trip through a utf-8 file and
+' makes loadXML fail on what looks like perfectly good XML.
+Function StripBom(text)
+
+	StripBom = text
+
+	If Len(text) = 0 Then Exit Function
+
+	If AscW(Left(text, 1)) = &HFEFF Then
+		StripBom = Mid(text, 2)
+	End If
+
+End Function
+
+Sub Foo()	
 End Sub
 
 <xatm_config_screens.Config.btnApply:btnApply_Click()>
@@ -1947,7 +2211,7 @@ Sub btnUpdateTreeview_Click()
 	' Apply - here it says out loud what went wrong instead of doing nothing.
 
 	Dim tree
-	Set tree = Screen.Item("TreeView1")
+	Set tree = Screen.Item("TreeView")
 
 	If tree Is Nothing Then
 		MsgBox "No tree control named '" & TREE_CONTROL & "' was found on this screen.", _
@@ -2038,7 +2302,7 @@ Sub AddBranch(tree, element, parentIndex, parentPath)
 	End If
 
 	node.Text = NodeText(element)
-
+	
 	' What NodeClick reads back to know what was selected. Tag takes
 	' anything and has to be unique in nothing, unlike Key.
 	node.Tag = path
@@ -2114,72 +2378,6 @@ Function IsHidden(path)
 	If IsNull(text) Or IsEmpty(text) Then Exit Function
 
 	IsHidden = (InStr(1, CStr(text), NO_SHOW, vbTextCompare) > 0)
-
-End Function
-
-
-' A path E3 will resolve. A name that starts with a digit or an
-' underscore, or carries a space or a hyphen, has to be bracketed -
-' Substation.Transformer.52-01 does not resolve and
-' [Substation].[Transformer].[52-01] does. Bracketing every piece is
-' always right, so no piece has to be judged on its own.
-'
-' A piece already bracketed is left as it is: the document takes its
-' object paths from PathName, which may have bracketed them already, and
-' [[52-01]] resolves no better than 52-01 does.
-Function E3Path(path)
-
-	E3Path = ""
-	If path = "" Then Exit Function
-
-	Dim pieces
-	pieces = SplitPath(path)
-
-	Dim i
-	For i = 0 To UBound(pieces)
-		If Left(pieces(i), 1) <> "[" Then
-			pieces(i) = "[" & pieces(i) & "]"
-		End If
-	Next
-
-	E3Path = Join(pieces, ".")
-
-End Function
-
-
-' The pieces of a path, split on the dots between them - the ones outside
-' brackets, since a bracketed name is allowed to carry a dot of its own.
-Function SplitPath(path)
-
-	Dim pieces()
-	ReDim pieces(0)
-	pieces(0) = ""
-
-	Dim i, n, depth, ch
-	n = 0
-	depth = 0
-
-	For i = 1 To Len(path)
-
-		ch = Mid(path, i, 1)
-
-		If ch = "[" Then
-			depth = depth + 1
-			pieces(n) = pieces(n) & ch
-		ElseIf ch = "]" Then
-			depth = depth - 1
-			pieces(n) = pieces(n) & ch
-		ElseIf ch = "." And depth = 0 Then
-			n = n + 1
-			ReDim Preserve pieces(n)
-			pieces(n) = ""
-		Else
-			pieces(n) = pieces(n) & ch
-		End If
-
-	Next
-
-	SplitPath = pieces
 
 End Function
 
@@ -2271,238 +2469,75 @@ Function StripBom(text)
 
 End Function
 
-Sub Foo()
-	
-End Sub
 
-<xatm_config_screens.Config.TreeView1:TreeView1_NodeClick(Node)>
-Sub TreeView1_NodeClick(Node)
+' A path E3 will resolve. A name that starts with a digit or an
+' underscore, or carries a space or a hyphen, has to be bracketed -
+' Substation.Transformer.52-01 does not resolve and
+' [Substation].[Transformer].[52-01] does. Bracketing every piece is
+' always right, so no piece has to be judged on its own.
+'
+' A piece already bracketed is left as it is: the document takes its
+' object paths from PathName, which may have bracketed them already, and
+' [[52-01]] resolves no better than 52-01 does.
+Function E3Path(path)
 
-	' Whatever the node stands for, as an E3 path - AddBranch put it on the
-	' node when it built the tree.
-	Dim path
-	path = ""
+	E3Path = ""
+	If path = "" Then Exit Function
 
-	On Error Resume Next
-	path = Node.Tag
-	On Error Goto 0
+	Dim pieces
+	pieces = SplitPath(path)
 
-	' The rows of the last selection go either way, so a click that shows
-	' nothing leaves nothing behind.
-	ClearPropertyRows
-
-	If path = "" Then Exit Sub
-
-	Dim content
-	content = Empty
-
-	On Error Resume Next
-	content = Application.GetObject("xatm_config_data.XML.XMLContent").Value
-	On Error Goto 0
-
-	If IsEmpty(content) Or IsNull(content) Then Exit Sub
-
-	Dim doc
-	Set doc = NewDomDocument()
-
-	If Not doc.loadXML(StripBom(CStr(content))) Then Exit Sub
-
-	' A folder is a node too, and has no properties of its own to show -
-	' the document answers which kind this is by having an object at the
-	' path, or not.
-	Dim objectNode
-	Set objectNode = doc.selectSingleNode("//object[@path=""" & path & """]")
-
-	If objectNode Is Nothing Then Exit Sub
-
-	BuildPropertyRows objectNode, path
-
-End Sub
-
-
-Const ROW_CLASS = "xatm_PropertyRow"
-
-' The corner the rows stack from, in pixels - Himetric converts. A row
-' keeps the size it was drawn at, so there is no width or height here.
-Const ROW_LEFT_PX = 10
-Const ROW_TOP_PX  = 10
-Const ROW_GAP_PX  = 2
-
-' What the object's own name is shown as. It has no manifest entry, so
-' the row has no help text for it and nothing declares its type.
-Const NAME_PROPERTY = "Name"
-Const NAME_TYPE     = "String"
-
-' The folder whose objects are named by the layout rather than by hand.
-Const AUTOMATION_FOLDER = "Automation"
-
-
-' E3 places and sizes objects in himetric, not pixels.
-Function Himetric(pixels)
-
-	Himetric = CLng((pixels * 2540) / 96)
-
-End Function
-
-
-' One row per property of the selected object, stacked down the panel in
-' the order the export wrote them - which is the order the manifest
-' declares them in.
-Sub BuildPropertyRows(objectNode, path)
-
-	Dim objectType
-	objectType = Attribute(objectNode, "type")
-
-	Dim properties
-	Set properties = objectNode.selectNodes("property")
-
-	Dim i, property, row, y
-	y = Himetric(ROW_TOP_PX)
-
-	' The object's own name goes first. It is the object rather than
-	' something declared on it, so it is neither a property of the document
-	' nor an entry in the manifest, and it is built here instead of coming
-	' out of the loop.
-	'
-	' Not under Automation, though: SyncAutomation finds a BTC by the
-	' number on the end of its name, so the name is structure there and not
-	' the operator's to change.
-	If Not IsAutomation(objectNode) Then
-		Set row = NewRow(path, objectType, NAME_PROPERTY, NAME_TYPE, Attribute(objectNode, "name"), y)
-		y = y + row.Height + Himetric(ROW_GAP_PX)
-	End If
-
-	For i = 0 To properties.length - 1
-
-		Set property = properties.item(i)
-
-		Set row = NewRow(path, objectType, Attribute(property, "name"), _
-		                 Attribute(property, "type"), Attribute(property, "value"), y)
-
-		' A row comes out at the size it was drawn, so the next one goes
-		' under whatever that turned out to be.
-		y = y + row.Height + Himetric(ROW_GAP_PX)
-
-	Next
-
-End Sub
-
-
-' True for anything under the Automation folder, however deep. Asked of
-' the element and not of the path, so a folder renamed on the way down
-' cannot fool it.
-Function IsAutomation(objectNode)
-
-	IsAutomation = Not (objectNode.selectSingleNode( _
-	               "ancestor::folder[@name='" & AUTOMATION_FOLDER & "']") Is Nothing)
-
-End Function
-
-
-' One row on the screen. Added inactive so every property is set before
-' the control goes up and reads them, and handed back so the caller can
-' step past the height it came out at.
-Function NewRow(path, objectType, propertyName, propertyType, value, y)
-
-	Dim row
-	Set row = Screen.AddObject(ROW_CLASS, False)
-
-	row.X = Himetric(ROW_LEFT_PX)
-	row.Y = y
-
-	row.Source       = path
-	row.ObjectType   = objectType
-	row.PropertyName = propertyName
-	row.PropertyType = propertyType
-	row.Value        = value
-
-	row.Activate()
-
-	Set NewRow = row
-
-End Function
-
-
-' Takes the rows of the last selection off the screen. Collected first
-' and deleted second - a collection is not walked while what is in it is
-' being removed.
-Sub ClearPropertyRows()
-
-	Dim doomed
-	Set doomed = CreateObject("Scripting.Dictionary")
-
-	Dim obj, n
-	n = 0
-
-	For Each obj In Screen
-		If UCase(TypeName(obj)) = UCase(ROW_CLASS) Then
-			doomed.Add n, obj.Name
-			n = n + 1
+	Dim i
+	For i = 0 To UBound(pieces)
+		If Left(pieces(i), 1) <> "[" Then
+			pieces(i) = "[" & pieces(i) & "]"
 		End If
 	Next
 
-	For Each n In doomed.Keys
-		On Error Resume Next
-		Screen.DeleteObject doomed(n)
-		On Error Goto 0
+	E3Path = Join(pieces, ".")
+
+End Function
+
+
+' The pieces of a path, split on the dots between them - the ones outside
+' brackets, since a bracketed name is allowed to carry a dot of its own.
+Function SplitPath(path)
+
+	Dim pieces()
+	ReDim pieces(0)
+	pieces(0) = ""
+
+	Dim i, n, depth, ch
+	n = 0
+	depth = 0
+
+	For i = 1 To Len(path)
+
+		ch = Mid(path, i, 1)
+
+		If ch = "[" Then
+			depth = depth + 1
+			pieces(n) = pieces(n) & ch
+		ElseIf ch = "]" Then
+			depth = depth - 1
+			pieces(n) = pieces(n) & ch
+		ElseIf ch = "." And depth = 0 Then
+			n = n + 1
+			ReDim Preserve pieces(n)
+			pieces(n) = ""
+		Else
+			pieces(n) = pieces(n) & ch
+		End If
+
 	Next
 
+	SplitPath = pieces
+
+End Function
+
+Sub Foo()
+	
 End Sub
-
-
-' An attribute of an element, Empty when it carries none. The export
-' drops the value attribute of a property that is unset, so an absent one
-' has to come back Empty and not as "".
-Function Attribute(element, name)
-
-	Attribute = Empty
-
-	Dim a
-	Set a = element.getAttributeNode(name)
-	If a Is Nothing Then Exit Function
-
-	Attribute = a.value
-
-End Function
-
-
-' MSXML 6 where the machine has it, the version-independent progid
-' otherwise.
-Function NewDomDocument()
-
-	Set NewDomDocument = Nothing
-
-	On Error Resume Next
-	Set NewDomDocument = CreateObject("MSXML2.DOMDocument.6.0")
-	On Error Goto 0
-
-	If NewDomDocument Is Nothing Then
-		Set NewDomDocument = CreateObject("MSXML2.DOMDocument")
-	End If
-
-	NewDomDocument.async = False
-	NewDomDocument.preserveWhiteSpace = True
-
-	On Error Resume Next
-	NewDomDocument.setProperty "SelectionLanguage", "XPath"
-	On Error Goto 0
-
-End Function
-
-
-' A byte-order mark survives a round trip through a utf-8 file and
-' makes loadXML fail on what looks like perfectly good XML.
-Function StripBom(text)
-
-	StripBom = text
-
-	If Len(text) = 0 Then Exit Function
-
-	If AscW(Left(text, 1)) = &HFEFF Then
-		StripBom = Mid(text, 2)
-	End If
-
-End Function
 
 <xatm_config_screens.Config:Config_OnPreShow(Arg)>
 Sub Config_OnPreShow(Arg)
