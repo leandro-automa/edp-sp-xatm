@@ -1085,10 +1085,10 @@ Sub SetProperty_OnChangedValue()
 		Exit Sub
 	End If
 
-	Dim kind, path, name
-	kind  = LCase(Trim(parts(0)))
-	path  = Trim(parts(1))
-	name  = Trim(parts(2))
+	Dim kind, key, name
+	kind = LCase(Trim(parts(0)))
+	key  = Trim(parts(1))
+	name = Trim(parts(2))
 
 	Select Case kind
 
@@ -1100,7 +1100,7 @@ Sub SetProperty_OnChangedValue()
 
 	End Select
 
-	If path = "" Then
+	If key = "" Then
 		Refuse "the command names no object.", ts
 		Exit Sub
 	End If
@@ -1142,10 +1142,10 @@ Sub SetProperty_OnChangedValue()
 	End If
 
 	Dim objectNode
-	Set objectNode = doc.selectSingleNode("//object[@path=""" & path & """]")
+	Set objectNode = FindObject(doc, key)
 
 	If objectNode Is Nothing Then
-		Refuse "the document has no object at " & path & ".", ts
+		Refuse "the document has nothing at " & key & ".", ts
 		Exit Sub
 	End If
 
@@ -1167,7 +1167,7 @@ Sub SetProperty_OnChangedValue()
 	contentTag.WriteEx DocumentText(doc)
 
 	DocString = "EXIT_SUCCESS"
-	WriteLog "Set " & name & " of " & path & "."
+	WriteLog "Set " & name & " of " & key & "."
 
 	WriteEx "", ts                         ' clear without re-firing
 
@@ -1185,6 +1185,52 @@ Const KIND_PROPERTY = "property"
 ' The tag the value is left on. It is a Variant and not part of the
 ' command, so nothing the operator types has to be escaped or split.
 Const VALUE_TAG     = "PropertyValue"
+
+' What marks a key as an Id rather than a path.
+Const ID_PREFIX     = "id:"
+
+
+' The object a key stands for, Nothing when the document has none. An
+' object with an Id is addressed by it and not by its path, so a rename
+' does not strand the rows that were built before it.
+Function FindObject(doc, key)
+
+	Set FindObject = Nothing
+
+	' The Len is tested and not just the comparison. Were ID_PREFIX missing
+	' from this scope it would be Empty, Len would be 0, and Left(key, 0)
+	' would be "" - which equals Empty in VBScript. Every key would then
+	' take the Id branch with the prefix still on the front of it, match
+	' nothing, and say nothing about why. Testing the Len first costs a
+	' missing const the Id keys only, and leaves the path ones working.
+	If Len(ID_PREFIX) > 0 And Left(key, Len(ID_PREFIX)) = ID_PREFIX Then
+		Set FindObject = doc.selectSingleNode( _
+		                 "//object[property[@name='Id']/@value='" & _
+		                 Mid(key, Len(ID_PREFIX) + 1) & "']")
+	Else
+		Set FindObject = doc.selectSingleNode("//object[@path=""" & key & """]")
+	End If
+
+End Function
+
+
+' The value attribute of a named property - "" when the property is
+' absent or unset.
+Function PropertyValue(objectNode, propertyName)
+
+	PropertyValue = ""
+
+	Dim p
+	Set p = objectNode.selectSingleNode("property[@name='" & propertyName & "']")
+	If p Is Nothing Then Exit Function
+
+	Dim a
+	Set a = p.getAttributeNode("value")
+	If a Is Nothing Then Exit Function
+
+	PropertyValue = a.value
+
+End Function
 
 
 ' Sets a declared property, or takes the attribute off when the value is
@@ -1656,20 +1702,20 @@ End Sub
 <xatm_config_screens.Config.TreeView:TreeView_NodeClick(Node)>
 Sub TreeView_NodeClick(Node)
 
-	' Whatever the node stands for, as an E3 path - AddBranch put it on the
-	' node when it built the tree.
-	Dim path
-	path = ""
+	' What the node stands for - AddBranch put it on the node when it built
+	' the tree.
+	Dim key
+	key = ""
 
 	On Error Resume Next
-	path = Node.Tag
+	key = Node.Tag
 	On Error Goto 0
 
 	' The rows of the last selection go either way, so a click that shows
 	' nothing leaves nothing behind.
 	ClearPropertyRows
 
-	If path = "" Then Exit Sub
+	If key = "" Then Exit Sub
 	
 	Dim content
 	content = Empty
@@ -1686,14 +1732,14 @@ Sub TreeView_NodeClick(Node)
 	If Not doc.loadXML(StripBom(CStr(content))) Then Exit Sub
 
 	' A folder is a node too, and has no properties of its own to show -
-	' the document answers which kind this is by having an object at the
-	' path, or not.
+	' the document answers which kind this is by having an object for the
+	' key, or not.
 	Dim objectNode
-	Set objectNode = doc.selectSingleNode("//object[@path=""" & path & """]")
+	Set objectNode = FindObject(doc, key)
 
 	If objectNode Is Nothing Then Exit Sub
 
-	BuildPropertyRows objectNode, path
+	BuildPropertyRows objectNode, key
 
 End Sub
 
@@ -1720,6 +1766,9 @@ Const AUTOMATION_FOLDER = "Automation"
 Const KIND_NAME     = "name"
 Const KIND_PROPERTY = "property"
 
+' What marks a key as an Id rather than a path.
+Const ID_PREFIX     = "id:"
+
 ' E3 places and sizes objects in himetric, not pixels.
 Function Himetric(pixels)
 
@@ -1728,10 +1777,37 @@ Function Himetric(pixels)
 End Function
 
 
+' The object a key stands for, Nothing when the document has none - which
+' is the answer for a folder, since only objects carry properties.
+'
+' A copy: AddBranch builds the keys in the button's script and the click
+' reads them here, and one E3 object has no way to call a procedure in
+' another. The two have to say the same thing about a key.
+Function FindObject(doc, key)
+
+	Set FindObject = Nothing
+
+	' The Len is tested and not just the comparison. Were ID_PREFIX missing
+	' from this scope it would be Empty, Len would be 0, and Left(key, 0)
+	' would be "" - which equals Empty in VBScript. Every key would then
+	' take the Id branch with the prefix still on the front of it, match
+	' nothing, and say nothing about why. Testing the Len first costs a
+	' missing const the Id keys only, and leaves the path ones working.
+	If Len(ID_PREFIX) > 0 And Left(key, Len(ID_PREFIX)) = ID_PREFIX Then
+		Set FindObject = doc.selectSingleNode( _
+		                 "//object[property[@name='Id']/@value='" & _
+		                 Mid(key, Len(ID_PREFIX) + 1) & "']")
+	Else
+		Set FindObject = doc.selectSingleNode("//object[@path=""" & key & """]")
+	End If
+
+End Function
+
+
 ' One row per property of the selected object, stacked down the panel in
 ' the order the export wrote them - which is the order the manifest
 ' declares them in.
-Sub BuildPropertyRows(objectNode, path)
+Sub BuildPropertyRows(objectNode, key)
 
 	Dim objectType
 	objectType = Attribute(objectNode, "type")
@@ -1751,7 +1827,7 @@ Sub BuildPropertyRows(objectNode, path)
 	' number on the end of its name, so the name is structure there and not
 	' the operator's to change.
 	If Not IsAutomation(objectNode) Then
-		Set row = NewRow(KIND_NAME, path, objectType, NAME_PROPERTY, NAME_TYPE, _
+		Set row = NewRow(KIND_NAME, key, objectType, NAME_PROPERTY, NAME_TYPE, _
 		                 Attribute(objectNode, "name"), y)
 		y = y + row.Height + Himetric(ROW_GAP_PX)
 	End If
@@ -1760,7 +1836,7 @@ Sub BuildPropertyRows(objectNode, path)
 
 		Set property = properties.item(i)
 
-		Set row = NewRow(KIND_PROPERTY, path, objectType, Attribute(property, "name"), _
+		Set row = NewRow(KIND_PROPERTY, key, objectType, Attribute(property, "name"), _
 		                 Attribute(property, "type"), Attribute(property, "value"), y)
 
 		' A row comes out at the size it was drawn, so the next one goes
@@ -1786,7 +1862,7 @@ End Function
 ' One row on the screen. Added inactive so every property is set before
 ' the control goes up and reads them, and handed back so the caller can
 ' step past the height it came out at.
-Function NewRow(kind, path, objectType, propertyName, propertyType, value, y)
+Function NewRow(kind, key, objectType, propertyName, propertyType, value, y)
 
 	Dim row
 	Set row = Screen.AddObject(ROW_CLASS, False)
@@ -1795,7 +1871,7 @@ Function NewRow(kind, path, objectType, propertyName, propertyType, value, y)
 	row.Y = y
 	
 	row.Kind         = kind
-	row.Source       = path
+	row.Source       = key
 	row.ObjectType   = objectType
 	row.PropertyName = propertyName
 	row.PropertyType = propertyType
@@ -2905,10 +2981,10 @@ Sub AddBranch(tree, element, parentIndex, parentPath)
 	End If
 
 	node.Text = NodeText(element)
-	
-	' What NodeClick reads back to know what was selected. Tag takes
-	' anything and has to be unique in nothing, unlike Key.
-	node.Tag = path
+
+	' What NodeClick reads back to know what was selected, and what every
+	' row built from it is addressed by.
+	node.Tag = NodeKey(element, path)
 
 	' Nothing is expanded on the way in, and a node the control has just
 	' been given is collapsed - so the tree opens on the two roots alone.
@@ -3051,6 +3127,31 @@ Function PropertyValue(objectNode, propertyName)
 	If a Is Nothing Then Exit Function
 
 	PropertyValue = a.value
+
+End Function
+
+
+' What marks a key as an Id rather than a path.
+Const ID_PREFIX = "id:"
+
+
+' What a node is addressed by, and with it every row built from that
+' node. An object whose class declares an Id is addressed by the Id,
+' because renaming it changes its path and anything still holding the old
+' one goes stale - the node, and all twenty rows on the panel. A folder,
+' and an object with no Id, has only its path to go by; neither can be
+' renamed from this screen.
+Function NodeKey(element, path)
+
+	NodeKey = path
+
+	If element.nodeName <> "object" Then Exit Function
+
+	Dim id
+	id = PropertyValue(element, "Id")
+	If id = "" Then Exit Function
+
+	NodeKey = ID_PREFIX & id
 
 End Function
 
