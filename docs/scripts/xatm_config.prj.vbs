@@ -2874,9 +2874,11 @@ Sub PopulateTree(tree, doc)
 	root = doc.documentElement.getAttribute("root")
 	If IsNull(root) Then root = ""
 
-	Dim child
-	For Each child In doc.documentElement.childNodes
-		If IsBranch(child) Then AddBranch tree, child, 0, root
+	Dim children, i
+	children = BranchChildren(doc.documentElement)
+
+	For i = 0 To UBound(children)
+		AddBranch tree, children(i), 0, root
 	Next
 
 End Sub
@@ -2910,9 +2912,11 @@ Sub AddBranch(tree, element, parentIndex, parentPath)
 
 	' Nothing is expanded on the way in, and a node the control has just
 	' been given is collapsed - so the tree opens on the two roots alone.
-	Dim child
-	For Each child In element.childNodes
-		If IsBranch(child) Then AddBranch tree, child, node.Index, path
+	Dim children, i
+	children = BranchChildren(element)
+
+	For i = 0 To UBound(children)
+		AddBranch tree, children(i), node.Index, path
 	Next
 
 End Sub
@@ -2928,6 +2932,125 @@ Function IsBranch(element)
 	Select Case element.nodeName
 		Case "folder", "object" : IsBranch = True
 	End Select
+
+End Function
+
+
+' The children of an element that are nodes, in the order the tree shows
+' them rather than the order anything holds them in. Only the tree is
+' ordered by this - E3 and the document are left to hold them however
+' they like, and neither is asked to change.
+Function BranchChildren(element)
+
+	Dim items()
+	ReDim items(0)
+
+	Dim n
+	n = -1
+
+	Dim child
+	For Each child In element.childNodes
+
+		If IsBranch(child) Then
+			n = n + 1
+			ReDim Preserve items(n)
+			Set items(n) = child
+		End If
+
+	Next
+
+	If n < 0 Then
+		BranchChildren = Array()
+		Exit Function
+	End If
+
+	SortBranches items, n
+
+	BranchChildren = items
+
+End Function
+
+
+' Insertion sort - it is one folder's worth of children and VBScript has
+' no sort of its own. Stable, so everything sharing a key keeps the
+' order the document had it in, which is what holds the folders still.
+Sub SortBranches(items, last)
+
+	Dim i, j, key, current
+
+	For i = 1 To last
+
+		Set current = items(i)
+		key = SortKey(current)
+
+		j = i - 1
+
+		Do While j >= 0
+			If SortKey(items(j)) <= key Then Exit Do
+			Set items(j + 1) = items(j)
+			j = j - 1
+		Loop
+
+		Set items(j + 1) = current
+
+	Next
+
+End Sub
+
+
+' What a node sorts on.
+'
+' Folders share one key and so keep the order the document has them in,
+' ahead of everything else - Incomer, Transformer, Busbar, Feeder is a
+' deliberate order and alphabetising it would lose it.
+'
+' An object sorts on its Id where its class declares one and on its name
+' where it does not. That is what puts the devices in Id order, which
+' pairs each transformer with its own breaker, and the automations in
+' name order, a BTC having no Id to go by.
+Function SortKey(element)
+
+	If element.nodeName = "folder" Then
+		SortKey = "0"
+		Exit Function
+	End If
+
+	Dim id
+	id = PropertyValue(element, "Id")
+
+	If id <> "" Then
+
+		If IsNumeric(id) Then
+			' Padded, or 1000 would sort in front of 700.
+			SortKey = "1" & Right("000000000000" & CLng(id), 12)
+		Else
+			SortKey = "1" & LCase(id)
+		End If
+
+		Exit Function
+
+	End If
+
+	SortKey = "2" & LCase(NodeText(element))
+
+End Function
+
+
+' The value attribute of a named property - "" when the property is
+' absent or unset.
+Function PropertyValue(objectNode, propertyName)
+
+	PropertyValue = ""
+
+	Dim p
+	Set p = objectNode.selectSingleNode("property[@name='" & propertyName & "']")
+	If p Is Nothing Then Exit Function
+
+	Dim a
+	Set a = p.getAttributeNode("value")
+	If a Is Nothing Then Exit Function
+
+	PropertyValue = a.value
 
 End Function
 
