@@ -2037,6 +2037,14 @@ Const ROW_LEFT_PX = 10
 Const ROW_TOP_PX  = 10
 Const ROW_GAP_PX  = 2
 
+' What the object's own name is shown as. It has no manifest entry, so
+' the row has no help text for it and nothing declares its type.
+Const NAME_PROPERTY = "Name"
+Const NAME_TYPE     = "String"
+
+' The folder whose objects are named by the layout rather than by hand.
+Const AUTOMATION_FOLDER = "Automation"
+
 
 ' E3 places and sizes objects in himetric, not pixels.
 Function Himetric(pixels)
@@ -2060,24 +2068,25 @@ Sub BuildPropertyRows(objectNode, path)
 	Dim i, property, row, y
 	y = Himetric(ROW_TOP_PX)
 
+	' The object's own name goes first. It is the object rather than
+	' something declared on it, so it is neither a property of the document
+	' nor an entry in the manifest, and it is built here instead of coming
+	' out of the loop.
+	'
+	' Not under Automation, though: SyncAutomation finds a BTC by the
+	' number on the end of its name, so the name is structure there and not
+	' the operator's to change.
+	If Not IsAutomation(objectNode) Then
+		Set row = NewRow(path, objectType, NAME_PROPERTY, NAME_TYPE, Attribute(objectNode, "name"), y)
+		y = y + row.Height + Himetric(ROW_GAP_PX)
+	End If
+
 	For i = 0 To properties.length - 1
 
 		Set property = properties.item(i)
 
-		' Created inactive, so every property is set before the control is
-		' put on the screen and reads them.
-		Set row = Screen.AddObject(ROW_CLASS, False)
-
-		row.X = Himetric(ROW_LEFT_PX)
-		row.Y = y
-
-		row.Source       = path
-		row.ObjectType   = objectType
-		row.PropertyName = Attribute(property, "name")
-		row.PropertyType = Attribute(property, "type")
-		row.Value        = Attribute(property, "value")
-
-		row.Activate()
+		Set row = NewRow(path, objectType, Attribute(property, "name"), _
+		                 Attribute(property, "type"), Attribute(property, "value"), y)
 
 		' A row comes out at the size it was drawn, so the next one goes
 		' under whatever that turned out to be.
@@ -2086,6 +2095,41 @@ Sub BuildPropertyRows(objectNode, path)
 	Next
 
 End Sub
+
+
+' True for anything under the Automation folder, however deep. Asked of
+' the element and not of the path, so a folder renamed on the way down
+' cannot fool it.
+Function IsAutomation(objectNode)
+
+	IsAutomation = Not (objectNode.selectSingleNode( _
+	               "ancestor::folder[@name='" & AUTOMATION_FOLDER & "']") Is Nothing)
+
+End Function
+
+
+' One row on the screen. Added inactive so every property is set before
+' the control goes up and reads them, and handed back so the caller can
+' step past the height it came out at.
+Function NewRow(path, objectType, propertyName, propertyType, value, y)
+
+	Dim row
+	Set row = Screen.AddObject(ROW_CLASS, False)
+
+	row.X = Himetric(ROW_LEFT_PX)
+	row.Y = y
+
+	row.Source       = path
+	row.ObjectType   = objectType
+	row.PropertyName = propertyName
+	row.PropertyType = propertyType
+	row.Value        = value
+
+	row.Activate()
+
+	Set NewRow = row
+
+End Function
 
 
 ' Takes the rows of the last selection off the screen. Collected first
