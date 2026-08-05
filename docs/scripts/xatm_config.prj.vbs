@@ -333,6 +333,557 @@ Sub ScanFolder(folder, simEnabled)
 	
 End Sub
 
+<xatm_config_data.XML.ImportXml:ImportXml_OnChangedValue()>
+Sub ImportXml_OnChangedValue()
+
+	Dim ts
+	ts = TimeStamp
+
+	Dim contentTag
+	Set contentTag = Nothing
+	On Error Resume Next
+	Set contentTag = Parent.Item("XMLContent")
+	On Error Goto 0
+
+	If contentTag Is Nothing Then
+		Fail "there is no XMLContent tag to read from.", ts
+		Exit Sub
+	End If
+
+	Dim doc
+	Set doc = NewDomDocument()
+
+	If Not doc.loadXML(StripBom(CStr(contentTag.Value))) Then
+		Fail "XMLContent does not parse - " & OneLine(doc.parseError.reason), ts
+		Exit Sub
+	End If
+
+	If doc.documentElement.nodeName <> ROOT_ELEMENT Then
+		Fail "XMLContent is not a " & ROOT_ELEMENT & " document.", ts
+		Exit Sub
+	End If
+
+	Dim report, problem
+	report  = ""
+	problem = ""
+
+	Dim root
+	root = doc.documentElement.getAttribute("root")
+
+	Dim child
+	For Each child In doc.documentElement.childNodes
+		If IsFolderElement(child) Then
+			ImportFolder child, root & "." & child.getAttribute("name"), report, problem
+		End If
+	Next
+
+	If problem <> "" Then
+		Fail problem, ts
+		Exit Sub
+	End If
+
+	If report = "" Then
+		WriteLog "The project already matched the document."
+	Else
+		WriteLog "Written into the project:" & report
+	End If
+
+	DocString = EXIT_SUCCESS
+	WriteEx Empty, ts
+
+End Sub
+
+
+Const ROOT_ELEMENT  = "xatm-config"
+Const CONFIG_DATA   = "xatm_config_data"
+Const HELPER_FOLDER = "PropertiesHelper"
+Const NODE_ELEMENT  = 1
+Const EXIT_SUCCESS  = "EXIT_SUCCESS"
+
+
+' Scratch cells for the late-bound writes done through Execute, the way
+' ReadProperty has one for its reads.
+Dim gWriteValue
+Dim gWriteObject
+
+
+' Brings one folder of the project to what the document says is in it.
+'
+' Objects are matched on Id and not on name. The Id is the contract the
+' automation goes by, so a rename stays a rename instead of reading as a
+' delete and a create - which would take every tag the operator had
+' associated with the old object down with it.
+Sub ImportFolder(folderElement, folderPath, report, problem)
+
+	Dim folder
+	Set folder = Nothing
+	On Error Resume Next
+	Set folder = Application.GetObject(E3Path(folderPath))
+	On Error Goto 0
+
+	If folder Is Nothing Then
+		problem = "the project has no folder at " & folderPath & "."
+		Exit Sub
+	End If
+
+	' --- what the document says belongs here ---------------------------
+
+	Dim wanted
+	Set wanted = CreateObject("Scripting.Dictionary")
+
+	Dim child, key
+	For Each child In folderElement.childNodes
+
+		If IsObjectElement(child) Then
+
+			key = ObjectKey(PropertyValue(child, "Id"), child.getAttribute("name"))
+
+			If wanted.Exists(key) Then
+				problem = "two objects in " & folderPath & " answer to " & key & "."
+				Exit Sub
+			End If
+
+			wanted.Add key, child
+
+		End If
+
+	Next
+
+	' --- what the project has -----------------------------------------
+
+	Dim present
+	Set present = CreateObject("Scripting.Dictionary")
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim obj
+	For Each obj In folder
+
+		If IsDevice(obj) Then
+
+			key = ObjectKey(IdOf(obj), obj.Name)
+
+			If wanted.Exists(key) Then
+				present.Add key, obj
+			Else
+				doomed.Add doomed.Count, obj.Name
+			End If
+
+		End If
+
+	Next
+
+	' Taken out in a second pass - a collection is not walked while what
+	' is in it is being removed.
+	Dim n
+	For Each n In doomed.Keys
+
+		On Error Resume Next
+		folder.DeleteObject doomed(n)
+		On Error Goto 0
+
+		report = report & vbCrLf & "  removed " & doomed(n) & " from " & folderPath
+
+	Next
+
+	' --- bring each object to what the document says ------------------
+
+	Dim existing
+	For Each key In wanted.Keys
+
+		Set existing = Nothing
+		If present.Exists(key) Then Set existing = present(key)
+
+		ImportObject folder, folderPath, wanted(key), existing, report, problem
+		If problem <> "" Then Exit Sub
+
+	Next
+
+	' --- and the folders under it -------------------------------------
+
+	For Each child In folderElement.childNodes
+		If IsFolderElement(child) Then
+			ImportFolder child, folderPath & "." & child.getAttribute("name"), report, problem
+			If problem <> "" Then Exit Sub
+		End If
+	Next
+
+End Sub
+
+
+' One object: created where the project has not got it, brought to the
+' name the document gives it, and then filled in either way.
+Sub ImportObject(folder, folderPath, objectElement, existing, report, problem)
+
+	Dim name, className
+	name      = objectElement.getAttribute("name")
+	className = objectElement.getAttribute("type")
+
+	Dim obj
+	Set obj = Nothing
+
+	If existing Is Nothing Then
+
+		Set obj = NewDevice(folder, className, name)
+
+		If obj Is Nothing Then
+			problem = "could not create " & name & ", a " & className & ", in " & folderPath & "."
+			Exit Sub
+		End If
+
+		report = report & vbCrLf & "  created " & name & " in " & folderPath
+
+	ElseIf existing.Name <> name Then
+
+		' Renaming in place is tried first, because an object that keeps its
+		' identity keeps everything associated with it - the tags on a
+		' breaker above all. E3 may refuse it at runtime, and then the only
+		' way to the new name is to build the object again, which loses them.
+		Dim oldName
+		oldName = existing.Name
+
+		On Error Resume Next
+		existing.Name = name
+		On Error Goto 0
+
+		If existing.Name = name Then
+
+			Set obj = existing
+			report = report & vbCrLf & "  renamed " & oldName & " to " & name & " in " & folderPath
+
+		Else
+
+			On Error Resume Next
+			folder.DeleteObject oldName
+			On Error Goto 0
+
+			Set obj = NewDevice(folder, className, name)
+
+			If obj Is Nothing Then
+				problem = "could not build " & oldName & " again as " & name & " in " & _
+				          folderPath & " - and it has been taken out."
+				Exit Sub
+			End If
+
+			report = report & vbCrLf & "  built " & oldName & " again as " & name & " in " & _
+			         folderPath & " - E3 would not rename it, so what was linked to it is gone"
+
+		End If
+
+	Else
+
+		Set obj = existing
+
+	End If
+
+	Dim property
+	For Each property In objectElement.selectNodes("property")
+		WriteProperty obj, property, report, folderPath & "." & name
+	Next
+
+End Sub
+
+
+' A new object in a data folder, active so its properties can be written
+' - AddObject(ClassName, [Activate], [ObjectName]).
+Function NewDevice(folder, className, name)
+
+	Set NewDevice = Nothing
+
+	On Error Resume Next
+	Set NewDevice = folder.AddObject(className, True, name)
+	On Error Goto 0
+
+End Function
+
+
+' Writes one property, and only when the document carries a value for it.
+'
+' A property with no value attribute is unset in the document, and the
+' export writes no value for an IOTag at all - so putting Empty over one
+' would break the association the operator made in Studio, on every
+' single save. Absent means leave it alone, not clear it.
+Sub WriteProperty(obj, property, report, where)
+
+	Dim a
+	Set a = property.getAttributeNode("value")
+	If a Is Nothing Then Exit Sub
+
+	Dim name, dataType
+	name     = property.getAttribute("name")
+	dataType = property.getAttribute("type")
+
+	Dim failed
+	failed = ""
+
+	gWriteValue = a.value
+
+	On Error Resume Next
+
+	If IsObjectType(dataType) Then
+
+		' The value is the path of the object the property points at, so it
+		' is an association and has to be Set, not assigned.
+		Set gWriteObject = Application.GetObject(E3Path(CStr(gWriteValue)))
+		Execute "Set obj." & name & " = gWriteObject"
+
+	Else
+
+		Execute "obj." & name & " = gWriteValue"
+
+	End If
+
+	If Err.Number <> 0 Then
+		failed = Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+	If failed <> "" Then
+		report = report & vbCrLf & "  could not set " & name & " on " & where & " - " & failed
+	End If
+
+End Sub
+
+
+' What an object answers to across a rename - its Id where it has one,
+' and its name where it has not. A BTC carries no Id, and SyncAutomation
+' already goes by the number on the end of its name.
+Function ObjectKey(id, name)
+
+	If CStr(id) = "" Then
+		ObjectKey = "name:" & LCase(name)
+	Else
+		ObjectKey = "id:" & CStr(id)
+	End If
+
+End Function
+
+
+' The Id of an object in the project, "" where the class declares none.
+Function IdOf(obj)
+
+	IdOf = ""
+
+	On Error Resume Next
+	IdOf = CStr(obj.Id)
+	On Error Goto 0
+
+End Function
+
+
+' The children of a folder the document speaks for. A class with a
+' manifest is a device the export writes and the import owns; anything
+' else in the folder is E3's own and is left alone.
+Function IsDevice(obj)
+
+	IsDevice = Not (ManifestOf(TypeName(obj)) Is Nothing)
+
+End Function
+
+
+' A property whose value is the path of another object rather than a
+' value of its own - the manifest names the class, as xatm_Transformer.
+Function IsObjectType(dataType)
+
+	IsObjectType = (LCase(Left(CStr(dataType), 5)) = "xatm_")
+
+End Function
+
+
+Function IsFolderElement(element)
+
+	IsFolderElement = (element.nodeType = NODE_ELEMENT) And (element.nodeName = "folder")
+
+End Function
+
+
+Function IsObjectElement(element)
+
+	IsObjectElement = (element.nodeType = NODE_ELEMENT) And (element.nodeName = "object")
+
+End Function
+
+
+' The value attribute of a named property - "" when the property is
+' absent or unset.
+Function PropertyValue(objectNode, propertyName)
+
+	PropertyValue = ""
+
+	Dim p
+	Set p = objectNode.selectSingleNode("property[@name='" & propertyName & "']")
+	If p Is Nothing Then Exit Function
+
+	Dim a
+	Set a = p.getAttributeNode("value")
+	If a Is Nothing Then Exit Function
+
+	PropertyValue = a.value
+
+End Function
+
+
+' The manifest declared for a class, or Nothing when the class has none -
+' the same lookup the export does.
+Function ManifestOf(className)
+
+	Set ManifestOf = Nothing
+
+	On Error Resume Next
+	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
+	On Error Goto 0
+
+End Function
+
+
+' A path E3 will resolve. A name that starts with a digit or an
+' underscore, or carries a space or a hyphen, has to be bracketed, and
+' bracketing every piece is always right. One already bracketed is left
+' alone - PathName may have bracketed it, and [[52-01]] resolves no
+' better than 52-01 does.
+Function E3Path(path)
+
+	E3Path = ""
+	If path = "" Then Exit Function
+
+	Dim pieces
+	pieces = SplitPath(path)
+
+	Dim i
+	For i = 0 To UBound(pieces)
+		If Left(pieces(i), 1) <> "[" Then
+			pieces(i) = "[" & pieces(i) & "]"
+		End If
+	Next
+
+	E3Path = Join(pieces, ".")
+
+End Function
+
+
+' The pieces of a path, split on the dots between them - the ones outside
+' brackets, since a bracketed name may carry a dot of its own.
+Function SplitPath(path)
+
+	Dim pieces()
+	ReDim pieces(0)
+	pieces(0) = ""
+
+	Dim i, n, depth, ch
+	n = 0
+	depth = 0
+
+	For i = 1 To Len(path)
+
+		ch = Mid(path, i, 1)
+
+		If ch = "[" Then
+			depth = depth + 1
+			pieces(n) = pieces(n) & ch
+		ElseIf ch = "]" Then
+			depth = depth - 1
+			pieces(n) = pieces(n) & ch
+		ElseIf ch = "." And depth = 0 Then
+			n = n + 1
+			ReDim Preserve pieces(n)
+			pieces(n) = ""
+		Else
+			pieces(n) = pieces(n) & ch
+		End If
+
+	Next
+
+	SplitPath = pieces
+
+End Function
+
+
+' Says why nothing was written, and clears the command.
+Sub Fail(reason, ts)
+
+	DocString = "EXIT_FAILURE"
+	WriteLog "Not written into the project - " & reason
+	WriteEx Empty, ts
+
+End Sub
+
+
+' MSXML 6 where the machine has it, the version-independent progid
+' otherwise.
+Function NewDomDocument()
+
+	Set NewDomDocument = Nothing
+
+	On Error Resume Next
+	Set NewDomDocument = CreateObject("MSXML2.DOMDocument.6.0")
+	On Error Goto 0
+
+	If NewDomDocument Is Nothing Then
+		Set NewDomDocument = CreateObject("MSXML2.DOMDocument")
+	End If
+
+	NewDomDocument.async = False
+	NewDomDocument.preserveWhiteSpace = True
+
+	On Error Resume Next
+	NewDomDocument.setProperty "SelectionLanguage", "XPath"
+	On Error Goto 0
+
+End Function
+
+
+' A byte-order mark survives a round trip through a utf-8 file and makes
+' loadXML fail on what looks like perfectly good XML.
+Function StripBom(text)
+
+	StripBom = text
+
+	If IsEmpty(text) Or IsNull(text) Then Exit Function
+	If Len(text) = 0 Then Exit Function
+
+	If AscW(Left(text, 1)) = &HFEFF Then
+		StripBom = Mid(text, 2)
+	End If
+
+End Function
+
+
+' A parse error reason comes with the line break MSXML puts on the end of
+' it, which a one-line log entry has no room for.
+Function OneLine(text)
+
+	OneLine = Trim(Replace(Replace(CStr(text), vbCr, " "), vbLf, " "))
+
+End Function
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_config_data.XML.ImportXml:ImportXml_OnStartRunning()>
+Sub ImportXml_OnStartRunning()
+
+	DocString = ""
+
+End Sub
+
 <xatm_config_data.XML.SaveXML:SaveXML_OnChangedValue()>
 Sub SaveXML_OnChangedValue()
 	
@@ -2210,31 +2761,48 @@ End Sub
 
 <xatm_config_screens.Config.btnSave:btnSave_Click()>
 Sub btnSave_Click()
-		
-	' Call the SaveXML method to save the XML data to a file
-	Application.GetObject("xatm_config_data.XML.SaveXML").WriteEx True
-	
-	Dim return
-	return = Application.GetObject("xatm_config_data.XML.SaveXML").DocString
-	
-	If return = "EXIT_SUCCESS" Then
-		
-		Dim layoutFolder
-		Set layoutFolder = Application.GetObject("XATM_Data.Automation.Layout")
-		
-		Dim transformerType
-		transformerType = Screen.Item("SelectLayoutTransformer").Index
-		layoutFolder.Item("Transformer").WriteEx transformerType
-		
-		Dim busbarType
-		busbarType = Screen.Item("SelectLayoutBusbar").Index
-		layoutFolder.Item("Busbar").WriteEx busbarType
-		
-		layoutFolder.Context("Container").Save()
-		
+
+	' 1. The document into the project. Nothing else happens if it will
+	' not go in - a file saved against a project that does not match it is
+	' worse than no save at all.
+	Dim importer
+	Set importer = Application.GetObject(IMPORT_XML)
+	importer.WriteEx True
+
+	If importer.DocString <> EXIT_SUCCESS Then
+		MsgBox "Nothing was saved. The document could not be written into the " & _
+		       "project - the console says why.", vbCritical, "Save"
+		Exit Sub
 	End If
-	
+
+	' 2. The layout the screen is showing, and then the project file. The
+	' objects the import just wrote are in the same container, so one Save
+	' persists them too.
+	Dim layoutFolder
+	Set layoutFolder = Application.GetObject("XATM_Data.Automation.Layout")
+
+	layoutFolder.Item("Transformer").WriteEx Screen.Item("SelectLayoutTransformer").Index
+	layoutFolder.Item("Busbar").WriteEx Screen.Item("SelectLayoutBusbar").Index
+
+	layoutFolder.Context("Container").Save()
+
+	' 3. And the file.
+	Dim saver
+	Set saver = Application.GetObject(SAVE_XML)
+	saver.WriteEx True
+
+	If saver.DocString <> EXIT_SUCCESS Then
+		MsgBox "The project was saved, but the XML file was not - the console " & _
+		       "says why.", vbExclamation, "Save"
+		Exit Sub
+	End If
+
 End Sub
+
+
+Const IMPORT_XML   = "xatm_config_data.XML.ImportXml"
+Const SAVE_XML     = "xatm_config_data.XML.SaveXML"
+Const EXIT_SUCCESS = "EXIT_SUCCESS"
 
 <xatm_config_screens.Config.btnUpdateTreeview:btnUpdateTreeview_Click()>
 Sub btnUpdateTreeview_Click()
