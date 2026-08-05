@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Wed Aug  5 15:09:18 2026
+Wed Aug  5 16:12:12 2026
 -----------------------
 
 <xatm_config_data.PropertiesHelper.xatm_BTC:xatm_BTC_OnStartRunning()>
@@ -336,6 +336,9 @@ End Sub
 <xatm_config_data.XML.SaveXML:SaveXML_OnChangedValue()>
 Sub SaveXML_OnChangedValue()
 	
+	Dim ts
+	ts = TimeStamp                         ' preserved for the silent clear
+	
 	Dim xmlContent
 	xmlContent = Parent.Item("XMLContent").Value
 	
@@ -353,6 +356,8 @@ Sub SaveXML_OnChangedValue()
 		DocString = "EXIT_FAILURE"
 			
 	End If
+		
+	WriteEx Empty, ts
 	
 End Sub
 
@@ -820,9 +825,12 @@ Sub SetProperty_OnStartRunning()
 
 End Sub
 
-<xatm_config_data.XML.XMLBuilder:XMLBuilder_OnStartRunning()>
-Sub XMLBuilder_OnStartRunning()
-	
+<xatm_config_data.XML.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
+Sub XMLBuilderAfterDelay_Functions()
+End Sub
+
+Sub BuildXML()
+
 	Dim xmlContent
 	xmlContent = ExportXml()
 
@@ -1066,6 +1074,31 @@ Function Pad2(n)
 End Function
 
 Sub Foo()
+	
+End Sub
+
+<xatm_config_data.XML.XMLBuilderAfterDelay:XMLBuilderAfterDelay_OnStartRunning()>
+Sub XMLBuilderAfterDelay_OnStartRunning()
+
+	Value = 3	' delay in seconds
+	
+End Sub
+
+<xatm_config_data.XML.XMLBuilderAfterDelay:XMLBuilderAfterDelay_TickCountdown()>
+Sub XMLBuilderAfterDelay_TickCountdown()
+	
+	If Value > 0 Then
+			
+		Value = Value - 1
+	
+	Else
+		
+		' stop
+		Value = -1
+		
+		BuildXML
+		
+	End If
 	
 End Sub
 
