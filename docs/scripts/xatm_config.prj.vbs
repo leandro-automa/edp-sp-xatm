@@ -503,6 +503,297 @@ Sub SaveXML_OnStartRunning()
 		
 End Sub
 
+<xatm_config_data.XML.SetProperty:SetProperty_OnChangedValue()>
+Sub SetProperty_OnChangedValue()
+
+	If Trim(Value) = "" Then Exit Sub      ' self-cleared write, ignore
+
+	Dim ts
+	ts = TimeStamp                         ' preserved for the silent clear
+
+	Dim command
+	command = CStr(Value)
+
+	' kind|path|name|value, split four ways so a value carrying a bar
+	' survives as the remainder. Nothing ahead of it may carry one, and
+	' neither a path nor a property name can.
+	Dim parts
+	parts = Split(command, "|", 4)
+
+	If UBound(parts) <> 3 Then
+		Refuse "malformed command '" & command & "' (expected kind|path|name|value).", ts
+		Exit Sub
+	End If
+
+	Dim kind, path, name, value
+	kind  = LCase(Trim(parts(0)))
+	path  = Trim(parts(1))
+	name  = Trim(parts(2))
+	value = parts(3)
+
+	Select Case kind
+
+		Case KIND_NAME, KIND_PROPERTY
+
+		Case Else
+			Refuse "unknown kind '" & parts(0) & "'.", ts
+			Exit Sub
+
+	End Select
+
+	If path = "" Then
+		Refuse "the command names no object.", ts
+		Exit Sub
+	End If
+
+	Dim contentTag
+	Set contentTag = Nothing
+	On Error Resume Next
+	Set contentTag = Parent.Item("XMLContent")
+	On Error Goto 0
+
+	If contentTag Is Nothing Then
+		Refuse "there is no XMLContent tag to write to.", ts
+		Exit Sub
+	End If
+
+	Dim doc
+	Set doc = NewDomDocument()
+
+	If Not doc.loadXML(StripBom(CStr(contentTag.Value))) Then
+		Refuse "XMLContent does not parse - " & OneLine(doc.parseError.reason), ts
+		Exit Sub
+	End If
+
+	Dim objectNode
+	Set objectNode = doc.selectSingleNode("//object[@path=""" & path & """]")
+
+	If objectNode Is Nothing Then
+		Refuse "the document has no object at " & path & ".", ts
+		Exit Sub
+	End If
+
+	Dim problem
+
+	If kind = KIND_NAME Then
+		problem = SetName(objectNode, value)
+	Else
+		problem = SetValue(objectNode, name, value)
+	End If
+
+	If problem <> "" Then
+		Refuse problem, ts
+		Exit Sub
+	End If
+
+	' The buffer the Save button commits. Nothing has reached E3 or the
+	' file yet, and nothing will until it is pressed.
+	contentTag.WriteEx DocumentText(doc)
+
+	DocString = "EXIT_SUCCESS"
+	WriteLog "Set " & name & " of " & path & "."
+
+	WriteEx "", ts                         ' clear without re-firing
+
+End Sub
+
+
+Const ROOT_ELEMENT  = "xatm-config"
+Const NODE_ELEMENT  = 1
+
+' What the command is asking to change: the object itself, or one of the
+' properties declared on it.
+Const KIND_NAME     = "name"
+Const KIND_PROPERTY = "property"
+
+
+' Sets a declared property, or takes the attribute off when the value is
+' cleared. The export drops it for a property that is unset, so writing
+' value="" would say something else entirely on the way back in.
+Function SetValue(objectNode, name, value)
+
+	SetValue = ""
+
+	Dim property
+	Set property = objectNode.selectSingleNode("property[@name=""" & name & """]")
+
+	If property Is Nothing Then
+		SetValue = objectNode.getAttribute("name") & " has no property called " & name & "."
+		Exit Function
+	End If
+
+	If value = "" Then
+		property.removeAttribute "value"
+	Else
+		property.setAttribute "value", value
+	End If
+
+End Function
+
+
+' Renames the object and rebuilds the path it is known by, the name being
+' the last piece of it.
+'
+' TODO: a property somewhere else in the document may hold the old path -
+' a BTC's Transformer does - and those are not followed yet.
+Function SetName(objectNode, value)
+
+	SetName = ""
+
+	Dim name
+	name = Trim(value)
+
+	If name = "" Then
+		SetName = "an object cannot be left unnamed."
+		Exit Function
+	End If
+
+	' E3 will not hold two of a name in one folder, and two objects at one
+	' path reads worse in the document than it does in E3. Told apart by
+	' path, which is unique, rather than by object identity, which two
+	' lookups of the same node need not share.
+	Dim twin
+	Set twin = objectNode.parentNode.selectSingleNode("object[@name=""" & name & """]")
+
+	If Not (twin Is Nothing) Then
+		If twin.getAttribute("path") <> objectNode.getAttribute("path") Then
+			SetName = "there is already an object called " & name & " in that folder."
+			Exit Function
+		End If
+	End If
+
+	objectNode.setAttribute "name", name
+	objectNode.setAttribute "path", RebuildPath(objectNode)
+
+End Function
+
+
+' Where the object sits, as a path - the root the document was exported
+' from, the folders down to it, then its own name. The same shape
+' ObjectPath builds for an object the layout adds.
+Function RebuildPath(objectNode)
+
+	Dim path
+	path = objectNode.getAttribute("name")
+
+	Dim n
+	Set n = objectNode.parentNode
+
+	Do While n.nodeType = NODE_ELEMENT And n.nodeName = "folder"
+		path = n.getAttribute("name") & "." & path
+		Set n = n.parentNode
+	Loop
+
+	RebuildPath = objectNode.ownerDocument.documentElement.getAttribute("root") & "." & path
+
+End Function
+
+
+' Says why nothing was written, and clears the command without re-firing
+' so the same edit can be sent again.
+Sub Refuse(reason, ts)
+
+	DocString = "EXIT_FAILURE"
+	WriteLog "Not set - " & reason
+	WriteEx "", ts
+
+End Sub
+
+
+' The document as text, headed the way ExportXml writes it - MSXML
+' regenerates the declaration from its own encoding and ignores what the
+' node says, so it is restored here rather than in the tree.
+Function DocumentText(doc)
+
+	Dim text
+	text = doc.xml
+
+	If Left(text, 5) = "<?xml" Then
+		text = Mid(text, InStr(text, "?>") + 2)
+	End If
+
+	Do While Left(text, 1) = vbCr Or Left(text, 1) = vbLf
+		text = Mid(text, 2)
+	Loop
+
+	DocumentText = "<?xml version=""1.0"" encoding=""utf-8""?>" & vbCrLf & text
+
+End Function
+
+
+' A byte-order mark survives a round trip through a utf-8 file and makes
+' loadXML fail on what looks like perfectly good XML.
+Function StripBom(text)
+
+	StripBom = text
+
+	If IsEmpty(text) Or IsNull(text) Then Exit Function
+	If Len(text) = 0 Then Exit Function
+
+	If AscW(Left(text, 1)) = &HFEFF Then
+		StripBom = Mid(text, 2)
+	End If
+
+End Function
+
+
+' A parse error reason comes with the line break MSXML puts on the end of
+' it, which a one-line log entry has no room for.
+Function OneLine(text)
+
+	OneLine = Trim(Replace(Replace(CStr(text), vbCr, " "), vbLf, " "))
+
+End Function
+
+
+' MSXML 6 where the machine has it, the version-independent progid
+' otherwise.
+Function NewDomDocument()
+
+	Set NewDomDocument = Nothing
+
+	On Error Resume Next
+	Set NewDomDocument = CreateObject("MSXML2.DOMDocument.6.0")
+	On Error Goto 0
+
+	If NewDomDocument Is Nothing Then
+		Set NewDomDocument = CreateObject("MSXML2.DOMDocument")
+	End If
+
+	NewDomDocument.async = False
+	NewDomDocument.preserveWhiteSpace = True
+
+	On Error Resume Next
+	NewDomDocument.setProperty "SelectionLanguage", "XPath"
+	On Error Goto 0
+
+End Function
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_config_data.XML.SetProperty:SetProperty_OnStartRunning()>
+Sub SetProperty_OnStartRunning()
+
+	DocString = ""
+
+End Sub
+
 <xatm_config_data.XML.XMLBuilder:XMLBuilder_OnStartRunning()>
 Sub XMLBuilder_OnStartRunning()
 	
