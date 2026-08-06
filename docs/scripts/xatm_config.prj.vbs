@@ -42,15 +42,46 @@ Sub xatm_BTC_OnStartRunning()
 	Dim i
 	For i = 1 To 6
 
-		AddProperty bag, "StepExecutionFailed" & i, "Boolean", Empty, _
+		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
 			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
 			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
 
 	Next
 
+	' What the screen may do with each of these, and which are settings
+	' rather than readings. Anything left out stays EXPOSE_NONE.
+	'
+	' The four that are readings - the blocks and Preconditions - are not
+	' saved: their expression is the configuration, and the reading is
+	' whatever the switchyard was doing at the time. StepExecutionFailed1
+	' to 6 are latches the automation sets and Reset clears, so they are
+	' neither shown nor saved.
+	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE
+	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE
+	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+
 	Set Value = bag
 
 End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+
 
 Class PropertyInfo
 
@@ -71,6 +102,39 @@ Class PropertyInfo
 
 	End Function
 
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
 End Class
 
 Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
@@ -87,6 +151,20 @@ Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
 
 	bag.Add LCase(name), p
 	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+
 End Sub
 
 <xatm_config_data.PropertiesHelper.xatm_Breaker:xatm_Breaker_OnStartRunning()>
@@ -175,9 +253,56 @@ Sub xatm_Breaker_OnStartRunning()
 		"Select tag for the close command on relay 2. Optional.", _
 		"Tag de seleção do comando de fechamento no relé 2. Opcional."
 
+	' The command outputs are write-only, so they get no EXPOSE_VALUE -
+	' there is nothing to read back. Forcing one sends the raw value
+	' configured for it rather than flipping a boolean, because a protocol
+	' may want 65 to close.
+	'
+	' Id is shown and never edited: it is what the automation locates this
+	' breaker by, and what the panel and the import address it by.
+	SetExposure bag, "Id",                   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+
+	SetExposure bag, "PositionOpen",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionClosed",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionOpenAlt",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionClosedAlt",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+
+	SetExposure bag, "UseDoublePoints",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueOpen",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueClosed",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "NormalState",          EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "CommandTimeout",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueCommandOpen",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueCommandClose", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+
+	SetExposure bag, "CommandOpen",          EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpen",       EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandOpenAlt",       EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpenAlt",    EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandClose",         EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOClose",      EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandCloseAlt",      EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOCloseAlt",   EXPOSE_VIEW + EXPOSE_SAVED
+
 	Set Value = bag
 
 End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+
 
 Class PropertyInfo
 
@@ -198,6 +323,39 @@ Class PropertyInfo
 
 	End Function
 
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
 End Class
 
 Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
@@ -214,6 +372,20 @@ Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
 
 	bag.Add LCase(name), p
 	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+
 End Sub
 
 <xatm_config_data.PropertiesHelper.xatm_Transformer:xatm_Transformer_OnStartRunning()>
@@ -242,9 +414,34 @@ Sub xatm_Transformer_OnStartRunning()
 		"Time in seconds the undervoltage (27) condition has to persist before the automation acts on it.", _
 		"Tempo em segundos que a condição de subtensão (27) deve permanecer antes que o automatismo atue."
 
+	' The three readings take an expression and can be forced for a test,
+	' and none of them is saved - the expression is the configuration.
+	SetExposure bag, "Id",                EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "UndervoltageDelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+
+	SetExposure bag, "OutOfService",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "LockingOutRelay",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "UndervoltageRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+
 	Set Value = bag
 
 End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+
 
 Class PropertyInfo
 
@@ -265,6 +462,39 @@ Class PropertyInfo
 
 	End Function
 
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
 End Class
 
 Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
@@ -281,6 +511,20 @@ Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
 
 	bag.Add LCase(name), p
 	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+
 End Sub
 
 <xatm_config_data.SimulationMode:SimulationMode_OnChangedValue()>
@@ -590,6 +834,37 @@ Sub ImportObject(folder, folderPath, objectElement, existing, report, problem)
 		WriteProperty obj, property, report, folderPath & "." & name
 	Next
 
+	' The document says nothing about a reading, so a reading goes back to
+	' the default its class declares. Container.Save writes whatever the
+	' live objects hold - so without this, a step failure latched during a
+	' test, or a block left set, is saved into xatm_dados.prj as though
+	' somebody had configured it that way.
+	ResetReadings obj, className, report, folderPath & "." & name
+
+End Sub
+
+
+' Puts every property that is not configuration back to the value its
+' class declares for it. What the document carries has already been
+' written by then, so this only touches what the document has nothing to
+' say about.
+Sub ResetReadings(obj, className, report, where)
+
+	Dim bag
+	Set bag = ManifestOf(className)
+	If bag Is Nothing Then Exit Sub
+
+	Dim key, p
+	For Each key In bag.Keys
+
+		Set p = bag(key)
+
+		If Not p.IsSaved() Then
+			WriteValue obj, p.Name, p.DataType, p.InitialValue, report, where
+		End If
+
+	Next
+
 End Sub
 
 
@@ -609,30 +884,34 @@ End Function
 ' Writes one property, and only when the document carries a value for it.
 '
 ' A property with no value attribute is unset in the document, and the
-' export writes no value for an IOTag at all - so putting Empty over one
-' would break the association the operator made in Studio, on every
-' single save. Absent means leave it alone, not clear it.
+' export writes no value for an IOTag or for a reading at all - so absent
+' means leave it alone, not clear it.
 Sub WriteProperty(obj, property, report, where)
 
 	Dim a
 	Set a = property.getAttributeNode("value")
 	If a Is Nothing Then Exit Sub
 
-	Dim name, dataType
-	name     = property.getAttribute("name")
-	dataType = property.getAttribute("type")
+	WriteValue obj, property.getAttribute("name"), property.getAttribute("type"), _
+	           a.value, report, where
+
+End Sub
+
+
+' Puts one value onto an object, late-bound, the way ReadProperty takes
+' one off. A property typed xatm_ holds the path of another object, so it
+' is an association and has to be Set rather than assigned.
+Sub WriteValue(obj, name, dataType, newValue, report, where)
 
 	Dim failed
 	failed = ""
 
-	gWriteValue = a.value
+	gWriteValue = newValue
 
 	On Error Resume Next
 
 	If IsObjectType(dataType) Then
 
-		' The value is the path of the object the property points at, so it
-		' is an association and has to be Set, not assigned.
 		Set gWriteObject = Application.GetObject(E3Path(CStr(gWriteValue)))
 		Execute "Set obj." & name & " = gWriteObject"
 
@@ -1554,10 +1833,15 @@ Function ExportObject(obj, bag, indent)
 		' one or the other: an IOTag is an association and carries no value
 		' of its own, and a bound property's value is whatever its expression
 		' last worked out to.
+		'
+		' A reading is left out altogether. Its expression is the setting; the
+		' number beside it is whatever the switchyard happened to be doing,
+		' and putting that in the document is how a step failure latched
+		' during a test ends up looking like a configured value.
 		Dim value, source
 		source = SourceOf(obj, p.Name, p.DataType)
 
-		If IsLinkType(p.DataType) Then
+		If IsLinkType(p.DataType) Or Not p.IsSaved() Then
 			value = Empty
 		Else
 			value = ReadProperty(obj, p.Name)
