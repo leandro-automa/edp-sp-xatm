@@ -23,6 +23,10 @@ Sub xatm_BTC_OnStartRunning()
 		"Transformer XObject this automation instance is bound to.", _
 		"XObject do transformador ao qual esta instância do automatismo está vinculada."
 
+	AddProperty bag, "Preconditions", "Boolean", True, _
+		"Field conditions that have to hold before a sequence may start. Bound to an expression - True while the maneuver is permitted.", _
+		"Condições de campo que devem valer antes de uma sequência partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
+
 	AddProperty bag, "OperatorBlock", "Boolean", False, _
 		"Operator lock. Blocks the start until the operator releases it.", _
 		"Bloqueio do operador. Impede a partida até que o operador libere."
@@ -30,6 +34,10 @@ Sub xatm_BTC_OnStartRunning()
 	AddProperty bag, "GeneralBlock", "Boolean", False, _
 		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
 		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
+
+	AddProperty bag, "AutomaticBlock", "Boolean", False, _
+		"Field conditions that block the automation. Bound to an expression - True keeps a sequence from starting, alongside OperatorBlock and GeneralBlock.", _
+		"Condições de campo que bloqueiam o automatismo. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
 
 	Dim i
 	For i = 1 To 6
