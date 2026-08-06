@@ -162,16 +162,31 @@ Sub Start_OnChangedValue()
 
 	End If
 
+	' The switchyard withholding it, the way the other two are a person and
+	' a failure withholding it.
+	If xatm_BTC.AutomaticBlock Then
+
+		Reject "Blocked by field conditions.", ts
+		Exit Sub
+
+	End If
+
+	' And the switchyard permitting it. This one reads the other way round -
+	' the expression on it says when the maneuver may go ahead, so it is
+	' the absence of it that rejects.
+	If Not xatm_BTC.Preconditions Then
+
+		Reject "Preconditions are not met.", ts
+		Exit Sub
+
+	End If
+
 	If AnyOtherAutomationRunning() Then
 		
 		Reject "Another automation is in progress.", ts
 		Exit Sub
 
 	End If
-
-
-	' TODO: operator, general, preconditions and other automation interlocks
-
 
 	' ================
 	' START
