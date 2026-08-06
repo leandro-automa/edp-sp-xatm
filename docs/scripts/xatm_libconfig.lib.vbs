@@ -344,6 +344,18 @@ Sub xatm_PropertyRow_OnStartRunning()
 	' typed - Id and a command output are shown and never edited.
 	Item("txtConfiguredValue").IsSetPoint = Can(EXPOSE_EDIT)
 
+	' --- configured source: what it is wired to, rather than what it holds
+	'
+	' A path or an expression is neither of the other two columns. It is not
+	' the plant's reading and it is not a value that was typed - it is where
+	' the value comes from, which a breaker's twelve tags and a BTC's
+	' Transformer both have and a CommandTimeout does not.
+	Item("txtConfiguredSource").Value = ConfiguredSource()
+
+	' Read only. A tag or an object is picked, not spelled out, and it is
+	' the picker that will set this.
+	Item("txtConfiguredSource").IsSetPoint = False
+
 End Sub
 
 
@@ -371,13 +383,54 @@ End Function
 ' What the configured column shows. A property the document carries no
 ' value for is unset rather than blank, and either way there is nothing
 ' to put in the field.
+'
+' An association is left out of it: it has a column of its own, and the
+' path of the transformer a BTC drives reads badly in a field sized for
+' a timeout.
 Function ConfiguredText()
 
 	ConfiguredText = ""
 
+	If IsObjectProperty() Then Exit Function
+
 	If IsEmpty(Value) Or IsNull(Value) Then Exit Function
 
 	ConfiguredText = CStr(Value)
+
+End Function
+
+
+' Where this property's value comes from, or what it points at - three
+' shapes that all answer the same question, so they share a column.
+'
+' An IOTag names the tag it is wired to. A bound property carries the
+' expression somebody wrote for it. A property typed xatm_ holds the path
+' of another object, and that one arrives in Value rather than in
+' PropertySource - a wrinkle in how the document is written, not one
+' worth putting on the screen.
+Function ConfiguredSource()
+
+	ConfiguredSource = ""
+
+	If IsObjectProperty() Then
+
+		If Not (IsEmpty(Value) Or IsNull(Value)) Then ConfiguredSource = CStr(Value)
+		Exit Function
+
+	End If
+
+	If IsEmpty(PropertySource) Or IsNull(PropertySource) Then Exit Function
+
+	ConfiguredSource = CStr(PropertySource)
+
+End Function
+
+
+' A property that points at another object rather than holding a value of
+' its own. The manifest names the class, as xatm_Transformer.
+Function IsObjectProperty()
+
+	IsObjectProperty = (LCase(Left(PropertyType & "", 5)) = "xatm_")
 
 End Function
 
