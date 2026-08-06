@@ -2099,9 +2099,16 @@ Const ROW_GAP_PX  = 0
 
 
 ' What the object's own name is shown as. It has no manifest entry, so
-' the row has no help text for it and nothing declares its type.
+' the row has no help text for it and nothing declares its type - and its
+' exposure is stated here instead: shown, with a readout, and editable.
 Const NAME_PROPERTY = "Name"
 Const NAME_TYPE     = "String"
+Const NAME_EXPOSURE = 7          ' EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT
+
+' Where the manifests live - the same place the export and the import
+' read them from.
+Const CONFIG_DATA   = "xatm_config_data"
+Const HELPER_FOLDER = "PropertiesHelper"
 
 ' The folder whose objects are named by the layout rather than by hand.
 Const AUTOMATION_FOLDER = "Automation"
@@ -2149,31 +2156,36 @@ Function FindObject(doc, key)
 End Function
 
 
-' One row per property of the selected object, stacked down the panel in
-' the order the export wrote them - which is the order the manifest
-' declares them in.
+' A row per property the manifest says to show, in the order the export
+' wrote them - which is the order the manifest declares them in.
+'
+' The document says what a property holds; the manifest says what may be
+' done with it. A property it does not classify gets no row at all, which
+' is how the latches and the internals stay off the panel.
 Sub BuildPropertyRows(objectNode, key)
 
 	Dim objectType
 	objectType = Attribute(objectNode, "type")
 
+	Dim bag
+	Set bag = ManifestOf(objectType)
+
 	Dim properties
 	Set properties = objectNode.selectNodes("property")
 
-	Dim i, property, row, y
+	Dim i, property, row, y, p
 	y = Himetric(ROW_TOP_PX)
 
 	' The object's own name goes first. It is the object rather than
 	' something declared on it, so it is neither a property of the document
-	' nor an entry in the manifest, and it is built here instead of coming
-	' out of the loop.
+	' nor an entry in the manifest, and its exposure is stated here.
 	'
 	' Not under Automation, though: SyncAutomation finds a BTC by the
 	' number on the end of its name, so the name is structure there and not
 	' the operator's to change.
 	If Not IsAutomation(objectNode) Then
 		Set row = NewRow(KIND_NAME, key, objectType, NAME_PROPERTY, NAME_TYPE, _
-		                 Attribute(objectNode, "name"), y)
+		                 Attribute(objectNode, "name"), NAME_EXPOSURE, y)
 		y = y + row.Height + Himetric(ROW_GAP_PX)
 	End If
 
@@ -2181,16 +2193,46 @@ Sub BuildPropertyRows(objectNode, key)
 
 		Set property = properties.item(i)
 
-		Set row = NewRow(KIND_PROPERTY, key, objectType, Attribute(property, "name"), _
-		                 Attribute(property, "type"), Attribute(property, "value"), y)
+		Set p = Nothing
+		If Not (bag Is Nothing) Then
+			Dim k
+			k = LCase(Attribute(property, "name") & "")
+			If bag.Exists(k) Then Set p = bag(k)
+		End If
 
-		' A row comes out at the size it was drawn, so the next one goes
-		' under whatever that turned out to be.
-		y = y + row.Height + Himetric(ROW_GAP_PX)
+		' Nothing the manifest does not vouch for. A property it has never
+		' heard of is one the export wrote and nobody classified, and showing
+		' it would be guessing at what the operator may do with it.
+		If Not (p Is Nothing) Then
+			If p.Shows() Then
+
+				Set row = NewRow(KIND_PROPERTY, key, objectType, Attribute(property, "name"), _
+				                 Attribute(property, "type"), Attribute(property, "value"), _
+				                 p.Exposure, y)
+
+				' A row comes out at the size it was drawn, so the next one goes
+				' under whatever that turned out to be.
+				y = y + row.Height + Himetric(ROW_GAP_PX)
+
+			End If
+		End If
 
 	Next
 
 End Sub
+
+
+' The manifest declared for a class, or Nothing when the class has none -
+' the same lookup the export and the import do.
+Function ManifestOf(className)
+
+	Set ManifestOf = Nothing
+
+	On Error Resume Next
+	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
+	On Error Goto 0
+
+End Function
 
 
 ' True for anything under the Automation folder, however deep. Asked of
@@ -2207,7 +2249,7 @@ End Function
 ' One row on the screen. Added inactive so every property is set before
 ' the control goes up and reads them, and handed back so the caller can
 ' step past the height it came out at.
-Function NewRow(kind, key, objectType, propertyName, propertyType, value, y)
+Function NewRow(kind, key, objectType, propertyName, propertyType, value, exposure, y)
 
 	Dim row
 	Set row = Screen.AddObject(ROW_CLASS, False)
@@ -2221,6 +2263,12 @@ Function NewRow(kind, key, objectType, propertyName, propertyType, value, y)
 	row.PropertyName = propertyName
 	row.PropertyType = propertyType
 	row.Value        = value
+
+	' What the row may offer: a readout, a field to type in, the expression
+	' dialog, a force. The row reads the flags rather than working any of it
+	' out from the type - two Booleans on a transformer want completely
+	' different controls.
+	row.Exposure     = exposure
 
 	row.Activate()
 
