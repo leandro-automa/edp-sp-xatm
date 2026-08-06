@@ -2185,7 +2185,7 @@ Sub BuildPropertyRows(objectNode, key)
 	' the operator's to change.
 	If Not IsAutomation(objectNode) Then
 		Set row = NewRow(KIND_NAME, key, objectType, NAME_PROPERTY, NAME_TYPE, _
-		                 Attribute(objectNode, "name"), NAME_EXPOSURE, y)
+		                 Attribute(objectNode, "name"), Empty, NAME_EXPOSURE, y)
 		y = y + row.Height + Himetric(ROW_GAP_PX)
 	End If
 
@@ -2208,7 +2208,7 @@ Sub BuildPropertyRows(objectNode, key)
 
 				Set row = NewRow(KIND_PROPERTY, key, objectType, Attribute(property, "name"), _
 				                 Attribute(property, "type"), Attribute(property, "value"), _
-				                 p.Exposure, y)
+				                 Attribute(property, "source"), p.Exposure, y)
 
 				' A row comes out at the size it was drawn, so the next one goes
 				' under whatever that turned out to be.
@@ -2249,7 +2249,7 @@ End Function
 ' One row on the screen. Added inactive so every property is set before
 ' the control goes up and reads them, and handed back so the caller can
 ' step past the height it came out at.
-Function NewRow(kind, key, objectType, propertyName, propertyType, value, exposure, y)
+Function NewRow(kind, key, objectType, propertyName, propertyType, value, source, exposure, y)
 
 	Dim row
 	Set row = Screen.AddObject(ROW_CLASS, False)
@@ -2263,6 +2263,17 @@ Function NewRow(kind, key, objectType, propertyName, propertyType, value, exposu
 	row.PropertyName = propertyName
 	row.PropertyType = propertyType
 	row.Value        = value
+
+	' Where the property gets its value from, when it is not a value of its
+	' own: the path of the tag an IOTag is associated with, or the
+	' expression a bound property carries. Named apart from Source, which
+	' is the object this row belongs to, the way it is on every other
+	' control in xatm_libconfig.
+	'
+	' It comes from PathName and so already resolves - a driver called 61850
+	' arrives as [61850].DJ03_POS, bracketed where it had to be. Nothing
+	' here should bracket it again.
+	row.PropertySource = source
 
 	' What the row may offer: a readout, a field to type in, the expression
 	' dialog, a force. The row reads the flags rather than working any of it
