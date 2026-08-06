@@ -2156,6 +2156,71 @@ Function FindObject(doc, key)
 End Function
 
 
+' A path E3 will resolve. A name that starts with a digit or an
+' underscore, or carries a space or a hyphen, has to be bracketed, and
+' bracketing every piece is always right. One already bracketed is left
+' alone - PathName may have bracketed it, and [[52-01]] resolves no
+' better than 52-01 does.
+'
+' A copy. The row it is bracketing for is built in this script, and one
+' E3 object has no way to call a procedure defined in another.
+Function E3Path(path)
+
+	E3Path = ""
+	If path = "" Then Exit Function
+
+	Dim pieces
+	pieces = SplitPath(path)
+
+	Dim i
+	For i = 0 To UBound(pieces)
+		If Left(pieces(i), 1) <> "[" Then
+			pieces(i) = "[" & pieces(i) & "]"
+		End If
+	Next
+
+	E3Path = Join(pieces, ".")
+
+End Function
+
+
+' The pieces of a path, split on the dots between them - the ones outside
+' brackets, since a bracketed name may carry a dot of its own.
+Function SplitPath(path)
+
+	Dim pieces()
+	ReDim pieces(0)
+	pieces(0) = ""
+
+	Dim i, n, depth, ch
+	n = 0
+	depth = 0
+
+	For i = 1 To Len(path)
+
+		ch = Mid(path, i, 1)
+
+		If ch = "[" Then
+			depth = depth + 1
+			pieces(n) = pieces(n) & ch
+		ElseIf ch = "]" Then
+			depth = depth - 1
+			pieces(n) = pieces(n) & ch
+		ElseIf ch = "." And depth = 0 Then
+			n = n + 1
+			ReDim Preserve pieces(n)
+			pieces(n) = ""
+		Else
+			pieces(n) = pieces(n) & ch
+		End If
+
+	Next
+
+	SplitPath = pieces
+
+End Function
+
+
 ' A row per property the manifest says to show, in the order the export
 ' wrote them - which is the order the manifest declares them in.
 '
@@ -2166,6 +2231,14 @@ Sub BuildPropertyRows(objectNode, key)
 
 	Dim objectType
 	objectType = Attribute(objectNode, "type")
+
+	' Where the object is, for a row that wants to link to it live.
+	' Source is a key and not a path - id:700 for anything with an Id -
+	' because a rename must not strand the panel. A link needs the real
+	' thing, bracketed here where E3Path is, so the control never has to
+	' know which names E3 needs brackets around.
+	Dim objectPath
+	objectPath = E3Path(Attribute(objectNode, "path") & "")
 
 	Dim bag
 	Set bag = ManifestOf(objectType)
@@ -2184,7 +2257,7 @@ Sub BuildPropertyRows(objectNode, key)
 	' number on the end of its name, so the name is structure there and not
 	' the operator's to change.
 	If Not IsAutomation(objectNode) Then
-		Set row = NewRow(KIND_NAME, key, objectType, NAME_PROPERTY, NAME_TYPE, _
+		Set row = NewRow(KIND_NAME, key, objectPath, objectType, NAME_PROPERTY, NAME_TYPE, _
 		                 Attribute(objectNode, "name"), Empty, NAME_EXPOSURE, y)
 		y = y + row.Height + Himetric(ROW_GAP_PX)
 	End If
@@ -2206,7 +2279,7 @@ Sub BuildPropertyRows(objectNode, key)
 		If Not (p Is Nothing) Then
 			If p.Shows() Then
 
-				Set row = NewRow(KIND_PROPERTY, key, objectType, Attribute(property, "name"), _
+				Set row = NewRow(KIND_PROPERTY, key, objectPath, objectType, Attribute(property, "name"), _
 				                 Attribute(property, "type"), Attribute(property, "value"), _
 				                 Attribute(property, "source"), p.Exposure, y)
 
@@ -2249,7 +2322,7 @@ End Function
 ' One row on the screen. Added inactive so every property is set before
 ' the control goes up and reads them, and handed back so the caller can
 ' step past the height it came out at.
-Function NewRow(kind, key, objectType, propertyName, propertyType, value, source, exposure, y)
+Function NewRow(kind, key, objectPath, objectType, propertyName, propertyType, value, source, exposure, y)
 
 	Dim row
 	Set row = Screen.AddObject(ROW_CLASS, False)
@@ -2259,6 +2332,7 @@ Function NewRow(kind, key, objectType, propertyName, propertyType, value, source
 	
 	row.Kind         = kind
 	row.Source       = key
+	row.ObjectPath   = objectPath
 	row.ObjectType   = objectType
 	row.PropertyName = propertyName
 	row.PropertyType = propertyType
