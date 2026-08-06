@@ -2105,6 +2105,16 @@ Const NAME_PROPERTY = "Name"
 Const NAME_TYPE     = "String"
 Const NAME_EXPOSURE = 7          ' EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT
 
+' The language a row's tip is written in. Every manifest carries both, and
+' this is the one place that picks between them - a tag would do instead,
+' the day the screen has to switch without a restart.
+Const HELP_LANG = "pt-BR"
+
+' The object's own name has no manifest entry, so its help is stated here
+' the way its exposure is.
+Const NAME_HELP_EN = "The name this object is known by in the project."
+Const NAME_HELP_PT = "Nome pelo qual este objeto é conhecido no projeto."
+
 ' Where the manifests live - the same place the export and the import
 ' read them from.
 Const CONFIG_DATA   = "xatm_config_data"
@@ -2258,7 +2268,7 @@ Sub BuildPropertyRows(objectNode, key)
 	' the operator's to change.
 	If Not IsAutomation(objectNode) Then
 		Set row = NewRow(KIND_NAME, key, objectPath, objectType, NAME_PROPERTY, NAME_TYPE, _
-		                 Attribute(objectNode, "name"), Empty, NAME_EXPOSURE, y)
+		                 Attribute(objectNode, "name"), Empty, NAME_EXPOSURE, NameHelp(), y)
 		y = y + row.Height + Himetric(ROW_GAP_PX)
 	End If
 
@@ -2281,7 +2291,7 @@ Sub BuildPropertyRows(objectNode, key)
 
 				Set row = NewRow(KIND_PROPERTY, key, objectPath, objectType, Attribute(property, "name"), _
 				                 Attribute(property, "type"), Attribute(property, "value"), _
-				                 Attribute(property, "source"), p.Exposure, y)
+				                 Attribute(property, "source"), p.Exposure, p.Help(HELP_LANG), y)
 
 				' A row comes out at the size it was drawn, so the next one goes
 				' under whatever that turned out to be.
@@ -2308,6 +2318,20 @@ Function ManifestOf(className)
 End Function
 
 
+' The tip the name row shows, in whichever language HELP_LANG picks. It
+' is the only row whose help is not in a manifest, the name being the
+' object rather than something declared on it.
+Function NameHelp()
+
+	If HELP_LANG = "pt-BR" Then
+		NameHelp = NAME_HELP_PT
+	Else
+		NameHelp = NAME_HELP_EN
+	End If
+
+End Function
+
+
 ' True for anything under the Automation folder, however deep. Asked of
 ' the element and not of the path, so a folder renamed on the way down
 ' cannot fool it.
@@ -2322,7 +2346,7 @@ End Function
 ' One row on the screen. Added inactive so every property is set before
 ' the control goes up and reads them, and handed back so the caller can
 ' step past the height it came out at.
-Function NewRow(kind, key, objectPath, objectType, propertyName, propertyType, value, source, exposure, y)
+Function NewRow(kind, key, objectPath, objectType, propertyName, propertyType, value, source, exposure, help, y)
 
 	Dim row
 	Set row = Screen.AddObject(ROW_CLASS, False)
@@ -2354,6 +2378,11 @@ Function NewRow(kind, key, objectPath, objectType, propertyName, propertyType, v
 	' out from the type - two Booleans on a transformer want completely
 	' different controls.
 	row.Exposure     = exposure
+
+	' What the row shows as its tip. The manifest wrote it, in both
+	' languages, next to the property it describes - which is where it stays
+	' accurate, being written by whoever declared what the property is for.
+	row.Help         = help
 
 	row.Activate()
 
