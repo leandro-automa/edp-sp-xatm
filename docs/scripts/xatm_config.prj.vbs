@@ -1542,7 +1542,13 @@ Function ExportObject(obj, bag, indent)
 		Dim p
 		Set p = bag(key)
 
-		Dim value
+		' Where the value comes from, and the value itself. A property has
+		' one or the other: an IOTag is an association and carries no value
+		' of its own, and a bound property's value is whatever its expression
+		' last worked out to.
+		Dim value, source
+		source = SourceOf(obj, p.Name, p.DataType)
+
 		If IsLinkType(p.DataType) Then
 			value = Empty
 		Else
@@ -1551,6 +1557,7 @@ Function ExportObject(obj, bag, indent)
 
 		xml = xml & indent & vbTab & "<property name=""" & EscapeXml(p.Name) & """" & _
 		                                  " type=""" & EscapeXml(p.DataType) & """" & _
+		                                  SourceAttribute(source) & _
 		                                  ValueAttribute(value) & "/>" & vbCrLf
 
 	Next
@@ -1558,6 +1565,34 @@ Function ExportObject(obj, bag, indent)
 	xml = xml & indent & "</object>" & vbCrLf
 
 	ExportObject = xml
+
+End Function
+
+
+' Where a property gets its value from, "" when it is a value of its own.
+'
+' Two shapes, and they are read differently. An IOTag property holds the
+' tag object itself, so its source is that object's path - which is what
+' ReadProperty already hands back for an object-valued property, and what
+' the export used to throw away. Anything else may carry an E3 Link, and
+' a Link's Source is the expression the operator wrote.
+Function SourceOf(obj, propertyName, dataType)
+
+	SourceOf = ""
+
+	If IsLinkType(dataType) Then
+
+		SourceOf = ReadProperty(obj, propertyName)
+
+	Else
+
+		On Error Resume Next
+		SourceOf = obj.Links.Item(propertyName).Source
+		On Error Goto 0
+
+	End If
+
+	If IsEmpty(SourceOf) Or IsNull(SourceOf) Then SourceOf = ""
 
 End Function
 
@@ -1621,6 +1656,24 @@ End Function
 ' ------------------------------------------------------------
 '  XML
 ' ------------------------------------------------------------
+
+' The source attribute, dropped when the property has none - so a
+' property with a value of its own reads exactly as it did before.
+'
+' Escaped like everything else: an expression is the first thing in this
+' document at all likely to carry a < or an &.
+Function SourceAttribute(source)
+
+	SourceAttribute = ""
+
+	If IsNull(source) Then Exit Function
+	If IsEmpty(source) Then Exit Function
+	If CStr(source) = "" Then Exit Function
+
+	SourceAttribute = " source=""" & EscapeXml(CStr(source)) & """"
+
+End Function
+
 
 ' The value attribute, dropped when the property is unset so that
 ' an absent attribute reads back as Empty on import.
