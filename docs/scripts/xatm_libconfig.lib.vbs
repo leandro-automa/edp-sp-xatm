@@ -105,8 +105,28 @@ End Sub
 <xatm_PropertyRow.txtConfiguredValue:txtConfiguredValue_Validate(Cancel, NewValue)>
 Sub txtConfiguredValue_Validate(Cancel, NewValue)
 
-	' Nothing to send when the field comes back the way it was found.
-	If CStr(NewValue) = CStr(xatm_PropertyRow.Value) Then Exit Sub
+	' What was typed has to fit the type the manifest declares, or the
+	' document would end up holding abcd where a breaker wants a timeout -
+	' and the import would put that into the project on the next Save.
+	Dim problem
+	problem = TypeProblem(NewValue)
+
+	If problem <> "" Then
+
+		WriteLog "Not sent - " & problem
+		Cancel = True
+		Exit Sub
+
+	End If
+
+	' Spelled the way the export spells it, so the document does not end up
+	' carrying true, TRUE and -1 for the same thing.
+	Dim toSend
+	toSend = Normalised(NewValue)
+
+	' Nothing to send when the field comes back the way it was found -
+	' compared after normalising, so retyping true over True is not an edit.
+	If toSend = CStr(xatm_PropertyRow.Value & "") Then Exit Sub
 
 	Dim command
 	Set command = Nothing
@@ -121,7 +141,7 @@ Sub txtConfiguredValue_Validate(Cancel, NewValue)
 	On Error Resume Next
 	Set valueTag = Application.GetObject(PROPERTY_VALUE)
 	On Error Goto 0
-		
+
 	If command Is Nothing Or valueTag Is Nothing Then
 		WriteLog "Not sent - " & SET_PROPERTY & " and " & PROPERTY_VALUE & " are what carry an edit."
 		Cancel = True
@@ -130,12 +150,18 @@ Sub txtConfiguredValue_Validate(Cancel, NewValue)
 
 	' The value first, so it is standing by when the command fires, and on
 	' a tag of its own so nothing the operator typed has to be escaped.
-	valueTag.WriteEx NewValue
-	
-	' kind|path|name - tokens of ours, none of which can carry a bar.
+	valueTag.WriteEx toSend
+
+	' kind|key|name - tokens of ours, none of which can carry a bar. The
+	' value is not among them: it went to PropertyValue above, whole and
+	' unparsed.
+	'
+	' key rather than path: Source is id:700 for anything with an Id, so
+	' that renaming an object does not strand the row that was built
+	' before it.
 	command.WriteEx xatm_PropertyRow.Kind & "|" & _
 	                xatm_PropertyRow.Source & "|" & _
-	                NewValue
+	                xatm_PropertyRow.PropertyName
 
 	If command.DocString <> EXIT_SUCCESS Then
 
@@ -148,85 +174,115 @@ Sub txtConfiguredValue_Validate(Cancel, NewValue)
 	End If
 
 	' What the field shows is what the document holds.
-	xatm_PropertyRow.Value = NewValue
-	
+	xatm_PropertyRow.Value = toSend
+
 End Sub
 
 
-' The command tag in xatm_config that owns the document. Reached by path
-' because a library has no other way up to the project it runs under -
-' and it is the project that knows what XML is, not this control.
-Const SET_PROPERTY = "xatm_config_data.XML.SetProperty"
-Const PROPERTY_VALUE = "xatm_config_data.XML.PropertyValue"
-Const EXIT_SUCCESS = "EXIT_SUCCESS"
+' Why what was typed does not fit the declared type, "" when it does.
+'
+' An empty field always fits: it clears the property, which the document
+' records by dropping the value attribute rather than writing an empty
+' one. A type nothing is said about here - String, and the name row -
+' takes whatever is typed, and SetName is what refuses a blank name or a
+' duplicate.
+Function TypeProblem(text)
+
+	TypeProblem = ""
+
+	Dim s
+	s = Trim(CStr(text) & "")
+	If s = "" Then Exit Function
+
+	Select Case LCase(xatm_PropertyRow.PropertyType & "")
+
+		Case "boolean"
+
+			If Not IsBooleanText(s) Then
+				TypeProblem = "'" & s & "' is not True or False."
+			End If
+
+		Case "integer", "edbswitchstate"
+
+			If Not IsWholeNumber(s) Then
+				TypeProblem = "'" & s & "' is not a whole number."
+			End If
+
+	End Select
+
+End Function
 
 
-' The console the automation logs to, and the E3 trace either way.
-Sub WriteLog(message)
+' True and False, and the numbers that stand for them - zero is False and
+' anything else is True, which is how a protocol carries a boolean.
+Function IsBooleanText(s)
 
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
+	IsBooleanText = True
 
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & xatm_PropertyRow.Name & "] - " & message
-	On Error Goto 0
+	Select Case LCase(s)
+		Case "true", "false" : Exit Function
+	End Select
 
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & xatm_PropertyRow.Name & "] - " & message
-	End If
-	
-End Sub
+	If IsWholeNumber(s) Then Exit Function
 
-<xatm_PropertyRow.txtCurrentValue:txtCurrentValue_Validate(Cancel, NewValue)>
-Sub txtCurrentValue_Validate(Cancel, NewValue)
+	IsBooleanText = False
 
-	' Nothing to send when the field comes back the way it was found.
-	If CStr(NewValue) = CStr(xatm_PropertyRow.Value) Then Exit Sub
+End Function
 
-	Dim command
-	Set command = Nothing
 
-	On Error Resume Next
-	Set command = Application.GetObject(SET_PROPERTY)
-	On Error Goto 0
+' Digits, with a sign in front if you like, and nothing else.
+'
+' Deliberately not IsNumeric, which says yes to 1e3 and to 12.5 - and to
+' 12,5 or not, depending on which decimal separator the machine running
+' E3 happens to use. None of these properties is ever fractional, so the
+' plain test is both stricter and the same in every locale.
+Function IsWholeNumber(s)
 
-	Dim valueTag
-	Set valueTag = Nothing
+	IsWholeNumber = False
 
-	On Error Resume Next
-	Set valueTag = Application.GetObject(PROPERTY_VALUE)
-	On Error Goto 0
-		
-	If command Is Nothing Or valueTag Is Nothing Then
-		WriteLog "Not sent - " & SET_PROPERTY & " and " & PROPERTY_VALUE & " are what carry an edit."
-		Cancel = True
-		Exit Sub
-	End If
+	Dim body
+	body = s
 
-	' The value first, so it is standing by when the command fires, and on
-	' a tag of its own so nothing the operator typed has to be escaped.
-	valueTag.WriteEx NewValue
-	
-	' kind|path|name - tokens of ours, none of which can carry a bar.
-	command.WriteEx xatm_PropertyRow.Kind & "|" & _
-	                xatm_PropertyRow.Source & "|" & _
-	                NewValue
+	If Left(body, 1) = "-" Or Left(body, 1) = "+" Then body = Mid(body, 2)
+	If body = "" Then Exit Function
 
-	If command.DocString <> EXIT_SUCCESS Then
+	Dim i
+	For i = 1 To Len(body)
+		If InStr("0123456789", Mid(body, i, 1)) = 0 Then Exit Function
+	Next
 
-		' The document would not take it and has said why on the console.
-		' Cancelling leaves the operator in the field with what they typed,
-		' rather than swallowing the edit.
-		Cancel = True
-		Exit Sub
+	IsWholeNumber = True
 
-	End If
+End Function
 
-	' What the field shows is what the document holds.
-	xatm_PropertyRow.Value = NewValue
-	
-End Sub
+
+' What is actually sent. CLng and CStr are safe here because the text has
+' already been checked digit by digit.
+Function Normalised(text)
+
+	Dim s
+	s = Trim(CStr(text) & "")
+
+	Normalised = s
+	If s = "" Then Exit Function
+
+	Select Case LCase(xatm_PropertyRow.PropertyType & "")
+
+		Case "boolean"
+
+			If IsWholeNumber(s) Then
+				Normalised = CStr(CLng(s) <> 0)
+			Else
+				Normalised = CStr(LCase(s) = "true")
+			End If
+
+		Case "integer", "edbswitchstate"
+
+			Normalised = CStr(CLng(s))
+
+	End Select
+
+End Function
 
 
 ' The command tag in xatm_config that owns the document. Reached by path
@@ -257,20 +313,73 @@ End Sub
 <xatm_PropertyRow:xatm_PropertyRow_OnStartRunning()>
 Sub xatm_PropertyRow_OnStartRunning()
 
-	' The current column shows what E3 holds this moment, and the configured
-	' column what the document says. Seeing the two differ is how an edit
-	' that has not been saved yet makes itself visible.
+	' Two columns that mean different things. The current one shows what the
+	' project holds this moment, read live; the configured one shows what
+	' the document says it should hold. The two disagreeing is an edit that
+	' has been staged and not saved.
+
+	' --- current: linked, because it has to follow the plant ------------
 	Dim linkTo
 	linkTo = LiveSource()
 
 	If linkTo = "" Then
 		Item("txtCurrentValue").Value = ""
-		Exit Sub
+	Else
+		Item("txtCurrentValue").Links.CreateLink "Value", linkTo
 	End If
 
-	Item("txtCurrentValue").Links.CreateLink "Value", linkTo
+	' Never typed into. The current column is the plant, and the only thing
+	' that writes straight to it is a force.
+	Item("txtCurrentValue").IsSetPoint = False
+
+	' --- configured: handed over, because it came with the row ---------
+	'
+	' No link: this is what the export read out of Studio and what the
+	' operator has staged since, and the row was given it. Linking it live
+	' would put the project's value back over a staged edit the moment it
+	' was typed.
+	Item("txtConfiguredValue").Value = ConfiguredText()
+
+	' And it takes typing only where the manifest says the value may be
+	' typed - Id and a command output are shown and never edited.
+	Item("txtConfiguredValue").IsSetPoint = Can(EXPOSE_EDIT)
 
 End Sub
+
+
+' The numbers behind the Exposure the row was built with. Written out
+' rather than shared: the flags are declared in the manifests over in
+' xatm_config, and one E3 object cannot read another's constants - which
+' is also why the Exposure property documents them in its own help.
+Const EXPOSE_VIEW       = 1
+Const EXPOSE_VALUE      = 2
+Const EXPOSE_EDIT       = 4
+Const EXPOSE_EXPRESSION = 8
+Const EXPOSE_FORCE      = 16
+Const EXPOSE_SAVED      = 32
+
+
+' Whether the manifest allowed this. Empty And anything is 0, so a row
+' built without an Exposure allows nothing.
+Function Can(flag)
+
+	Can = ((Exposure And flag) <> 0)
+
+End Function
+
+
+' What the configured column shows. A property the document carries no
+' value for is unset rather than blank, and either way there is nothing
+' to put in the field.
+Function ConfiguredText()
+
+	ConfiguredText = ""
+
+	If IsEmpty(Value) Or IsNull(Value) Then Exit Function
+
+	ConfiguredText = CStr(Value)
+
+End Function
 
 
 ' Where the current value is read from, "" when there is nothing to read.
