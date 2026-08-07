@@ -1,5 +1,5 @@
 -----------------------
-Documentação de Scripts
+Documentaï¿½ï¿½o de Scripts
 -----------------------
 XATM_LIBCONFIG (C:\ProjDev\edp_sp\xatm_libconfig.lib)
 Thu Aug  6 14:29:56 2026
@@ -370,6 +370,7 @@ Const EXPOSE_EXPRESSION = 8
 Const EXPOSE_FORCE      = 16
 Const EXPOSE_SAVED      = 32
 
+Const MAX_SOURCE_LENGTH = 48
 
 ' Whether the manifest allowed this. Empty And anything is 0, so a row
 ' built without an Exposure allows nothing.
@@ -421,7 +422,11 @@ Function ConfiguredSource()
 
 	If IsEmpty(PropertySource) Or IsNull(PropertySource) Then Exit Function
 
-	ConfiguredSource = CStr(PropertySource)
+	If Len(PropertySource) > MAX_SOURCE_LENGTH Then
+		ConfiguredSource = Left(PropertySource, MAX_SOURCE_LENGTH - 3) & "..."
+	Else
+		ConfiguredSource = CStr(PropertySource)
+	End If
 
 End Function
 
