@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Tue Aug  4 14:08:27 2026
+Fri Aug  7 10:32:16 2026
 -----------------------
 
 <xatm_BTC.Commands.Reset:Reset_OnChangedTimeStamp()>
@@ -159,6 +159,13 @@ Sub Start_OnChangedValue()
 		
 	 	Reject "General interlock active.", ts
 	 	Exit Sub
+
+	End If
+
+	If AnyOtherAutomationRunning() Then
+		
+		Reject "Another automation is in progress.", ts
+		Exit Sub
 
 	End If
 
@@ -324,32 +331,6 @@ Function GetLayoutType()
 					Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
 	
 End Function
-
-' The layout combinations the step sequences below are written for. Any
-' other combination has no sequence and must not be run.
-Function IsSupportedLayout(layoutType)
-
-	Select Case layoutType
-
-		Case "4TR4LV_6BB6TIERING", "2TR2LV_2BB1TIE"
-			IsSupportedLayout = True
-
-		Case Else
-			IsSupportedLayout = False
-
-	End Select
-
-End Function
-
-' Ends the run when a step is reached that the active layout has no
-' sequence for, so a command is never sent to a breaker picked by default.
-Sub UnsupportedStep(stepNumber, layoutType)
-
-	WriteLog "Step " & stepNumber & ": layout '" & layoutType & _
-	         "' has no step " & stepNumber & " - Global lockout"
-	Main_GlobalLockout()
-
-End Sub
 
 Sub ResetTimer()
 
@@ -527,86 +508,17 @@ End Sub
 
 <xatm_BTC.FSM.Main:Main_Step00()>
 Sub Main_Step00()
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	If Not IsSupportedLayout(layoutType) Then
-
-		Main_Abort "layout '" & layoutType & "' has no step sequence."
-		Exit Sub
-
-	End If
-
+	
 	' ===============
 	' Snapshot the substation transformers lockout state at trigger time.
 	' ===============
 	StoreImpediments()
-
-	Dim refusal
-	refusal = ContingencyRefusal(layoutType, Parent.Item("TriggerTransformerId").Value)
-
-	If refusal <> "" Then
-
-		Main_Abort refusal
-		Exit Sub
-
-	End If
 
 	WriteLog "Starting " & DescribeAutomation()
 
 	Value = 1
 
 End Sub
-
-' Ends the run before any command has been sent. A refusal is not a step
-' failure, so it clears the run the way a completion does instead of
-' raising the global lockout.
-Sub Main_Abort(reason)
-
-	Parent.Item("TriggerTransformerId").WriteEx Empty, 0
-	Parent.Item("AutomationType").WriteEx Empty, 0
-	Parent.Item("StepTimer").WriteEx Empty, 0
-	WriteEx Empty, 0
-
-	xatm_BTC.Running = False
-	WriteLog "Not executed - " & reason
-
-End Sub
-
-' Why the substation state rules the automation out, or "" when it does
-' not. The ring always keeps an alternative path open; the two-transformer
-' layout has a single tie, so every sequence leans on the other
-' transformer and none of them can run while it is out of service.
-Function ContingencyRefusal(layoutType, triggerId)
-
-	ContingencyRefusal = ""
-
-	If layoutType <> "2TR2LV_2BB1TIE" Then Exit Function
-
-	Dim otherIndex
-
-	Select Case triggerId
-
-		Case 100 : otherIndex = 2
-		Case 200 : otherIndex = 1
-
-		Case Else
-			ContingencyRefusal = TransformerName(triggerId) & " is not part of the " & _
-			                     layoutType & " layout."
-			Exit Function
-
-	End Select
-
-	Dim impediments
-	impediments = ReadImpediments()
-
-	If impediments(otherIndex) Then
-		ContingencyRefusal = TransformerName(otherIndex * 100) & " is out of service - " & _
-		                     "it is the only source left for both busbars."
-	End If
-
-End Function
 
 ' Human-readable summary of the running automation for the step log,
 ' using transformer names, e.g. "TM TR-01 - TR-02 out of service".
@@ -811,17 +723,13 @@ Sub S1TM(triggerId)
 
 		End Select
 
-	ElseIf layoutType = "2TR2LV_2BB1TIE" Then
-
-		' The transformer is still live, so the tie closes first and both
-		' busbars are fed before it is taken out.
-		action = 2
-		breakerId = 700
-
 	Else
 
-		UnsupportedStep 1, layoutType
-		Exit Sub
+		' ================
+		' DEFAULT
+		' ================
+		action = 2
+	 	breakerId = 700
 
 	End If
 
@@ -997,18 +905,14 @@ Sub S2NM(triggerId)
 
 		End Select
 
-	ElseIf layoutType = "2TR2LV_2BB1TIE" Then
+	Else
 
-		' The transformer is back on its own busbar, so the tie that was
-		' carrying it opens. Last step of the sequence.
+		' ==============
+		' DEFAULT
+		' ==============
 		action = 1
 		breakerId = 700
 		nextStep = 99
-
-	Else
-
-		UnsupportedStep 2, layoutType
-		Exit Sub
 
 	End If
 
@@ -1114,18 +1018,14 @@ Sub S2TM(triggerId)
 
 		End Select
 
-	ElseIf layoutType = "2TR2LV_2BB1TIE" Then
+	Else
 
-		' The tie is closed, so opening the trigger's own breaker hands its
-		' busbar to the other transformer. Last step of the sequence.
+		' ==============
+		' DEFAULT
+		' ==============
 		action = 1
 		breakerId = triggerId + 20
 		nextStep = 99
-
-	Else
-
-		UnsupportedStep 2, layoutType
-		Exit Sub
 
 	End If
 
@@ -1230,18 +1130,14 @@ Sub S2TA(triggerId)
 
 		End Select
 
-	ElseIf layoutType = "2TR2LV_2BB1TIE" Then
+	Else
 
-		' The trigger's breaker is confirmed open, so closing the tie restores
-		' its busbar from the other transformer. Last step of the sequence.
+		' ==============
+		' DEFAULT
+		' ==============
 		action = 2
 		breakerId = 700
 		nextStep = 99
-
-	Else
-
-		UnsupportedStep 2, layoutType
-		Exit Sub
 
 	End If
 
@@ -1363,11 +1259,6 @@ Sub S3NM(triggerId)
 
 		End Select
 
-	Else
-
-		UnsupportedStep 3, layoutType
-		Exit Sub
-
 	End If
 
 	Dim breaker, breakerExists
@@ -1464,8 +1355,7 @@ Sub S3TM(triggerId)
 
 	Else
 
-		UnsupportedStep 3, layoutType
-		Exit Sub
+		action = 2
 
 	End If
 
@@ -1557,11 +1447,6 @@ Sub S3TA(triggerId)
 				End If
 
 		End Select
-
-	Else
-
-		UnsupportedStep 3, layoutType
-		Exit Sub
 
 	End If
 
@@ -1688,11 +1573,6 @@ Sub S4NM(triggerId)
 
 		End Select
 
-	Else
-
-		UnsupportedStep 4, layoutType
-		Exit Sub
-
 	End If
 
 	Dim breaker, breakerExists
@@ -1788,8 +1668,7 @@ Sub S4TM(triggerId)
 
 	Else
 
-		UnsupportedStep 4, layoutType
-		Exit Sub
+		action = 1
 
 	End If
 
@@ -1898,11 +1777,6 @@ Sub S4TA(triggerId)
 
 		End Select
 
-	Else
-
-		UnsupportedStep 4, layoutType
-		Exit Sub
-
 	End If
 
 	Dim breaker, breakerExists
@@ -1989,11 +1863,6 @@ Sub S5NM(triggerId)
 
 		End Select
 
-	Else
-
-		UnsupportedStep 5, layoutType
-		Exit Sub
-
 	End If
 
 	Dim breaker, breakerExists
@@ -2062,8 +1931,7 @@ Sub S5TM(triggerId)
 
 	Else
 
-		UnsupportedStep 5, layoutType
-		Exit Sub
+		action = 2
 
 	End If
 
@@ -2128,11 +1996,6 @@ Sub S5TA(triggerId)
 				breakerId = 900
 
 		End Select
-
-	Else
-
-		UnsupportedStep 5, layoutType
-		Exit Sub
 
 	End If
 
@@ -2220,11 +2083,6 @@ Sub S6NM(triggerId)
 
 		End Select
 
-	Else
-
-		UnsupportedStep 6, layoutType
-		Exit Sub
-
 	End If
 
 	Dim breaker, breakerExists
@@ -2295,8 +2153,7 @@ Sub S6TM(triggerId)
 
 	Else
 
-		UnsupportedStep 6, layoutType
-		Exit Sub
+		action = 1
 
 	End If
 
@@ -2358,11 +2215,6 @@ Sub S6TA(triggerId)
 				breakerId = 710
 
 		End Select
-
-	Else
-
-		UnsupportedStep 6, layoutType
-		Exit Sub
 
 	End If
 

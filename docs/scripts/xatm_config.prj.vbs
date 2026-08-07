@@ -2,590 +2,10 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Wed Aug  5 16:12:12 2026
+Fri Aug  7 10:33:03 2026
 -----------------------
 
-<xatm_config_data.PropertiesHelper.xatm_BTC:xatm_BTC_OnStartRunning()>
-Sub xatm_BTC_OnStartRunning()
-
-	Dim bag
-	Set bag = CreateObject("Scripting.Dictionary")
-
-	AddProperty bag, "Enabled", "Boolean", True, _
-		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
-		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
-
-	AddProperty bag, "Running", "Boolean", False, _
-		"True while a sequence is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
-		"True enquanto uma sequência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
-
-	AddProperty bag, "Transformer", "xatm_Transformer", Empty, _
-		"Transformer XObject this automation instance is bound to.", _
-		"XObject do transformador ao qual esta instância do automatismo está vinculada."
-
-	AddProperty bag, "Preconditions", "Boolean", True, _
-		"Field conditions that have to hold before a sequence may start. Bound to an expression - True while the maneuver is permitted.", _
-		"Condições de campo que devem valer antes de uma sequência partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
-
-	AddProperty bag, "OperatorBlock", "Boolean", False, _
-		"Operator lock. Blocks the start until the operator releases it.", _
-		"Bloqueio do operador. Impede a partida até que o operador libere."
-
-	AddProperty bag, "GeneralBlock", "Boolean", False, _
-		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
-		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
-
-	AddProperty bag, "AutomaticBlock", "Boolean", False, _
-		"Field conditions that block the automation. Bound to an expression - True keeps a sequence from starting, alongside OperatorBlock and GeneralBlock.", _
-		"Condições de campo que bloqueiam o automatismo. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
-
-	Dim i
-	For i = 1 To 6
-
-		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
-			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
-			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
-
-	Next
-
-	' What the screen may do with each of these, and which are settings
-	' rather than readings. Anything left out stays EXPOSE_NONE.
-	'
-	' The four that are readings - the blocks and Preconditions - are not
-	' saved: their expression is the configuration, and the reading is
-	' whatever the switchyard was doing at the time. StepExecutionFailed1
-	' to 6 are latches the automation sets and Reset clears, so they are
-	' neither shown nor saved.
-	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
-	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE
-	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE
-	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
-
-	Set Value = bag
-
-End Sub
-
-' What the configuration screen may do with a property, and whether its
-' value is a setting at all. A bitmask: a property can be bound to an
-' expression and forced, or shown and not edited, and so on.
-'
-' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
-' the screen and nothing is written to the project until the table at the
-' foot of the manifest says so. Both defaults fail closed.
-Const EXPOSE_NONE       = 0
-Const EXPOSE_VIEW       = 1     ' a row appears for it
-Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
-Const EXPOSE_EDIT       = 4     ' the value can be typed
-Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
-Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
-Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
-
-
-Class PropertyInfo
-
-	Public Name
-	Public DataType
-	Public InitialValue
-	Public Exposure
-	Public HelpEn
-	Public HelpPt
-
-	Public Function Help(lang)
-
-		If lang = "pt-BR" Then
-			Help = HelpPt
-		Else
-			Help = HelpEn
-		End If
-
-	End Function
-
-	' Asked of the property rather than of the caller, so the flags stay in
-	' the one scope that declares them. The instances travel to whatever
-	' scope reads the manifest and answer there just the same.
-	Public Function Shows()
-		Shows = Has(EXPOSE_VIEW)
-	End Function
-
-	Public Function ShowsValue()
-		ShowsValue = Has(EXPOSE_VALUE)
-	End Function
-
-	Public Function CanEdit()
-		CanEdit = Has(EXPOSE_EDIT)
-	End Function
-
-	Public Function CanBind()
-		CanBind = Has(EXPOSE_EXPRESSION)
-	End Function
-
-	Public Function CanForce()
-		CanForce = Has(EXPOSE_FORCE)
-	End Function
-
-	Public Function IsSaved()
-		IsSaved = Has(EXPOSE_SAVED)
-	End Function
-
-	' Empty And anything is 0, so a property nobody classified answers no
-	' to all of these.
-	Private Function Has(flag)
-		Has = ((Exposure And flag) <> 0)
-	End Function
-
-End Class
-
-Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
-
-	Dim p
-	Set p = New PropertyInfo
-
-	p.Name         = name
-	p.DataType     = dataType
-	p.InitialValue = initialValue
-	p.Exposure     = EXPOSE_NONE
-	p.HelpEn       = helpEn
-	p.HelpPt       = helpPt
-
-	bag.Add LCase(name), p
-	
-End Sub
-
-' What the screen may do with a property. Set apart from AddProperty so
-' the classifications read as a table, and so changing one never means
-' touching the help text - which is where the accents live.
-Sub SetExposure(bag, name, exposure)
-
-	Dim k
-	k = LCase(name)
-
-	If Not bag.Exists(k) Then Exit Sub
-
-	bag(k).Exposure = exposure
-
-End Sub
-
-<xatm_config_data.PropertiesHelper.xatm_Breaker:xatm_Breaker_OnStartRunning()>
-Sub xatm_Breaker_OnStartRunning()
-	
-	Dim bag
-	Set bag = CreateObject("Scripting.Dictionary")
-
-	AddProperty bag, "Id", "Integer", Empty, _
-		"Unique numeric identifier used by the automation to locate this breaker.", _
-		"Identificador numérico único usado pelo automatismo para localizar este disjuntor."
-
-	AddProperty bag, "PositionOpen", "IOTag", Empty, _
-		"Open-position input of relay 1. Double-point word, or the 52b contact when UseDoublePoints is False.", _
-		"Entrada de posição aberto do relé 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
-
-	AddProperty bag, "PositionClosed", "IOTag", Empty, _
-		"Closed-position input of relay 1. Double-point word, or the 52a contact when UseDoublePoints is False.", _
-		"Entrada de posição fechado do relé 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
-
-	AddProperty bag, "PositionOpenAlt", "IOTag", Empty, _
-		"Open-position input of relay 2. Leave empty when there is no redundant relay.", _
-		"Entrada de posição aberto do relé 2. Deixe vazio quando não houver relé redundante."
-
-	AddProperty bag, "PositionClosedAlt", "IOTag", Empty, _
-		"Closed-position input of relay 2. Leave empty when there is no redundant relay.", _
-		"Entrada de posição fechado do relé 2. Deixe vazio quando não houver relé redundante."
-
-	AddProperty bag, "UseDoublePoints", "Boolean", True, _
-		"True - position comes from a double-point word. False - position comes from the 52a/52b contact pair.", _
-		"True - a posição vem de uma palavra de duplo ponto. False - a posição vem do par de contatos 52a/52b."
-
-	AddProperty bag, "RawValueOpen", "Integer", 2, _
-		"Raw value from the driver that means OPEN.", _
-		"Valor bruto do driver que significa ABERTO."
-
-	AddProperty bag, "RawValueClosed", "Integer", 1, _
-		"Raw value from the driver that means CLOSED.", _
-		"Valor bruto do driver que significa FECHADO."
-
-	AddProperty bag, "NormalState", "EdbSwitchState", 1, _
-		"Normal state of the equipment. Reference for normalisation and for Simulation Mode.", _
-		"Estado normal do equipamento. Referência para a normalização e para o Modo Simulação."
-
-	AddProperty bag, "CommandTimeout", "Integer", 40, _
-		"Command supervision window in seconds. The command is re-sent once at half the window and fails when it expires.", _
-		"Janela de supervisão do comando em segundos. O comando é reenviado uma vez na metade da janela e falha ao expirar."
-
-	AddProperty bag, "RawValueCommandOpen", "Integer", 0, _
-		"Raw value written to the open (trip) output.", _
-		"Valor bruto escrito na saída de abertura (trip)."
-
-	AddProperty bag, "RawValueCommandClose", "Integer", 1, _
-		"Raw value written to the close output.", _
-		"Valor bruto escrito na saída de fechamento."
-
-	AddProperty bag, "CommandOpen", "IOTag", Empty, _
-		"Open (trip) output of relay 1. Falls back to relay 2 when empty.", _
-		"Saída de abertura (trip) do relé 1. Recorre ao relé 2 quando vazio."
-
-	AddProperty bag, "CommandSBOOpen", "IOTag", Empty, _
-		"Select tag for the open command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
-		"Tag de seleção do comando de abertura no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
-
-	AddProperty bag, "CommandOpenAlt", "IOTag", Empty, _
-		"Open (trip) output of relay 2. Used when relay 1 is unavailable.", _
-		"Saída de abertura (trip) do relé 2. Usada quando o relé 1 está indisponível."
-
-	AddProperty bag, "CommandSBOOpenAlt", "IOTag", Empty, _
-		"Select tag for the open command on relay 2. Optional.", _
-		"Tag de seleção do comando de abertura no relé 2. Opcional."
-
-	AddProperty bag, "CommandClose", "IOTag", Empty, _
-		"Close output of relay 1. Falls back to relay 2 when empty.", _
-		"Saída de fechamento do relé 1. Recorre ao relé 2 quando vazio."
-
-	AddProperty bag, "CommandSBOClose", "IOTag", Empty, _
-		"Select tag for the close command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
-		"Tag de seleção do comando de fechamento no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
-
-	AddProperty bag, "CommandCloseAlt", "IOTag", Empty, _
-		"Close output of relay 2. Used when relay 1 is unavailable.", _
-		"Saída de fechamento do relé 2. Usada quando o relé 1 está indisponível."
-
-	AddProperty bag, "CommandSBOCloseAlt", "IOTag", Empty, _
-		"Select tag for the close command on relay 2. Optional.", _
-		"Tag de seleção do comando de fechamento no relé 2. Opcional."
-
-	' The command outputs are write-only, so they get no EXPOSE_VALUE -
-	' there is nothing to read back. Forcing one sends the raw value
-	' configured for it rather than flipping a boolean, because a protocol
-	' may want 65 to close.
-	'
-	' Id is shown and never edited: it is what the automation locates this
-	' breaker by, and what the panel and the import address it by.
-	SetExposure bag, "Id",                   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-
-	SetExposure bag, "PositionOpen",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-	SetExposure bag, "PositionClosed",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-	SetExposure bag, "PositionOpenAlt",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-	SetExposure bag, "PositionClosedAlt",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-
-	SetExposure bag, "UseDoublePoints",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-	SetExposure bag, "RawValueOpen",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-	SetExposure bag, "RawValueClosed",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-	SetExposure bag, "NormalState",          EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-	SetExposure bag, "CommandTimeout",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-	SetExposure bag, "RawValueCommandOpen",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-	SetExposure bag, "RawValueCommandClose", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-
-	SetExposure bag, "CommandOpen",          EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOOpen",       EXPOSE_VIEW + EXPOSE_SAVED
-	SetExposure bag, "CommandOpenAlt",       EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOOpenAlt",    EXPOSE_VIEW + EXPOSE_SAVED
-	SetExposure bag, "CommandClose",         EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOClose",      EXPOSE_VIEW + EXPOSE_SAVED
-	SetExposure bag, "CommandCloseAlt",      EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOCloseAlt",   EXPOSE_VIEW + EXPOSE_SAVED
-
-	Set Value = bag
-
-End Sub
-
-' What the configuration screen may do with a property, and whether its
-' value is a setting at all. A bitmask: a property can be bound to an
-' expression and forced, or shown and not edited, and so on.
-'
-' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
-' the screen and nothing is written to the project until the table at the
-' foot of the manifest says so. Both defaults fail closed.
-Const EXPOSE_NONE       = 0
-Const EXPOSE_VIEW       = 1     ' a row appears for it
-Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
-Const EXPOSE_EDIT       = 4     ' the value can be typed
-Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
-Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
-Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
-
-
-Class PropertyInfo
-
-	Public Name
-	Public DataType
-	Public InitialValue
-	Public Exposure
-	Public HelpEn
-	Public HelpPt
-
-	Public Function Help(lang)
-
-		If lang = "pt-BR" Then
-			Help = HelpPt
-		Else
-			Help = HelpEn
-		End If
-
-	End Function
-
-	' Asked of the property rather than of the caller, so the flags stay in
-	' the one scope that declares them. The instances travel to whatever
-	' scope reads the manifest and answer there just the same.
-	Public Function Shows()
-		Shows = Has(EXPOSE_VIEW)
-	End Function
-
-	Public Function ShowsValue()
-		ShowsValue = Has(EXPOSE_VALUE)
-	End Function
-
-	Public Function CanEdit()
-		CanEdit = Has(EXPOSE_EDIT)
-	End Function
-
-	Public Function CanBind()
-		CanBind = Has(EXPOSE_EXPRESSION)
-	End Function
-
-	Public Function CanForce()
-		CanForce = Has(EXPOSE_FORCE)
-	End Function
-
-	Public Function IsSaved()
-		IsSaved = Has(EXPOSE_SAVED)
-	End Function
-
-	' Empty And anything is 0, so a property nobody classified answers no
-	' to all of these.
-	Private Function Has(flag)
-		Has = ((Exposure And flag) <> 0)
-	End Function
-
-End Class
-
-Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
-
-	Dim p
-	Set p = New PropertyInfo
-
-	p.Name         = name
-	p.DataType     = dataType
-	p.InitialValue = initialValue
-	p.Exposure     = EXPOSE_NONE
-	p.HelpEn       = helpEn
-	p.HelpPt       = helpPt
-
-	bag.Add LCase(name), p
-	
-End Sub
-
-' What the screen may do with a property. Set apart from AddProperty so
-' the classifications read as a table, and so changing one never means
-' touching the help text - which is where the accents live.
-Sub SetExposure(bag, name, exposure)
-
-	Dim k
-	k = LCase(name)
-
-	If Not bag.Exists(k) Then Exit Sub
-
-	bag(k).Exposure = exposure
-
-End Sub
-
-<xatm_config_data.PropertiesHelper.xatm_Transformer:xatm_Transformer_OnStartRunning()>
-Sub xatm_Transformer_OnStartRunning()
-
-	Dim bag
-	Set bag = CreateObject("Scripting.Dictionary")
-
-	AddProperty bag, "OutOfService", "Boolean", False, _
-		"Transformer is out of service (impediment). The automation reads it to plan the maneuver around this transformer.", _
-		"Transformador fora de serviço (impedimento). O automatismo o lê para planejar a manobra sem este transformador."
-
-	AddProperty bag, "Id", "Integer", Empty, _
-		"Unique numeric identifier used by the automation to locate this transformer.", _
-		"Identificador numérico único usado pelo automatismo para localizar este transformador."
-
-	AddProperty bag, "LockingOutRelay", "Boolean", False, _
-		"Locking out relay (86) of the transformer is actuated.", _
-		"Relé de bloqueio (86) do transformador atuado."
-
-	AddProperty bag, "UndervoltageRelay", "Boolean", False, _
-		"Undervoltage relay (27) of the transformer is actuated.", _
-		"Relé de subtensão (27) do transformador atuado."
-
-	AddProperty bag, "UndervoltageDelay", "Integer", 25, _
-		"Time in seconds the undervoltage (27) condition has to persist before the automation acts on it.", _
-		"Tempo em segundos que a condição de subtensão (27) deve permanecer antes que o automatismo atue."
-
-	' The three readings take an expression and can be forced for a test,
-	' and none of them is saved - the expression is the configuration.
-	SetExposure bag, "Id",                EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-	SetExposure bag, "UndervoltageDelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-
-	SetExposure bag, "OutOfService",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
-	SetExposure bag, "LockingOutRelay",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
-	SetExposure bag, "UndervoltageRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
-
-	Set Value = bag
-
-End Sub
-
-' What the configuration screen may do with a property, and whether its
-' value is a setting at all. A bitmask: a property can be bound to an
-' expression and forced, or shown and not edited, and so on.
-'
-' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
-' the screen and nothing is written to the project until the table at the
-' foot of the manifest says so. Both defaults fail closed.
-Const EXPOSE_NONE       = 0
-Const EXPOSE_VIEW       = 1     ' a row appears for it
-Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
-Const EXPOSE_EDIT       = 4     ' the value can be typed
-Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
-Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
-Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
-
-
-Class PropertyInfo
-
-	Public Name
-	Public DataType
-	Public InitialValue
-	Public Exposure
-	Public HelpEn
-	Public HelpPt
-
-	Public Function Help(lang)
-
-		If lang = "pt-BR" Then
-			Help = HelpPt
-		Else
-			Help = HelpEn
-		End If
-
-	End Function
-
-	' Asked of the property rather than of the caller, so the flags stay in
-	' the one scope that declares them. The instances travel to whatever
-	' scope reads the manifest and answer there just the same.
-	Public Function Shows()
-		Shows = Has(EXPOSE_VIEW)
-	End Function
-
-	Public Function ShowsValue()
-		ShowsValue = Has(EXPOSE_VALUE)
-	End Function
-
-	Public Function CanEdit()
-		CanEdit = Has(EXPOSE_EDIT)
-	End Function
-
-	Public Function CanBind()
-		CanBind = Has(EXPOSE_EXPRESSION)
-	End Function
-
-	Public Function CanForce()
-		CanForce = Has(EXPOSE_FORCE)
-	End Function
-
-	Public Function IsSaved()
-		IsSaved = Has(EXPOSE_SAVED)
-	End Function
-
-	' Empty And anything is 0, so a property nobody classified answers no
-	' to all of these.
-	Private Function Has(flag)
-		Has = ((Exposure And flag) <> 0)
-	End Function
-
-End Class
-
-Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
-
-	Dim p
-	Set p = New PropertyInfo
-
-	p.Name         = name
-	p.DataType     = dataType
-	p.InitialValue = initialValue
-	p.Exposure     = EXPOSE_NONE
-	p.HelpEn       = helpEn
-	p.HelpPt       = helpPt
-
-	bag.Add LCase(name), p
-	
-End Sub
-
-' What the screen may do with a property. Set apart from AddProperty so
-' the classifications read as a table, and so changing one never means
-' touching the help text - which is where the accents live.
-Sub SetExposure(bag, name, exposure)
-
-	Dim k
-	k = LCase(name)
-
-	If Not bag.Exists(k) Then Exit Sub
-
-	bag(k).Exposure = exposure
-
-End Sub
-
-<xatm_config_data.SimulationMode:SimulationMode_OnChangedValue()>
-Sub SimulationMode_OnChangedValue()
-
-    ScanFolder Application.GetObject("XATM_Data.Substation"), Value
-
-End Sub
-
-' Returns True if at least one position tag has good quality — breaker does NOT need sim mode.
-Function AnyBreakerTagHealthy(breaker)
-
-    If TagHealthy(breaker.PositionOpen)      Then AnyBreakerTagHealthy = True : Exit Function
-    If TagHealthy(breaker.PositionClosed)    Then AnyBreakerTagHealthy = True : Exit Function
-    If TagHealthy(breaker.PositionOpenAlt)   Then AnyBreakerTagHealthy = True : Exit Function
-    If TagHealthy(breaker.PositionClosedAlt) Then AnyBreakerTagHealthy = True : Exit Function
-    AnyBreakerTagHealthy = False
-
-End Function
-
-Function TagHealthy(tag)
-    
-    On Error Resume Next
-    Dim q
-    q = tag.Quality
-    TagHealthy = (Err.Number = 0) And (q >= 192)
-    On Error GoTo 0
-
-End Function
-
-Sub ScanFolder(folder, simEnabled)
-    
-    Dim obj
-    For Each obj In folder
-        Select Case UCase(TypeName(obj))
-            Case "XATM_BREAKER"
-    
-                Dim shouldSim
-                
-                If simEnabled Then
-                    shouldSim = Not AnyBreakerTagHealthy(obj)
-                Else
-                    shouldSim = False
-                End If
-                
-                obj.Item("Data").Item("SimulationModeEnabled").WriteEx shouldSim
-			
-			Case "XATM_TRANSFORMER"
-				
-				obj.Item("Data").Item("SimulationModeEnabled").WriteEx simEnabled
-			
-            Case Else
-                On Error Resume Next
-                ScanFolder obj, simEnabled
-                On Error GoTo 0
-        End Select
-    Next
-	
-End Sub
-
-<xatm_config_data.XML.ImportXml:ImportXml_OnChangedValue()>
+<xatm_config_data.Config.ImportXml:ImportXml_OnChangedValue()>
 Sub ImportXml_OnChangedValue()
 
 	Dim ts
@@ -929,7 +349,7 @@ Sub WriteValue(obj, name, dataType, newValue, report, where)
 	On Error Goto 0
 
 	If failed <> "" Then
-		report = report & vbCrLf & "  could not set " & name & " on " & where & " - " & failed
+		report = report & vbCrLf & " could not set " & name & " on " & where & " - " & failed
 	End If
 
 End Sub
@@ -1161,17 +581,17 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
 	End If
-
+	
 End Sub
 
-<xatm_config_data.XML.ImportXml:ImportXml_OnStartRunning()>
+<xatm_config_data.Config.ImportXml:ImportXml_OnStartRunning()>
 Sub ImportXml_OnStartRunning()
-
+	
 	DocString = ""
-
+	
 End Sub
 
-<xatm_config_data.XML.SaveXML:SaveXML_OnChangedValue()>
+<xatm_config_data.Config.SaveXML:SaveXML_OnChangedValue()>
 Sub SaveXML_OnChangedValue()
 	
 	Dim ts
@@ -1339,14 +759,14 @@ Sub WriteLog(message)
 
 End Sub
 
-<xatm_config_data.XML.SaveXML:SaveXML_OnStartRunning()>
+<xatm_config_data.Config.SaveXML:SaveXML_OnStartRunning()>
 Sub SaveXML_OnStartRunning()
 
 	DocString = ""
 		
 End Sub
 
-<xatm_config_data.XML.SetProperty:SetProperty_OnChangedValue()>
+<xatm_config_data.Config.SetProperty:SetProperty_OnChangedValue()>
 Sub SetProperty_OnChangedValue()
 	
 	If Trim(Value) = "" Then 
@@ -1702,14 +1122,28 @@ Sub WriteLog(message)
 	
 End Sub
 
-<xatm_config_data.XML.SetProperty:SetProperty_OnStartRunning()>
+<xatm_config_data.Config.SetProperty:SetProperty_OnStartRunning()>
 Sub SetProperty_OnStartRunning()
 
-	DocString = "-1"
+	DocString = ""
 
 End Sub
 
-<xatm_config_data.XML.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
+<xatm_config_data.Config.UpdateTreeviewSignal:UpdateTreeviewSignal_OnStartRunning()>
+Sub UpdateTreeviewSignal_OnStartRunning()
+	
+	WriteEx False
+		
+End Sub
+
+<xatm_config_data.Config.UpdateTreeviewSignal:UpdateTreeviewSignal_OnTrue()>
+Sub UpdateTreeviewSignal_OnTrue()
+	
+	WriteEx False
+		
+End Sub
+
+<xatm_config_data.Config.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
 Sub XMLBuilderAfterDelay_Functions()
 End Sub
 
@@ -1833,15 +1267,10 @@ Function ExportObject(obj, bag, indent)
 		' one or the other: an IOTag is an association and carries no value
 		' of its own, and a bound property's value is whatever its expression
 		' last worked out to.
-		'
-		' A reading is left out altogether. Its expression is the setting; the
-		' number beside it is whatever the switchyard happened to be doing,
-		' and putting that in the document is how a step failure latched
-		' during a test ends up looking like a configured value.
 		Dim value, source
 		source = SourceOf(obj, p.Name, p.DataType)
-
-		If IsLinkType(p.DataType) Or Not p.IsSaved() Then
+		
+		If IsLinkType(p.DataType) Then
 			value = Empty
 		Else
 			value = ReadProperty(obj, p.Name)
@@ -2019,14 +1448,14 @@ Sub Foo()
 	
 End Sub
 
-<xatm_config_data.XML.XMLBuilderAfterDelay:XMLBuilderAfterDelay_OnStartRunning()>
+<xatm_config_data.Config.XMLBuilderAfterDelay:XMLBuilderAfterDelay_OnStartRunning()>
 Sub XMLBuilderAfterDelay_OnStartRunning()
 
 	Value = 3	' delay in seconds
 	
 End Sub
 
-<xatm_config_data.XML.XMLBuilderAfterDelay:XMLBuilderAfterDelay_TickCountdown()>
+<xatm_config_data.Config.XMLBuilderAfterDelay:XMLBuilderAfterDelay_TickCountdown()>
 Sub XMLBuilderAfterDelay_TickCountdown()
 	
 	If Value > 0 Then
@@ -2041,6 +1470,588 @@ Sub XMLBuilderAfterDelay_TickCountdown()
 		BuildXML
 		
 	End If
+	
+End Sub
+
+<xatm_config_data.PropertiesHelper.xatm_BTC:xatm_BTC_OnStartRunning()>
+Sub xatm_BTC_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	AddProperty bag, "Enabled", "Boolean", True, _
+		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
+		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
+
+	AddProperty bag, "Running", "Boolean", False, _
+		"True while a sequence is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
+		"True enquanto uma sequência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
+
+	AddProperty bag, "Transformer", "xatm_Transformer", Empty, _
+		"Transformer XObject this automation instance is bound to.", _
+		"XObject do transformador ao qual esta instância do automatismo está vinculada."
+	
+	AddProperty bag, "Preconditions", "Boolean", True, _
+		"Field conditions that have to hold before a sequence may start. Bound to an expression - True while the maneuver is permitted.", _
+		"Condições de campo que devem valer antes de uma sequência partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
+
+	AddProperty bag, "OperatorBlock", "Boolean", False, _
+		"Operator lock. Blocks the start until the operator releases it.", _
+		"Bloqueio do operador. Impede a partida até que o operador libere."
+
+	AddProperty bag, "GeneralBlock", "Boolean", False, _
+		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
+		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
+		
+	
+	AddProperty bag, "AutomaticBlock", "Boolean", False, _
+		"Field conditions that block the automation. Bound to an expression - True keeps a sequence from starting, alongside OperatorBlock and GeneralBlock.", _
+		"Condições de campo que bloqueiam o automatismo. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
+
+	Dim i
+	For i = 1 To 6
+
+		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
+			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
+			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
+
+	Next
+	
+	' What the screen may do with each of these, and which are settings
+	' rather than readings. Anything left out stays EXPOSE_NONE.
+	'
+	' The four that are readings - the blocks and Preconditions - are not
+	' saved: their expression is the configuration, and the reading is
+	' whatever the switchyard was doing at the time. StepExecutionFailed1
+	' to 6 are latches the automation sets and Reset clears, so they are
+	' neither shown nor saved.
+	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE
+	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE
+	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+
+
+
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+
+End Sub
+
+<xatm_config_data.PropertiesHelper.xatm_Breaker:xatm_Breaker_OnStartRunning()>
+Sub xatm_Breaker_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	AddProperty bag, "Id", "Integer", Empty, _
+		"Unique numeric identifier used by the automation to locate this breaker.", _
+		"Identificador numérico único usado pelo automatismo para localizar este disjuntor."
+
+	AddProperty bag, "PositionOpen", "IOTag", Empty, _
+		"Open-position input of relay 1. Double-point word, or the 52b contact when UseDoublePoints is False.", _
+		"Entrada de posição aberto do relé 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
+
+	AddProperty bag, "PositionClosed", "IOTag", Empty, _
+		"Closed-position input of relay 1. Double-point word, or the 52a contact when UseDoublePoints is False.", _
+		"Entrada de posição fechado do relé 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
+
+	AddProperty bag, "PositionOpenAlt", "IOTag", Empty, _
+		"Open-position input of relay 2. Leave empty when there is no redundant relay.", _
+		"Entrada de posição aberto do relé 2. Deixe vazio quando não houver relé redundante."
+
+	AddProperty bag, "PositionClosedAlt", "IOTag", Empty, _
+		"Closed-position input of relay 2. Leave empty when there is no redundant relay.", _
+		"Entrada de posição fechado do relé 2. Deixe vazio quando não houver relé redundante."
+
+	AddProperty bag, "UseDoublePoints", "Boolean", True, _
+		"True - position comes from a double-point word. False - position comes from the 52a/52b contact pair.", _
+		"True - a posição vem de uma palavra de duplo ponto. False - a posição vem do par de contatos 52a/52b."
+
+	AddProperty bag, "RawValueOpen", "Integer", 2, _
+		"Raw value from the driver that means OPEN.", _
+		"Valor bruto do driver que significa ABERTO."
+
+	AddProperty bag, "RawValueClosed", "Integer", 1, _
+		"Raw value from the driver that means CLOSED.", _
+		"Valor bruto do driver que significa FECHADO."
+
+	AddProperty bag, "NormalState", "EdbSwitchState", 1, _
+		"Normal state of the equipment. Reference for normalisation and for Simulation Mode.", _
+		"Estado normal do equipamento. Referência para a normalização e para o Modo Simulação."
+
+	AddProperty bag, "CommandTimeout", "Integer", 40, _
+		"Command supervision window in seconds. The command is re-sent once at half the window and fails when it expires.", _
+		"Janela de supervisão do comando em segundos. O comando é reenviado uma vez na metade da janela e falha ao expirar."
+
+	AddProperty bag, "RawValueCommandOpen", "Integer", 0, _
+		"Raw value written to the open (trip) output.", _
+		"Valor bruto escrito na saída de abertura (trip)."
+
+	AddProperty bag, "RawValueCommandClose", "Integer", 1, _
+		"Raw value written to the close output.", _
+		"Valor bruto escrito na saída de fechamento."
+
+	AddProperty bag, "CommandOpen", "IOTag", Empty, _
+		"Open (trip) output of relay 1. Falls back to relay 2 when empty.", _
+		"Saída de abertura (trip) do relé 1. Recorre ao relé 2 quando vazio."
+
+	AddProperty bag, "CommandSBOOpen", "IOTag", Empty, _
+		"Select tag for the open command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
+		"Tag de seleção do comando de abertura no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
+
+	AddProperty bag, "CommandOpenAlt", "IOTag", Empty, _
+		"Open (trip) output of relay 2. Used when relay 1 is unavailable.", _
+		"Saída de abertura (trip) do relé 2. Usada quando o relé 1 está indisponível."
+
+	AddProperty bag, "CommandSBOOpenAlt", "IOTag", Empty, _
+		"Select tag for the open command on relay 2. Optional.", _
+		"Tag de seleção do comando de abertura no relé 2. Opcional."
+
+	AddProperty bag, "CommandClose", "IOTag", Empty, _
+		"Close output of relay 1. Falls back to relay 2 when empty.", _
+		"Saída de fechamento do relé 1. Recorre ao relé 2 quando vazio."
+
+	AddProperty bag, "CommandSBOClose", "IOTag", Empty, _
+		"Select tag for the close command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
+		"Tag de seleção do comando de fechamento no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
+
+	AddProperty bag, "CommandCloseAlt", "IOTag", Empty, _
+		"Close output of relay 2. Used when relay 1 is unavailable.", _
+		"Saída de fechamento do relé 2. Usada quando o relé 1 está indisponível."
+
+	AddProperty bag, "CommandSBOCloseAlt", "IOTag", Empty, _
+		"Select tag for the close command on relay 2. Optional.", _
+		"Tag de seleção do comando de fechamento no relé 2. Opcional."
+
+	' The command outputs are write-only, so they get no EXPOSE_VALUE -
+	' there is nothing to read back. Forcing one sends the raw value
+	' configured for it rather than flipping a boolean, because a protocol
+	' may want 65 to close.
+	'
+	' Id is shown and never edited: it is what the automation locates this
+	' breaker by, and what the panel and the import address it by.
+	SetExposure bag, "Id",                   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+
+	SetExposure bag, "PositionOpen",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionClosed",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionOpenAlt",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionClosedAlt",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+
+	SetExposure bag, "UseDoublePoints",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueOpen",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueClosed",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "NormalState",          EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "CommandTimeout",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueCommandOpen",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueCommandClose", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+
+	SetExposure bag, "CommandOpen",          EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpen",       EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandOpenAlt",       EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpenAlt",    EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandClose",         EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOClose",      EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandCloseAlt",      EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOCloseAlt",   EXPOSE_VIEW + EXPOSE_SAVED
+
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+
+
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+	
+End Sub
+
+<xatm_config_data.PropertiesHelper.xatm_Transformer:xatm_Transformer_OnStartRunning()>
+Sub xatm_Transformer_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	AddProperty bag, "OutOfService", "Boolean", False, _
+		"Transformer is out of service (impediment). The automation reads it to plan the maneuver around this transformer.", _
+		"Transformador fora de serviço (impedimento). O automatismo o lê para planejar a manobra sem este transformador."
+
+	AddProperty bag, "Id", "Integer", Empty, _
+		"Unique numeric identifier used by the automation to locate this transformer.", _
+		"Identificador numérico único usado pelo automatismo para localizar este transformador."
+
+	AddProperty bag, "LockingOutRelay", "Boolean", False, _
+		"Locking out relay (86) of the transformer is actuated.", _
+		"Relé de bloqueio (86) do transformador atuado."
+
+	AddProperty bag, "UndervoltageRelay", "Boolean", False, _
+		"Undervoltage relay (27) of the transformer is actuated.", _
+		"Relé de subtensão (27) do transformador atuado."
+
+	AddProperty bag, "UndervoltageDelay", "Integer", 25, _
+		"Time in seconds the undervoltage (27) condition has to persist before the automation acts on it.", _
+		"Tempo em segundos que a condição de subtensão (27) deve permanecer antes que o automatismo atue."
+
+	' The three readings take an expression and can be forced for a test,
+	' and none of them is saved - the expression is the configuration.
+	SetExposure bag, "Id",                EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "UndervoltageDelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+
+	SetExposure bag, "OutOfService",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "LockingOutRelay",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "UndervoltageRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+
+
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+	
+End Sub
+
+<xatm_config_data.SimulationMode:SimulationMode_OnChangedValue()>
+Sub SimulationMode_OnChangedValue()
+
+    ScanFolder Application.GetObject("XATM_Data.Substation"), Value
+
+End Sub
+
+' Returns True if at least one position tag has good quality — breaker does NOT need sim mode.
+Function AnyBreakerTagHealthy(breaker)
+
+    If TagHealthy(breaker.PositionOpen)      Then AnyBreakerTagHealthy = True : Exit Function
+    If TagHealthy(breaker.PositionClosed)    Then AnyBreakerTagHealthy = True : Exit Function
+    If TagHealthy(breaker.PositionOpenAlt)   Then AnyBreakerTagHealthy = True : Exit Function
+    If TagHealthy(breaker.PositionClosedAlt) Then AnyBreakerTagHealthy = True : Exit Function
+    AnyBreakerTagHealthy = False
+
+End Function
+
+Function TagHealthy(tag)
+    
+    On Error Resume Next
+    Dim q
+    q = tag.Quality
+    TagHealthy = (Err.Number = 0) And (q >= 192)
+    On Error GoTo 0
+
+End Function
+
+Sub ScanFolder(folder, simEnabled)
+    
+    Dim obj
+    For Each obj In folder
+        Select Case UCase(TypeName(obj))
+            Case "XATM_BREAKER"
+    
+                Dim shouldSim
+                
+                If simEnabled Then
+                    shouldSim = Not AnyBreakerTagHealthy(obj)
+                Else
+                    shouldSim = False
+                End If
+                
+                obj.Item("Data").Item("SimulationModeEnabled").WriteEx shouldSim
+			
+			Case "XATM_TRANSFORMER"
+				
+				obj.Item("Data").Item("SimulationModeEnabled").WriteEx simEnabled
+			
+            Case Else
+                On Error Resume Next
+                ScanFolder obj, simEnabled
+                On Error GoTo 0
+        End Select
+    Next
 	
 End Sub
 
@@ -2066,7 +2077,7 @@ Sub TreeView_NodeClick(Node)
 	content = Empty
 
 	On Error Resume Next
-	content = Application.GetObject("xatm_config_data.XML.XMLContent").Value
+	content = Application.GetObject("xatm_config_data.Config.XMLContent").Value
 	On Error Goto 0
 
 	If IsEmpty(content) Or IsNull(content) Then Exit Sub
@@ -2129,7 +2140,7 @@ Const KIND_NAME     = "name"
 Const KIND_PROPERTY = "property"
 
 ' What marks a key as an Id rather than a path.
-Const ID_PREFIX     = "id:"
+'Const ID_PREFIX     = "id:"
 
 ' E3 places and sizes objects in himetric, not pixels.
 Function Himetric(pixels)
@@ -2305,19 +2316,6 @@ Sub BuildPropertyRows(objectNode, key)
 End Sub
 
 
-' The manifest declared for a class, or Nothing when the class has none -
-' the same lookup the export and the import do.
-Function ManifestOf(className)
-
-	Set ManifestOf = Nothing
-
-	On Error Resume Next
-	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
-	On Error Goto 0
-
-End Function
-
-
 ' The tip the name row shows, in whichever language HELP_LANG picks. It
 ' is the only row whose help is not in a manifest, the name being the
 ' object rather than something declared on it.
@@ -2328,6 +2326,19 @@ Function NameHelp()
 	Else
 		NameHelp = NAME_HELP_EN
 	End If
+
+End Function
+
+
+' The manifest declared for a class, or Nothing when the class has none -
+' the same lookup the export and the import do.
+Function ManifestOf(className)
+
+	Set ManifestOf = Nothing
+
+	On Error Resume Next
+	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
+	On Error Goto 0
 
 End Function
 
@@ -2378,7 +2389,7 @@ Function NewRow(kind, key, objectPath, objectType, propertyName, propertyType, v
 	' out from the type - two Booleans on a transformer want completely
 	' different controls.
 	row.Exposure     = exposure
-
+	
 	' What the row shows as its tip. The manifest wrote it, in both
 	' languages, next to the property it describes - which is where it stays
 	' accurate, being written by whoever declared what the property is for.
@@ -2472,6 +2483,491 @@ Function StripBom(text)
 End Function
 
 Sub Foo()	
+	
+End Sub
+
+<xatm_config_screens.Config.TreeView:TreeView_UpdateTreeview()>
+Sub TreeView_UpdateTreeview()
+	
+	' Builds the tree by hand, from the export as it stands in the tag. The
+	' same thing Config_OnPreShow does on open and btnApply does after an
+	' Apply - here it says out loud what went wrong instead of doing nothing.
+
+	Dim tree
+	Set tree = Screen.Item("TreeView")
+
+	If tree Is Nothing Then
+		MsgBox "No tree control named '" & TREE_CONTROL & "' was found on this screen.", _
+		       vbExclamation, "Tree"
+		Exit Sub
+	End If
+
+	Dim content
+	content = Empty
+
+	On Error Resume Next
+	content = Application.GetObject("xatm_config_data.Config.XMLContent").Value
+	On Error Goto 0
+
+	If IsEmpty(content) Or IsNull(content) Then
+		MsgBox "'XMLContent' is empty - run the XML export first.", vbExclamation, "Tree"
+		Exit Sub
+	End If
+
+	Dim doc
+	Set doc = NewDomDocument()
+
+	If Not doc.loadXML(StripBom(CStr(content))) Then
+		MsgBox "'XMLContent' does not parse as XML:" & vbCrLf & vbCrLf & _
+		       doc.parseError.reason, vbCritical, "Tree"
+		Exit Sub
+	End If
+
+	PopulateTree tree, doc
+
+	'MsgBox tree.Nodes.Count & " nodes built from the export.", vbInformation, "Tree"
+
+End Sub
+
+
+Const NODE_ELEMENT = 1
+
+' Name of the tree control on the screen, and the Add relationship that
+' hangs a node under another one (tvwChild).
+Const TREE_CONTROL = "TreeView"
+Const TVW_CHILD    = 4
+
+' What an engineer puts in the DocString of a folder or a device to keep
+' it, and everything under it, off the tree.
+Const NO_SHOW      = "$NoShow$"
+
+' Fills the tree from the document: one node per folder and per object.
+' The two folders at the top of the document - Automation and Substation -
+' become the two roots. A property or a tag configures a node, it is not
+' a node of its own.
+Sub PopulateTree(tree, doc)
+
+	tree.Nodes.Clear
+
+	If doc.documentElement Is Nothing Then Exit Sub
+
+	' Where the document was exported from - the head of every path in it.
+	Dim root
+	root = doc.documentElement.getAttribute("root")
+	If IsNull(root) Then root = ""
+
+	Dim children, i
+	children = BranchChildren(doc.documentElement)
+
+	For i = 0 To UBound(children)
+		AddBranch tree, children(i), 0, root
+	Next
+
+End Sub
+
+
+' One node for an element, then the same for the elements under it.
+' A parentIndex of 0 makes a root - VBScript cannot leave out the two
+' arguments Add wants for that, so the call is split in two instead.
+Sub AddBranch(tree, element, parentIndex, parentPath)
+
+	Dim path
+	path = ElementPath(element, parentPath)
+
+	' Nothing under a hidden element is walked either, so marking a folder
+	' takes everything in it off the tree along with it.
+	If IsHidden(path) Then Exit Sub
+
+	Dim node
+
+	If parentIndex = 0 Then
+		Set node = tree.Nodes.Add()
+	Else
+		Set node = tree.Nodes.Add(parentIndex, TVW_CHILD)
+	End If
+
+	node.Text = NodeText(element)
+
+	' What NodeClick reads back to know what was selected, and what every
+	' row built from it is addressed by.
+	node.Tag = NodeKey(element, path)
+
+	' Nothing is expanded on the way in, and a node the control has just
+	' been given is collapsed - so the tree opens on the two roots alone.
+	Dim children, i
+	children = BranchChildren(element)
+
+	For i = 0 To UBound(children)
+		AddBranch tree, children(i), node.Index, path
+	Next
+
+End Sub
+
+
+' The elements that are nodes of the tree.
+Function IsBranch(element)
+
+	IsBranch = False
+
+	If element.nodeType <> NODE_ELEMENT Then Exit Function
+
+	Select Case element.nodeName
+		Case "folder", "object" : IsBranch = True
+	End Select
+
+End Function
+
+
+' The children of an element that are nodes, in the order the tree shows
+' them rather than the order anything holds them in. Only the tree is
+' ordered by this - E3 and the document are left to hold them however
+' they like, and neither is asked to change.
+Function BranchChildren(element)
+
+	Dim items()
+	ReDim items(0)
+
+	Dim n
+	n = -1
+
+	Dim child
+	For Each child In element.childNodes
+
+		If IsBranch(child) Then
+			n = n + 1
+			ReDim Preserve items(n)
+			Set items(n) = child
+		End If
+
+	Next
+
+	If n < 0 Then
+		BranchChildren = Array()
+		Exit Function
+	End If
+
+	SortBranches items, n
+
+	BranchChildren = items
+
+End Function
+
+
+' Insertion sort - it is one folder's worth of children and VBScript has
+' no sort of its own. Stable, so everything sharing a key keeps the
+' order the document had it in, which is what holds the folders still.
+Sub SortBranches(items, last)
+
+	Dim i, j, key, current
+
+	For i = 1 To last
+
+		Set current = items(i)
+		key = SortKey(current)
+
+		j = i - 1
+
+		Do While j >= 0
+			If SortKey(items(j)) <= key Then Exit Do
+			Set items(j + 1) = items(j)
+			j = j - 1
+		Loop
+
+		Set items(j + 1) = current
+
+	Next
+
+End Sub
+
+
+' What a node sorts on.
+'
+' Folders share one key and so keep the order the document has them in,
+' ahead of everything else - Incomer, Transformer, Busbar, Feeder is a
+' deliberate order and alphabetising it would lose it.
+'
+' An object sorts on its Id where its class declares one and on its name
+' where it does not. That is what puts the devices in Id order, which
+' pairs each transformer with its own breaker, and the automations in
+' name order, a BTC having no Id to go by.
+Function SortKey(element)
+
+	If element.nodeName = "folder" Then
+		SortKey = "0"
+		Exit Function
+	End If
+
+	Dim id
+	id = PropertyValue(element, "Id")
+
+	If id <> "" Then
+
+		If IsNumeric(id) Then
+			' Padded, or 1000 would sort in front of 700.
+			SortKey = "1" & Right("000000000000" & CLng(id), 12)
+		Else
+			SortKey = "1" & LCase(id)
+		End If
+
+		Exit Function
+
+	End If
+
+	SortKey = "2" & LCase(NodeText(element))
+
+End Function
+
+
+' The value attribute of a named property - "" when the property is
+' absent or unset.
+Function PropertyValue(objectNode, propertyName)
+
+	PropertyValue = ""
+
+	Dim p
+	Set p = objectNode.selectSingleNode("property[@name='" & propertyName & "']")
+	If p Is Nothing Then Exit Function
+
+	Dim a
+	Set a = p.getAttributeNode("value")
+	If a Is Nothing Then Exit Function
+
+	PropertyValue = a.value
+
+End Function
+
+
+' What marks a key as an Id rather than a path.
+Const ID_PREFIX = "id:"
+
+
+' What a node is addressed by, and with it every row built from that
+' node. An object whose class declares an Id is addressed by the Id,
+' because renaming it changes its path and anything still holding the old
+' one goes stale - the node, and all twenty rows on the panel. A folder,
+' and an object with no Id, has only its path to go by; neither can be
+' renamed from this screen.
+Function NodeKey(element, path)
+
+	NodeKey = path
+
+	If element.nodeName <> "object" Then Exit Function
+
+	Dim id
+	id = PropertyValue(element, "Id")
+	If id = "" Then Exit Function
+
+	NodeKey = ID_PREFIX & id
+
+End Function
+
+
+' The E3 path of an element. An object carries its own; a folder is named
+' and nothing more, so its path is its parent's with its name on the end.
+Function ElementPath(element, parentPath)
+
+	Dim path
+	path = element.getAttribute("path")
+
+	If Not IsNull(path) Then
+		ElementPath = CStr(path)
+		Exit Function
+	End If
+
+	If parentPath = "" Then
+		ElementPath = element.getAttribute("name")
+	Else
+		ElementPath = parentPath & "." & element.getAttribute("name")
+	End If
+
+End Function
+
+
+' True when the object at a path is marked to stay off the tree. The mark
+' is read from E3 rather than from the document, because it is set by hand
+' in Elipse Studio and an export taken before that was set would not carry
+' it. Something the document names that E3 has not got - an object Apply
+' has only just added - cannot have been marked, so it stays on the tree.
+Function IsHidden(path)
+
+	IsHidden = False
+
+	Dim obj
+	Set obj = Nothing
+	On Error Resume Next
+	Set obj = Application.GetObject(E3Path(path))
+	On Error Goto 0
+
+	If obj Is Nothing Then Exit Function
+
+	Dim text
+	text = ""
+	On Error Resume Next
+	text = obj.DocString
+	On Error Goto 0
+
+	If IsNull(text) Or IsEmpty(text) Then Exit Function
+
+	IsHidden = (InStr(1, CStr(text), NO_SHOW, vbTextCompare) > 0)
+
+End Function
+
+
+' What a node is called. Every folder and object carries a name, so the
+' element name is only ever a fallback for a malformed document.
+Function NodeText(element)
+
+	Dim name
+	name = element.getAttribute("name")
+
+	If IsNull(name) Then
+		NodeText = "<" & element.nodeName & ">"
+	Else
+		NodeText = name
+	End If
+
+End Function
+
+
+' The tree control on the screen, Nothing when the screen has none. E3
+' forwards the members of an ActiveX, but not in every version, so
+' whichever of the two answers Nodes is the control.
+Function TreeControl(controlName)
+
+	Set TreeControl = Nothing
+
+	Dim ctl
+	Set ctl = Nothing
+	On Error Resume Next
+	Set ctl = Screen.Item(controlName)
+	On Error Goto 0
+
+	If ctl Is Nothing Then Exit Function
+
+	Dim nodes
+	Set nodes = Nothing
+	On Error Resume Next
+	Set nodes = ctl.Nodes
+	On Error Goto 0
+
+	If Not nodes Is Nothing Then
+		Set TreeControl = ctl
+		Exit Function
+	End If
+
+	On Error Resume Next
+	Set TreeControl = ctl.Object
+	On Error Goto 0
+
+End Function
+
+
+' MSXML 6 where the machine has it, the version-independent progid
+' otherwise.
+Function NewDomDocument()
+
+	Set NewDomDocument = Nothing
+
+	On Error Resume Next
+	Set NewDomDocument = CreateObject("MSXML2.DOMDocument.6.0")
+	On Error Goto 0
+
+	If NewDomDocument Is Nothing Then
+		Set NewDomDocument = CreateObject("MSXML2.DOMDocument")
+	End If
+
+	NewDomDocument.async = False
+	NewDomDocument.preserveWhiteSpace = True
+
+	On Error Resume Next
+	NewDomDocument.setProperty "SelectionLanguage", "XPath"
+	On Error Goto 0
+
+End Function
+
+
+' A byte-order mark survives a round trip through a utf-8 file and
+' makes loadXML fail on what looks like perfectly good XML.
+Function StripBom(text)
+
+	StripBom = text
+
+	If Len(text) = 0 Then Exit Function
+
+	If AscW(Left(text, 1)) = &HFEFF Then
+		StripBom = Mid(text, 2)
+	End If
+
+End Function
+
+
+' A path E3 will resolve. A name that starts with a digit or an
+' underscore, or carries a space or a hyphen, has to be bracketed -
+' Substation.Transformer.52-01 does not resolve and
+' [Substation].[Transformer].[52-01] does. Bracketing every piece is
+' always right, so no piece has to be judged on its own.
+'
+' A piece already bracketed is left as it is: the document takes its
+' object paths from PathName, which may have bracketed them already, and
+' [[52-01]] resolves no better than 52-01 does.
+Function E3Path(path)
+
+	E3Path = ""
+	If path = "" Then Exit Function
+
+	Dim pieces
+	pieces = SplitPath(path)
+
+	Dim i
+	For i = 0 To UBound(pieces)
+		If Left(pieces(i), 1) <> "[" Then
+			pieces(i) = "[" & pieces(i) & "]"
+		End If
+	Next
+
+	E3Path = Join(pieces, ".")
+
+End Function
+
+
+' The pieces of a path, split on the dots between them - the ones outside
+' brackets, since a bracketed name is allowed to carry a dot of its own.
+Function SplitPath(path)
+
+	Dim pieces()
+	ReDim pieces(0)
+	pieces(0) = ""
+
+	Dim i, n, depth, ch
+	n = 0
+	depth = 0
+
+	For i = 1 To Len(path)
+
+		ch = Mid(path, i, 1)
+
+		If ch = "[" Then
+			depth = depth + 1
+			pieces(n) = pieces(n) & ch
+		ElseIf ch = "]" Then
+			depth = depth - 1
+			pieces(n) = pieces(n) & ch
+		ElseIf ch = "." And depth = 0 Then
+			n = n + 1
+			ReDim Preserve pieces(n)
+			pieces(n) = ""
+		Else
+			pieces(n) = pieces(n) & ch
+		End If
+
+	Next
+
+	SplitPath = pieces
+
+End Function
+
+Sub Foo()
+			
 End Sub
 
 <xatm_config_screens.Config.btnApply:btnApply_Click()>
@@ -2493,7 +2989,7 @@ Sub btnApply_Click()
 	Dim contentTag
 	Set contentTag = Nothing
 	On Error Resume Next
-	Set contentTag = Application.GetObject(CONFIG_DATA).Item("XML").Item("XMLContent")
+	Set contentTag = Application.GetObject(CONFIG_DATA).Item("Config").Item("XMLContent")
 	On Error Goto 0
 
 	If contentTag Is Nothing Then
@@ -3382,14 +3878,22 @@ Sub btnSave_Click()
 
 End Sub
 
-
-Const IMPORT_XML   = "xatm_config_data.XML.ImportXml"
-Const SAVE_XML     = "xatm_config_data.XML.SaveXML"
+Const IMPORT_XML   = "xatm_config_data.Config.ImportXml"
+Const SAVE_XML     = "xatm_config_data.Config.SaveXML"
 Const EXIT_SUCCESS = "EXIT_SUCCESS"
+
+Sub Foo()
+	
+End Sub
 
 <xatm_config_screens.Config.btnUpdateTreeview:btnUpdateTreeview_Click()>
 Sub btnUpdateTreeview_Click()
-	
+
+	Application.GetObject("xatm_config_data.Config.UpdateTreeviewSignal").Value = True
+
+End Sub
+
+Sub Bar()	
 	' Builds the tree by hand, from the export as it stands in the tag. The
 	' same thing Config_OnPreShow does on open and btnApply does after an
 	' Apply - here it says out loud what went wrong instead of doing nothing.
@@ -3407,7 +3911,7 @@ Sub btnUpdateTreeview_Click()
 	content = Empty
 
 	On Error Resume Next
-	content = Application.GetObject("xatm_config_data.XML.XMLContent").Value
+	content = Application.GetObject("xatm_config_data.Config.XMLContent").Value
 	On Error Goto 0
 
 	If IsEmpty(content) Or IsNull(content) Then
@@ -3868,7 +4372,7 @@ Function SplitPath(path)
 End Function
 
 Sub Foo()
-	
+		
 End Sub
 
 <xatm_config_screens.Config:Config_OnPreShow(Arg)>

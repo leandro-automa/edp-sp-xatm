@@ -1,8 +1,8 @@
 -----------------------
-Documentaï¿½ï¿½o de Scripts
+Documentação de Scripts
 -----------------------
 XATM_LIBCONFIG (C:\ProjDev\edp_sp\xatm_libconfig.lib)
-Thu Aug  6 14:29:56 2026
+Fri Aug  7 10:32:36 2026
 -----------------------
 
 <xatm_BTCStatus.Source:xatm_BTCStatus_OnSourceChanged()>
@@ -84,22 +84,6 @@ Sub objButton_Click()
 
 	End Select	
 	
-End Sub
-
-<xatm_PropertyRow.Texto1:Texto1_Click()>
-Sub Texto1_Click()
-	Dim d
-	Set d = CreateObject("Scripting.Dictionary")
-	d.Add "Exposure" & vbTab & ": " & xatm_PropertyRow.Exposure, Empty
-	d.Add "ObjectType" & vbTab & ": " & xatm_PropertyRow.ObjectType, Empty
-	d.Add "PropertyName" & vbTab & ": " & xatm_PropertyRow.PropertyName, Empty
-	d.Add "PropertySource" & vbTab & ": " & xatm_PropertyRow.PropertySource, Empty
-	d.Add "PropertyType" & vbTab & ": " & xatm_PropertyRow.PropertyType, Empty
-	d.Add "Source" & vbTab & ": " & xatm_PropertyRow.Source, Empty
-	d.Add "Value" & vbTab & ": " & xatm_PropertyRow.Value, Empty
-	d.Add "Kind" & vbTab & ": " & xatm_PropertyRow.Kind, Empty
-
-	MsgBox Join(d.Keys, vbCrLf), vbInformation, "Property Information"
 End Sub
 
 <xatm_PropertyRow.txtConfiguredValue:txtConfiguredValue_Validate(Cancel, NewValue)>
@@ -288,8 +272,8 @@ End Function
 ' The command tag in xatm_config that owns the document. Reached by path
 ' because a library has no other way up to the project it runs under -
 ' and it is the project that knows what XML is, not this control.
-Const SET_PROPERTY = "xatm_config_data.XML.SetProperty"
-Const PROPERTY_VALUE = "xatm_config_data.XML.PropertyValue"
+Const SET_PROPERTY = "xatm_config_data.Config.SetProperty"
+Const PROPERTY_VALUE = "xatm_config_data.Config.PropertyValue"
 Const EXIT_SUCCESS = "EXIT_SUCCESS"
 
 
@@ -307,7 +291,7 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & xatm_PropertyRow.Name & "] - " & message
 	End If
-	
+		
 End Sub
 
 <xatm_PropertyRow:xatm_PropertyRow_OnStartRunning()>
@@ -370,7 +354,7 @@ Const EXPOSE_EXPRESSION = 8
 Const EXPOSE_FORCE      = 16
 Const EXPOSE_SAVED      = 32
 
-Const MAX_SOURCE_LENGTH = 48
+Const MAX_SOURCE_LENGTH = 40
 
 ' Whether the manifest allowed this. Empty And anything is 0, so a row
 ' built without an Exposure allows nothing.
@@ -421,13 +405,13 @@ Function ConfiguredSource()
 	End If
 
 	If IsEmpty(PropertySource) Or IsNull(PropertySource) Then Exit Function
-
+	
 	If Len(PropertySource) > MAX_SOURCE_LENGTH Then
 		ConfiguredSource = Left(PropertySource, MAX_SOURCE_LENGTH - 3) & "..."
 	Else
 		ConfiguredSource = CStr(PropertySource)
 	End If
-
+	
 End Function
 
 
@@ -468,6 +452,10 @@ Function LiveSource()
 	LiveSource = ObjectPath & "." & PropertyName
 
 End Function
+
+Sub Foo()
+
+End Sub
 
 <xatm_SelectLayout.Index:xatm_SelectLayout_OnIndexChanged()>
 Sub xatm_SelectLayout_OnIndexChanged()
