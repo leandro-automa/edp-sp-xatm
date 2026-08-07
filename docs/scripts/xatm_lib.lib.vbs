@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Fri Aug  7 10:32:16 2026
+Fri Aug  7 14:18:31 2026
 -----------------------
 
 <xatm_BTC.Commands.Reset:Reset_OnChangedTimeStamp()>

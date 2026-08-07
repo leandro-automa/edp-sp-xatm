@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIBCONFIG (C:\ProjDev\edp_sp\xatm_libconfig.lib)
-Fri Aug  7 10:32:36 2026
+Fri Aug  7 14:18:57 2026
 -----------------------
 
 <xatm_BTCStatus.Source:xatm_BTCStatus_OnSourceChanged()>
