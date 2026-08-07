@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Fri Aug  7 14:19:16 2026
+Fri Aug  7 14:26:29 2026
 -----------------------
 
 <xatm_config_data.Config.ImportXml:ImportXml_OnChangedValue()>
@@ -2888,9 +2888,13 @@ End Function
 '
 ' What claims a node is the image's Tag, not its Key: an object is
 ' claimed by the Tag naming its class - "xatm_Breaker" - and a folder by
-' the Tag naming the folder - "Substation". Holding the mapping in the
-' Tag is what lets an engineer add an icon, or point one at another
-' class, from the ImageList's property page, with no line here changing.
+' the Tag naming the folder - "Substation". A Tag may name more than
+' one, separated by commas - "Transformer,Busbar" - so the one picture
+' that suits both bays is inserted once and not once per folder.
+'
+' Holding the mapping in the Tag is what lets an engineer add an icon,
+' or point one at another class, from the ImageList's property page,
+' with no line here changing.
 Function NodeImage(element)
 
 	NodeImage = ""
@@ -2910,19 +2914,43 @@ Function NodeImage(element)
 	claim = Trim(CStr(claim))
 	If claim = "" Then Exit Function
 
-	Dim img, imgTag
+	Dim img
 
 	For Each img In gTreeImages.ListImages
 
-		imgTag = ""
-		On Error Resume Next
-		imgTag = img.Tag
-		On Error Goto 0
-
-		If IsNull(imgTag) Or IsEmpty(imgTag) Then imgTag = ""
-
-		If StrComp(Trim(CStr(imgTag)), claim, vbTextCompare) = 0 Then
+		If Claims(img, claim) Then
 			NodeImage = img.Key
+			Exit Function
+		End If
+
+	Next
+
+End Function
+
+
+' Whether an image's Tag names this claim. The Tag is read as a list -
+' a list of one being the ordinary case - so an empty Tag claims nothing
+' and a picture that suits two kinds of node need not be inserted twice.
+Function Claims(img, claim)
+
+	Claims = False
+
+	Dim imgTag
+	imgTag = ""
+
+	On Error Resume Next
+	imgTag = img.Tag
+	On Error Goto 0
+
+	If IsNull(imgTag) Or IsEmpty(imgTag) Then Exit Function
+
+	Dim named, i
+	named = Split(CStr(imgTag), ",")
+
+	For i = 0 To UBound(named)
+
+		If StrComp(Trim(named(i)), claim, vbTextCompare) = 0 Then
+			Claims = True
 			Exit Function
 		End If
 
