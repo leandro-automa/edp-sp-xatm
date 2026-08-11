@@ -426,6 +426,12 @@ End Function
 
 ' Where the current value is read from, "" when there is nothing to read.
 '
+' A command is written and never read. The manifest says so by withholding
+' EXPOSE_VALUE - a breaker's trip output and its select tag both - and
+' linking one anyway reads back whatever was last written to the tag, which
+' the current column would then show as a state the plant is in. Nothing is
+' linked for it, and the column stays empty.
+'
 ' An IOTag is read through the tag it is associated with. Everything else
 ' is read off the object itself - which is what ObjectPath is for. Source
 ' is no use here: it is a key, id:700 for anything with an Id, so that a
@@ -436,6 +442,8 @@ End Function
 Function LiveSource()
 
 	LiveSource = ""
+
+	If Not Can(EXPOSE_VALUE) Then Exit Function
 
 	If LCase(PropertyType & "") = "iotag" Then
 
