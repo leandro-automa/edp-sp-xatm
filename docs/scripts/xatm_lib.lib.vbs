@@ -3005,6 +3005,16 @@ Sub Reset_OnChangedTimeStamp()
 		End If
 		
 	Next
+
+	' ================
+	' RESET COMMAND FAILURES
+	' ================
+	' The two latches CommandTimer sets on a timeout. Here is the only
+	' place they are cleared - a failure that cleared itself on the next
+	' command would be gone before anybody saw it.
+	xatm_Breaker.CommandOpenFailed  = False
+	xatm_Breaker.CommandCloseFailed = False
+
 End Sub
 
 <xatm_Breaker.Data.Timers.CommandTimer:CommandTimer_Counter()>
@@ -3028,9 +3038,26 @@ Sub CommandTimer_Counter()
 
 	' --- Timeout: target not reached in time -> failed ---
 	If Value <= 0 Then
+
 		Parent.Parent.Item("CommandInProgress").WriteEx 1
 		Value = -1
+
+		' Which of the two it was, latched for whoever looks later - the
+		' automation goes to global lockout on CommandInProgress alone,
+		' and by the time anybody reads a screen the timer has stopped
+		' counting and CommandOpenClose says nothing about what failed.
+		'
+		' Set after the stop above and not before it, so a breaker whose
+		' class has not been given these properties yet still stops its
+		' timer and still tells the automation the command failed.
+		If command = 1 Then
+			xatm_Breaker.CommandOpenFailed = True
+		ElseIf command = 2 Then
+			xatm_Breaker.CommandCloseFailed = True
+		End If
+
 		Exit Sub
+
 	End If
 
 	' --- Retry once, at half the timeout ---
