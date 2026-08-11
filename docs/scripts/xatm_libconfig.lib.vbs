@@ -1,5 +1,5 @@
 -----------------------
-Documentação de Scripts
+Documentaï¿½ï¿½o de Scripts
 -----------------------
 XATM_LIBCONFIG (C:\ProjDev\edp_sp\xatm_libconfig.lib)
 Tue Aug 11 11:41:53 2026
@@ -88,6 +88,7 @@ End Sub
 
 <xatm_PropertyRow.btnPickTag:btnPickTag_Click()>
 Sub btnPickTag_Click()
+
 	Const BROWSER_SCREEN = "xatm_config_screens.DomainBrowser"
 	Const BROWSER_TITLE  = "Select a tag for "
 	Const BROWSER_LEFT   = 0
@@ -128,13 +129,154 @@ Sub btnPickTag_Click()
 	' The tag it already holds, chosen again, is not an edit.
 	If StrComp(picked, current, vbTextCompare) = 0 Then Exit Sub
 
-	' TODO: hand the path to the document. SetProperty carries a name and
-	' a property value today, and what configures an IOTag is its source -
-	' so the kind that writes one has still to be added, and the import
-	' still reads only the value attribute.
-	MsgBox "Tag chosen for " & xatm_PropertyRow.PropertyName & " - " & picked
+	' The object this row belongs to, and the tag that was chosen. Both
+	' paths come from PathName - the row's out of the document, the tag's
+	' out of the catalog - so both already resolve, bracketed where they
+	' had to be, and neither is bracketed again here.
+	Dim obj
+	Set obj = Nothing
+
+	On Error Resume Next
+	Set obj = Application.GetObject(xatm_PropertyRow.ObjectPath)
+	On Error Goto 0
+
+	If obj Is Nothing Then
+		MsgBox "Not wired - the project has nothing at " & _
+		       xatm_PropertyRow.ObjectPath & "."
+		Exit Sub
+	End If
+
+	Set gPickedTag = Nothing
+
+	On Error Resume Next
+	Set gPickedTag = Application.GetObject(picked)
+	On Error Goto 0
+
+	If gPickedTag Is Nothing Then
+		MsgBox "Not wired - the project has nothing at " & picked & "."
+		Exit Sub
+	End If
+
+	' An IOTag property holds the tag object itself and not its path, so
+	' the tag is associated rather than assigned - a Set, and through
+	' Execute because the property is named at runtime. gPickedTag is a
+	' cell of its own for the same reason the import keeps one: what
+	' Execute runs is a line of text, and an object cannot be spelled out
+	' in it.
+	Dim failed
+	failed = ""
+
+	On Error Resume Next
+
+	Execute "obj." & xatm_PropertyRow.PropertyName & " = gPickedTag.PathName"
+
+	If Err.Number <> 0 Then
+		failed = Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+	If failed <> "" Then
+		MsgBox "Not wired - " & xatm_PropertyRow.PropertyName & " would not take " & _
+		       picked & " - " & failed
+		Exit Sub
+	End If
+
+	' The document has to be told as well. The write above went into the
+	' project, and the panel is built from the document - so left alone
+	' the row comes back wired to the old tag the next time it is built,
+	' and the file it is saved to keeps the old one too.
+	SendSource picked
+
+	' What the row holds, and what its source column shows, now that the
+	' project holds it too.
+	xatm_PropertyRow.PropertySource = picked
+
+	On Error Resume Next
+	xatm_PropertyRow.Item("txtConfiguredSource").Value = SourceText(picked)
+	On Error Goto 0
 
 End Sub
+
+
+' Stages the association in the document, on the two tags every other
+' edit on this panel travels on: the path on one, and the command that
+' reads it on the other.
+'
+' Said out loud when it does not go through. The project already holds
+' the tag by this point, so a document that was not told is the two
+' disagreeing - which is worth knowing about rather than finding out at
+' the next rebuild.
+Sub SendSource(path)
+
+	Dim command
+	Set command = Nothing
+
+	On Error Resume Next
+	Set command = Application.GetObject(SET_PROPERTY)
+	On Error Goto 0
+
+	Dim valueTag
+	Set valueTag = Nothing
+
+	On Error Resume Next
+	Set valueTag = Application.GetObject(PROPERTY_VALUE)
+	On Error Goto 0
+
+	If command Is Nothing Or valueTag Is Nothing Then
+		MsgBox "The project holds the tag, but the document was not told - " & _
+		       SET_PROPERTY & " and " & PROPERTY_VALUE & " are what carry an edit."
+		Exit Sub
+	End If
+
+	' The path first, so it is standing by when the command fires, and on
+	' a tag of its own so nothing in it has to be escaped or split.
+	valueTag.WriteEx path
+
+	' kind|key|name. key rather than path: Source is id:700 for anything
+	' with an Id, so renaming an object does not strand the row.
+	command.WriteEx KIND_SOURCE & "|" & _
+	                xatm_PropertyRow.Source & "|" & _
+	                xatm_PropertyRow.PropertyName
+
+	If command.DocString <> EXIT_SUCCESS Then
+		MsgBox "The project holds the tag, but the document would not take it. " & _
+		       "The console says why."
+	End If
+
+End Sub
+
+
+' The command tag in xatm_config that owns the document, and the kind of
+' edit this button sends. Written out again here because one E3 object
+' cannot call another's, and a library has no other way up to the project
+' it runs under.
+Const SET_PROPERTY   = "xatm_config_data.Config.SetProperty"
+Const PROPERTY_VALUE = "xatm_config_data.Config.PropertyValue"
+Const KIND_SOURCE    = "source"
+Const EXIT_SUCCESS   = "EXIT_SUCCESS"
+
+
+' Scratch cell for the association written through Execute. The property
+' is named at runtime, so the line is built as text, and an object has to
+' be waiting in a variable for it to name.
+Dim gPickedTag
+
+
+' How much of a path the source column has room for - the same cut the
+' row makes for itself when it is built.
+Const MAX_SOURCE_LENGTH = 40
+
+Function SourceText(path)
+
+	If Len(path) > MAX_SOURCE_LENGTH Then
+		SourceText = Left(path, MAX_SOURCE_LENGTH - 3) & "..."
+	Else
+		SourceText = CStr(path)
+	End If
+
+End Function
 
 <xatm_PropertyRow.txtConfiguredValue:txtConfiguredValue_Validate(Cancel, NewValue)>
 Sub txtConfiguredValue_Validate(Cancel, NewValue)

@@ -1048,7 +1048,7 @@ Sub SetProperty_OnChangedValue()
 
 	Select Case kind
 
-		Case KIND_NAME, KIND_PROPERTY
+		Case KIND_NAME, KIND_PROPERTY, KIND_SOURCE
 
 		Case Else
 			Refuse "unknown kind '" & parts(0) & "'.", ts
@@ -1109,6 +1109,8 @@ Sub SetProperty_OnChangedValue()
 
 	If kind = KIND_NAME Then
 		problem = SetName(objectNode, newValue)
+	ElseIf kind = KIND_SOURCE Then
+		problem = SetSource(objectNode, name, newValue)
 	Else
 		problem = SetValue(objectNode, name, newValue)
 	End If
@@ -1133,10 +1135,15 @@ End Sub
 Const ROOT_ELEMENT  = "xatm-config"
 Const NODE_ELEMENT  = 1
 
-' What the command is asking to change: the object itself, or one of the
-' properties declared on it.
+' What the command is asking to change: the object itself, one of the
+' properties declared on it, or where that property gets its value from.
+'
+' The last is what wires an IOTag. It is a kind of its own because it
+' writes a different attribute: an association lives in source, not in
+' value, and a tag written into value would come back as a string.
 Const KIND_NAME     = "name"
 Const KIND_PROPERTY = "property"
+Const KIND_SOURCE   = "source"
 
 ' The tag the value is left on. It is a Variant and not part of the
 ' command, so nothing the operator types has to be escaped or split.
@@ -1210,6 +1217,38 @@ Function SetValue(objectNode, name, value)
 		property.removeAttribute "value"
 	Else
 		property.setAttribute "value", CStr(value)
+	End If
+
+End Function
+
+
+' Sets where a property gets its value from, or takes the attribute off
+' when it is cleared - the source attribute, which is what an IOTag is
+' wired by. The value attribute is left alone: an IOTag has none, and the
+' export writes none for it.
+'
+' The project itself is not touched here. What wires the tag has already
+' written it onto the object, because the import has no way to make an
+' association; this is the document being brought level with what the
+' project holds, so the panel is built from the same thing twice.
+Function SetSource(objectNode, name, value)
+
+	SetSource = ""
+
+	Dim property
+	Set property = objectNode.selectSingleNode("property[@name=""" & name & """]")
+
+	If property Is Nothing Then
+		SetSource = objectNode.getAttribute("name") & " has no property called " & name & "."
+		Exit Function
+	End If
+
+	If IsEmpty(value) Or IsNull(value) Then
+		property.removeAttribute "source"
+	ElseIf CStr(value) = "" Then
+		property.removeAttribute "source"
+	Else
+		property.setAttribute "source", CStr(value)
 	End If
 
 End Function
