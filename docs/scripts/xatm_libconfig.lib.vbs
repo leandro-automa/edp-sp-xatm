@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIBCONFIG (C:\ProjDev\edp_sp\xatm_libconfig.lib)
-Fri Aug  7 14:18:57 2026
+Tue Aug 11 11:41:53 2026
 -----------------------
 
 <xatm_BTCStatus.Source:xatm_BTCStatus_OnSourceChanged()>
@@ -84,6 +84,56 @@ Sub objButton_Click()
 
 	End Select	
 	
+End Sub
+
+<xatm_PropertyRow.btnPickTag:btnPickTag_Click()>
+Sub btnPickTag_Click()
+	Const BROWSER_SCREEN = "xatm_config_screens.DomainBrowser"
+	Const BROWSER_TITLE  = "Select a tag for "
+	Const BROWSER_LEFT   = 0
+	Const BROWSER_TOP    = 0
+	Const BROWSER_WIDTH  = 510
+	Const BROWSER_HEIGHT = 558
+	Dim FLAGS : FLAGS = 1 + 2 + 16 + 64 + 256 + 2048
+
+
+	' Where the browser opens: the tag this property is wired to now, and
+	' "" where it is wired to nothing. It travels as the Arg, which is
+	' what the screen reads in its OnPreShow.
+	Dim current
+	current = Trim(xatm_PropertyRow.PropertySource & "")
+
+	' Modal, so nothing else on the panel can be touched while a tag is
+	' being chosen, and so the choice comes straight back here - Close
+	' hands its argument to DoModal as its return.
+	
+	
+	Application.DoModal	BROWSER_SCREEN, _
+	                     BROWSER_TITLE & xatm_PropertyRow.PropertyName, _
+	                     , , _
+	                     BROWSER_WIDTH, BROWSER_HEIGHT, _
+	                     current, FLAGS
+	
+	
+	Dim picked
+	picked = Application.GetObject("xatm_config_data.Catalog.SelectedPath").Value
+	' Nothing was chosen. Both shapes are asked about: Cancel closes with
+	' "", and the X on the window closes without a Close at all, which
+	' arrives here as Empty.
+	If IsEmpty(picked) Or IsNull(picked) Then Exit Sub
+
+	picked = Trim(CStr(picked))
+	If picked = "" Then Exit Sub
+
+	' The tag it already holds, chosen again, is not an edit.
+	If StrComp(picked, current, vbTextCompare) = 0 Then Exit Sub
+
+	' TODO: hand the path to the document. SetProperty carries a name and
+	' a property value today, and what configures an IOTag is its source -
+	' so the kind that writes one has still to be added, and the import
+	' still reads only the value attribute.
+	MsgBox "Tag chosen for " & xatm_PropertyRow.PropertyName & " - " & picked
+
 End Sub
 
 <xatm_PropertyRow.txtConfiguredValue:txtConfiguredValue_Validate(Cancel, NewValue)>
@@ -339,6 +389,19 @@ Sub xatm_PropertyRow_OnStartRunning()
 	' Read only. A tag or an object is picked, not spelled out, and it is
 	' the picker that will set this.
 	Item("txtConfiguredSource").IsSetPoint = False
+	
+	' --- the two pickers ------------------------------------------------
+	'
+	' Neither is typed into, which is why each needs a button of its own.
+	' An IOTag names a tag in the project, and a tag is picked from what
+	' is there rather than spelled out. A property the manifest lets be
+	' bound carries an expression, which is written on a screen with room
+	' for it.
+	'
+	' A row that is neither - a timeout, an Id - shows no button, and the
+	' two are exclusive: no property is both an IOTag and bindable.
+	ShowItem "btnPickTag", PicksTag()
+	ShowItem "btnBuildExpression", Can(EXPOSE_EXPRESSION)
 
 End Sub
 
@@ -364,6 +427,35 @@ Function Can(flag)
 
 End Function
 
+' Whether this row wires a tag, and so wants the picker.
+'
+' EXPOSE_EDIT is not the question, though it reads like it: that flag
+' says the value field may be typed into, which is the one thing an
+' IOTag row does not do - what is configured is the tag it is associated
+' with, not a value - and no manifest gives it to one. The type is what
+' decides, and EXPOSE_SAVED that the association is configuration rather
+' than something read off the plant.
+Function PicksTag()
+
+	PicksTag = False
+
+	If LCase(PropertyType & "") <> "iotag" Then Exit Function
+
+	PicksTag = Can(EXPOSE_SAVED)
+
+End Function
+
+
+' Shows or hides one of the row's objects, and says nothing when the
+' control has not been given it - so a row still builds while a button
+' is only half added to it in Studio.
+Sub ShowItem(itemName, shown)
+
+	On Error Resume Next
+	Item(itemName).Visible = shown
+	On Error Goto 0
+
+End Sub
 
 ' What the configured column shows. A property the document carries no
 ' value for is unset rather than blank, and either way there is nothing

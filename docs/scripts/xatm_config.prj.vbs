@@ -1,9 +1,254 @@
 -----------------------
-Documentação de Scripts
+Documentaï¿½ï¿½o de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Fri Aug  7 14:26:29 2026
+Tue Aug 11 11:42:18 2026
 -----------------------
+
+<xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
+Sub XMLBuilderAfterDelay_Functions()
+End Sub
+
+Sub ExportElipseCatalog()
+
+	Dim outputPath
+	outputPath = "C:\temp\elipse-catalog.xml"
+
+	Dim doc
+	Set doc = CreateObject("MSXML2.DOMDocument.6.0")
+	doc.async = False
+	doc.preserveWhiteSpace = True
+
+	Dim pi
+	Set pi = doc.createProcessingInstruction("xml", "version=""1.0"" encoding=""utf-8""")
+	doc.appendChild pi
+
+	Dim root
+	Set root = doc.createElement("ElipseCatalog")
+	root.setAttribute "source", "Application"
+	root.setAttribute "generatedAt", IsoNow()
+	root.setAttribute "generator", Me.PathName
+	doc.appendChild root
+
+	Application.Trace "Elipse catalog export started: " & outputPath
+	
+	WalkEnumerable doc, root, Application, "Application", 0
+	
+	'doc.save outputPath
+	
+	Parent.Item("XMLContent").WriteEx doc.xml
+	
+	Application.Trace "Elipse catalog export finished: " & outputPath
+
+End Sub
+
+Sub WalkEnumerable(doc, parentNode, container, containerPath, depth)
+
+	Dim sawChild
+	sawChild = False
+
+	On Error Resume Next
+	Dim child
+	For Each child In container
+		If Err.Number <> 0 Then
+			AddError doc, parentNode, containerPath, "enumerate", Err.Number, Err.Description
+			Err.Clear
+			Exit For
+		End If
+
+		sawChild = True
+		AddObjectTree doc, parentNode, child, containerPath, depth + 1
+
+		If Err.Number <> 0 Then
+			AddError doc, parentNode, containerPath, "walk-child", Err.Number, Err.Description
+			Err.Clear
+		End If
+	Next
+
+	If Err.Number <> 0 Then
+		AddError doc, parentNode, containerPath, "enumerate", Err.Number, Err.Description
+		Err.Clear
+	End If
+	On Error GoTo 0
+
+	If Not sawChild Then
+		WalkByItemFallback doc, parentNode, container, containerPath, depth
+	End If
+
+End Sub
+
+Sub AddObjectTree(doc, parentNode, obj, parentPath, depth)
+
+	Dim objType
+	objType = TypeName(obj)
+
+	Dim objName
+	objName = SafeRead(obj, "Name")
+
+	Dim objPath
+	objPath = SafeRead(obj, "PathName")
+
+	Dim childCount
+	childCount = SafeRead(obj, "Count")
+
+	If Len(objPath) = 0 Then
+		If Len(objName) > 0 Then
+			objPath = parentPath & "." & objName
+		Else
+			objPath = parentPath & ".[" & objType & "]"
+		End If
+	End If
+
+	Dim node
+	Set node = doc.createElement("Object")
+	node.setAttribute "type", objType
+	node.setAttribute "name", objName
+	node.setAttribute "path", objPath
+	node.setAttribute "depth", CStr(depth)
+	node.setAttribute "count", childCount
+	parentNode.appendChild node
+
+	AddCommonProperties doc, node, obj
+	WalkEnumerable doc, node, obj, objPath, depth
+
+End Sub
+
+Sub AddCommonProperties(doc, objectNode, obj)
+
+	Dim propsNode
+	Set propsNode = doc.createElement("Properties")
+	objectNode.appendChild propsNode
+
+	AddProperty doc, propsNode, obj, "DocString"
+
+End Sub
+
+Sub AddProperty(doc, propsNode, obj, propertyName)
+
+	Dim value
+	value = SafeRead(obj, propertyName)
+
+	Dim propNode
+	Set propNode = doc.createElement("Property")
+	propNode.setAttribute "name", propertyName
+	propNode.setAttribute "value", value
+	propsNode.appendChild propNode
+
+End Sub
+
+Sub WalkByItemFallback(doc, parentNode, container, containerPath, depth)
+
+	Dim total
+	total = SafeRead(container, "Count")
+	If Not IsNumeric(total) Then Exit Sub
+	If CLng(total) < 1 Then Exit Sub
+
+	Dim i
+	For i = 1 To CLng(total)
+		On Error Resume Next
+		Dim child
+		Set child = container.Item(i)
+		If Err.Number <> 0 Then
+			AddError doc, parentNode, containerPath, "Item(" & CStr(i) & ")", Err.Number, Err.Description
+			Err.Clear
+		Else
+			AddObjectTree doc, parentNode, child, containerPath, depth + 1
+		End If
+		Set child = Nothing
+		On Error GoTo 0
+	Next
+
+End Sub
+
+Function SafeRead(obj, propertyName)
+
+	Dim value
+	value = ""
+
+	On Error Resume Next
+	Select Case propertyName
+		Case "Name"
+			value = obj.Name
+		Case "PathName"
+			value = obj.PathName
+		Case "Count"
+			value = obj.Count
+		Case "DocString"
+			value = obj.DocString
+		Case Else
+			value = ""
+	End Select
+
+	If Err.Number <> 0 Then
+		value = ""
+		Err.Clear
+	End If
+	On Error GoTo 0
+
+	SafeRead = CStr(value)
+
+End Function
+
+Sub AddError(doc, parentNode, objectPath, operation, number, description)
+
+	Dim errNode
+	Set errNode = doc.createElement("Error")
+	errNode.setAttribute "path", objectPath
+	errNode.setAttribute "operation", operation
+	errNode.setAttribute "number", CStr(number)
+	errNode.setAttribute "description", description
+	parentNode.appendChild errNode
+
+End Sub
+
+Function IsoNow()
+
+	Dim dt
+	dt = Now
+
+	IsoNow = Year(dt) & "-" & Pad2(Month(dt)) & "-" & Pad2(Day(dt)) & _
+			 "T" & Pad2(Hour(dt)) & ":" & Pad2(Minute(dt)) & ":" & Pad2(Second(dt))
+
+End Function
+
+Function Pad2(value)
+
+	If value < 10 Then
+		Pad2 = "0" & CStr(value)
+	Else
+		Pad2 = CStr(value)
+	End If
+
+End Function
+
+Sub EndOfScript()
+		
+End Sub
+
+<xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_OnStartRunning()>
+Sub XMLBuilderAfterDelay_OnStartRunning()
+
+	Value = 3	' delay in seconds
+		
+End Sub
+
+<xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_ThickCountdown()>
+Sub XMLBuilderAfterDelay_ThickCountdown()
+	
+	If Value > 0 Then
+			
+		Value = Value - 1
+	
+	Else
+		
+		' stop
+		Value = -1
+		
+		ExportElipseCatalog
+	
+	End If
+		
+End Sub
 
 <xatm_config_data.Config.ImportXml:ImportXml_OnChangedValue()>
 Sub ImportXml_OnChangedValue()
@@ -1485,39 +1730,39 @@ Sub xatm_BTC_OnStartRunning()
 
 	AddProperty bag, "Enabled", "Boolean", True, _
 		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
-		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
+		"Habilitaï¿½ï¿½o geral deste automatismo. Pedidos de partida sï¿½o recusados e a sequï¿½ncia em andamento para enquanto estiver False."
 
 	AddProperty bag, "Running", "Boolean", False, _
 		"True while a sequence is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
-		"True enquanto uma sequência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
+		"True enquanto uma sequï¿½ncia estï¿½ em andamento. Lido pelos demais automatismos para exclusï¿½o mï¿½tua, de modo que apenas um execute por vez."
 
 	AddProperty bag, "Transformer", "xatm_Transformer", Empty, _
 		"Transformer XObject this automation instance is bound to.", _
-		"XObject do transformador ao qual esta instância do automatismo está vinculada."
+		"XObject do transformador ao qual esta instï¿½ncia do automatismo estï¿½ vinculada."
 	
 	AddProperty bag, "Preconditions", "Boolean", True, _
 		"Field conditions that have to hold before a sequence may start. Bound to an expression - True while the maneuver is permitted.", _
-		"Condições de campo que devem valer antes de uma sequência partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
+		"Condiï¿½ï¿½es de campo que devem valer antes de uma sequï¿½ncia partir. Vinculada a uma expressï¿½o - True enquanto a manobra ï¿½ permitida."
 
 	AddProperty bag, "OperatorBlock", "Boolean", False, _
 		"Operator lock. Blocks the start until the operator releases it.", _
-		"Bloqueio do operador. Impede a partida até que o operador libere."
+		"Bloqueio do operador. Impede a partida atï¿½ que o operador libere."
 
 	AddProperty bag, "GeneralBlock", "Boolean", False, _
 		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
-		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
+		"Intertravamento geral. Impede a partida e ï¿½ selado por uma falha de passo atï¿½ que o Reset o apague."
 		
 	
 	AddProperty bag, "AutomaticBlock", "Boolean", False, _
 		"Field conditions that block the automation. Bound to an expression - True keeps a sequence from starting, alongside OperatorBlock and GeneralBlock.", _
-		"Condições de campo que bloqueiam o automatismo. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
+		"Condiï¿½ï¿½es de campo que bloqueiam o automatismo. Vinculada a uma expressï¿½o - True impede a partida, junto com OperatorBlock e GeneralBlock."
 
 	Dim i
 	For i = 1 To 6
 
 		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
 			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
-			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
+			"Falha selada do passo " & i & ". Marcada quando o passo nï¿½o executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
 
 	Next
 	
@@ -1649,27 +1894,27 @@ Sub xatm_Breaker_OnStartRunning()
 
 	AddProperty bag, "Id", "Integer", Empty, _
 		"Unique numeric identifier used by the automation to locate this breaker.", _
-		"Identificador numérico único usado pelo automatismo para localizar este disjuntor."
+		"Identificador numï¿½rico ï¿½nico usado pelo automatismo para localizar este disjuntor."
 
 	AddProperty bag, "PositionOpen", "IOTag", Empty, _
 		"Open-position input of relay 1. Double-point word, or the 52b contact when UseDoublePoints is False.", _
-		"Entrada de posição aberto do relé 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
+		"Entrada de posiï¿½ï¿½o aberto do relï¿½ 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
 
 	AddProperty bag, "PositionClosed", "IOTag", Empty, _
 		"Closed-position input of relay 1. Double-point word, or the 52a contact when UseDoublePoints is False.", _
-		"Entrada de posição fechado do relé 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
+		"Entrada de posiï¿½ï¿½o fechado do relï¿½ 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
 
 	AddProperty bag, "PositionOpenAlt", "IOTag", Empty, _
 		"Open-position input of relay 2. Leave empty when there is no redundant relay.", _
-		"Entrada de posição aberto do relé 2. Deixe vazio quando não houver relé redundante."
+		"Entrada de posiï¿½ï¿½o aberto do relï¿½ 2. Deixe vazio quando nï¿½o houver relï¿½ redundante."
 
 	AddProperty bag, "PositionClosedAlt", "IOTag", Empty, _
 		"Closed-position input of relay 2. Leave empty when there is no redundant relay.", _
-		"Entrada de posição fechado do relé 2. Deixe vazio quando não houver relé redundante."
+		"Entrada de posiï¿½ï¿½o fechado do relï¿½ 2. Deixe vazio quando nï¿½o houver relï¿½ redundante."
 
 	AddProperty bag, "UseDoublePoints", "Boolean", True, _
 		"True - position comes from a double-point word. False - position comes from the 52a/52b contact pair.", _
-		"True - a posição vem de uma palavra de duplo ponto. False - a posição vem do par de contatos 52a/52b."
+		"True - a posiï¿½ï¿½o vem de uma palavra de duplo ponto. False - a posiï¿½ï¿½o vem do par de contatos 52a/52b."
 
 	AddProperty bag, "RawValueOpen", "Integer", 2, _
 		"Raw value from the driver that means OPEN.", _
@@ -1681,51 +1926,51 @@ Sub xatm_Breaker_OnStartRunning()
 
 	AddProperty bag, "NormalState", "EdbSwitchState", 1, _
 		"Normal state of the equipment. Reference for normalisation and for Simulation Mode.", _
-		"Estado normal do equipamento. Referência para a normalização e para o Modo Simulação."
+		"Estado normal do equipamento. Referï¿½ncia para a normalizaï¿½ï¿½o e para o Modo Simulaï¿½ï¿½o."
 
 	AddProperty bag, "CommandTimeout", "Integer", 40, _
 		"Command supervision window in seconds. The command is re-sent once at half the window and fails when it expires.", _
-		"Janela de supervisão do comando em segundos. O comando é reenviado uma vez na metade da janela e falha ao expirar."
+		"Janela de supervisï¿½o do comando em segundos. O comando ï¿½ reenviado uma vez na metade da janela e falha ao expirar."
 
 	AddProperty bag, "RawValueCommandOpen", "Integer", 0, _
 		"Raw value written to the open (trip) output.", _
-		"Valor bruto escrito na saída de abertura (trip)."
+		"Valor bruto escrito na saï¿½da de abertura (trip)."
 
 	AddProperty bag, "RawValueCommandClose", "Integer", 1, _
 		"Raw value written to the close output.", _
-		"Valor bruto escrito na saída de fechamento."
+		"Valor bruto escrito na saï¿½da de fechamento."
 
 	AddProperty bag, "CommandOpen", "IOTag", Empty, _
 		"Open (trip) output of relay 1. Falls back to relay 2 when empty.", _
-		"Saída de abertura (trip) do relé 1. Recorre ao relé 2 quando vazio."
+		"Saï¿½da de abertura (trip) do relï¿½ 1. Recorre ao relï¿½ 2 quando vazio."
 
 	AddProperty bag, "CommandSBOOpen", "IOTag", Empty, _
 		"Select tag for the open command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
-		"Tag de seleção do comando de abertura no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
+		"Tag de seleï¿½ï¿½o do comando de abertura no relï¿½ 1. Opcional - o Select-Before-Operate sï¿½ ocorre quando preenchido."
 
 	AddProperty bag, "CommandOpenAlt", "IOTag", Empty, _
 		"Open (trip) output of relay 2. Used when relay 1 is unavailable.", _
-		"Saída de abertura (trip) do relé 2. Usada quando o relé 1 está indisponível."
+		"Saï¿½da de abertura (trip) do relï¿½ 2. Usada quando o relï¿½ 1 estï¿½ indisponï¿½vel."
 
 	AddProperty bag, "CommandSBOOpenAlt", "IOTag", Empty, _
 		"Select tag for the open command on relay 2. Optional.", _
-		"Tag de seleção do comando de abertura no relé 2. Opcional."
+		"Tag de seleï¿½ï¿½o do comando de abertura no relï¿½ 2. Opcional."
 
 	AddProperty bag, "CommandClose", "IOTag", Empty, _
 		"Close output of relay 1. Falls back to relay 2 when empty.", _
-		"Saída de fechamento do relé 1. Recorre ao relé 2 quando vazio."
+		"Saï¿½da de fechamento do relï¿½ 1. Recorre ao relï¿½ 2 quando vazio."
 
 	AddProperty bag, "CommandSBOClose", "IOTag", Empty, _
 		"Select tag for the close command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
-		"Tag de seleção do comando de fechamento no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
+		"Tag de seleï¿½ï¿½o do comando de fechamento no relï¿½ 1. Opcional - o Select-Before-Operate sï¿½ ocorre quando preenchido."
 
 	AddProperty bag, "CommandCloseAlt", "IOTag", Empty, _
 		"Close output of relay 2. Used when relay 1 is unavailable.", _
-		"Saída de fechamento do relé 2. Usada quando o relé 1 está indisponível."
+		"Saï¿½da de fechamento do relï¿½ 2. Usada quando o relï¿½ 1 estï¿½ indisponï¿½vel."
 
 	AddProperty bag, "CommandSBOCloseAlt", "IOTag", Empty, _
 		"Select tag for the close command on relay 2. Optional.", _
-		"Tag de seleção do comando de fechamento no relé 2. Opcional."
+		"Tag de seleï¿½ï¿½o do comando de fechamento no relï¿½ 2. Opcional."
 
 	' The command outputs are write-only, so they get no EXPOSE_VALUE -
 	' there is nothing to read back. Forcing one sends the raw value
@@ -1870,23 +2115,23 @@ Sub xatm_Transformer_OnStartRunning()
 
 	AddProperty bag, "OutOfService", "Boolean", False, _
 		"Transformer is out of service (impediment). The automation reads it to plan the maneuver around this transformer.", _
-		"Transformador fora de serviço (impedimento). O automatismo o lê para planejar a manobra sem este transformador."
+		"Transformador fora de serviï¿½o (impedimento). O automatismo o lï¿½ para planejar a manobra sem este transformador."
 
 	AddProperty bag, "Id", "Integer", Empty, _
 		"Unique numeric identifier used by the automation to locate this transformer.", _
-		"Identificador numérico único usado pelo automatismo para localizar este transformador."
+		"Identificador numï¿½rico ï¿½nico usado pelo automatismo para localizar este transformador."
 
 	AddProperty bag, "LockingOutRelay", "Boolean", False, _
 		"Locking out relay (86) of the transformer is actuated.", _
-		"Relé de bloqueio (86) do transformador atuado."
+		"Relï¿½ de bloqueio (86) do transformador atuado."
 
 	AddProperty bag, "UndervoltageRelay", "Boolean", False, _
 		"Undervoltage relay (27) of the transformer is actuated.", _
-		"Relé de subtensão (27) do transformador atuado."
+		"Relï¿½ de subtensï¿½o (27) do transformador atuado."
 
 	AddProperty bag, "UndervoltageDelay", "Integer", 25, _
 		"Time in seconds the undervoltage (27) condition has to persist before the automation acts on it.", _
-		"Tempo em segundos que a condição de subtensão (27) deve permanecer antes que o automatismo atue."
+		"Tempo em segundos que a condiï¿½ï¿½o de subtensï¿½o (27) deve permanecer antes que o automatismo atue."
 
 	' The three readings take an expression and can be forced for a test,
 	' and none of them is saved - the expression is the configuration.
@@ -2008,7 +2253,7 @@ Sub SimulationMode_OnChangedValue()
 
 End Sub
 
-' Returns True if at least one position tag has good quality — breaker does NOT need sim mode.
+' Returns True if at least one position tag has good quality ï¿½ breaker does NOT need sim mode.
 Function AnyBreakerTagHealthy(breaker)
 
     If TagHealthy(breaker.PositionOpen)      Then AnyBreakerTagHealthy = True : Exit Function
@@ -2109,7 +2354,7 @@ Const ROW_CLASS = "xatm_PropertyRow"
 ' The corner the rows stack from, in pixels - Himetric converts. A row
 ' keeps the size it was drawn at, so there is no width or height here.
 Const ROW_LEFT_PX = 1024
-Const ROW_TOP_PX  = 16
+Const ROW_TOP_PX  = 32
 Const ROW_GAP_PX  = 0
 
 
@@ -2128,7 +2373,7 @@ Const HELP_LANG = "pt-BR"
 ' The object's own name has no manifest entry, so its help is stated here
 ' the way its exposure is.
 Const NAME_HELP_EN = "The name this object is known by in the project."
-Const NAME_HELP_PT = "Nome pelo qual este objeto é conhecido no projeto."
+Const NAME_HELP_PT = "Nome pelo qual este objeto ï¿½ conhecido no projeto."
 
 ' Where the manifests live - the same place the export and the import
 ' read them from.
@@ -2881,7 +3126,6 @@ Function NodeLabel(element)
 	NodeLabel = id & ": " & NodeLabel
 
 End Function
-
 
 ' The Key of the image a node shows, "" when nothing in the list claims
 ' it.
@@ -4140,6 +4384,775 @@ Sub Config_OnPreShow(Arg)
 		
 End Sub
 
+<xatm_config_screens.DomainBrowser.TreeView:TreeView_NodeClick(Node)>
+Sub TreeView_NodeClick(Node)
+
+	Dim objectPath
+	objectPath = TreeNodeTagPath(Node.Tag)
+	If Len(objectPath) = 0 Then
+		objectPath = Node.FullPath
+	End If
+
+	Dim className
+	className = TreeNodeTagClassName(Node.Tag)
+
+	Screen.Item("txtPath").Value = objectPath
+	FillPropertiesList className
+		
+End Sub
+
+Function TreeNodeTag(objectPath, className)
+
+	TreeNodeTag = objectPath & vbTab & className
+
+End Function
+
+Function TreeNodeTagPath(tagText)
+
+	Dim parts
+	parts = Split(CStr(tagText), vbTab)
+
+	TreeNodeTagPath = parts(0)
+
+End Function
+
+Function CatalogXmlText()
+
+	Dim xmlText
+	xmlText = ""
+
+	On Error Resume Next
+	Dim xmlTag
+	Set xmlTag = Application.GetObject("domainbrowser_Data.Catalog.XMLContent")
+	If Err.Number = 0 Then
+		xmlText = CStr(xmlTag.Value)
+	Else
+		Err.Clear
+	End If
+	Set xmlTag = Nothing
+	On Error GoTo 0
+
+	If Len(xmlText) = 0 Then
+		Dim doc
+		Set doc = CreateObject("MSXML2.DOMDocument.6.0")
+		doc.async = False
+		doc.load "C:\temp\appbrowser\elipse-catalog.xml"
+		If doc.parseError.errorCode = 0 Then
+			xmlText = doc.xml
+		End If
+		Set doc = Nothing
+	End If
+
+	CatalogXmlText = xmlText
+
+End Function
+
+Function Pad2(value)
+
+	If value < 10 Then
+		Pad2 = "0" & CStr(value)
+	Else
+		Pad2 = CStr(value)
+	End If
+
+End Function
+
+Function TreeNodeTagClassName(tagText)
+
+	TreeNodeTagClassName = ""
+
+	Dim parts
+	parts = Split(CStr(tagText), vbTab)
+	If UBound(parts) >= 1 Then
+		TreeNodeTagClassName = parts(1)
+		Exit Function
+	End If
+
+	TreeNodeTagClassName = CatalogClassNameByPath(TreeNodeTagPath(tagText))
+
+End Function
+
+Function ImageTagHasClass(tagText, className)
+
+	ImageTagHasClass = False
+
+	Dim expected
+	expected = LCase(Trim(className))
+	If Len(expected) = 0 Then Exit Function
+
+	Dim tags
+	tags = Split(tagText, ",")
+
+	Dim i
+	For i = 0 To UBound(tags)
+		Dim actual
+		actual = LCase(Trim(tags(i)))
+		If actual = expected Then
+			ImageTagHasClass = True
+			Exit Function
+		End If
+	Next
+
+End Function
+
+Function CatalogClassNameByPath(objectPath)
+
+	CatalogClassNameByPath = ""
+	If Len(objectPath) = 0 Then Exit Function
+
+	Dim xmlText
+	xmlText = CatalogXmlText()
+	If Len(xmlText) = 0 Then Exit Function
+
+	On Error Resume Next
+	Dim doc
+	Set doc = CreateObject("MSXML2.DOMDocument.6.0")
+	doc.async = False
+	doc.loadXML xmlText
+	If Err.Number <> 0 Then
+		Application.Trace "Catalog XML load for class lookup failed: " & Err.Description
+		Err.Clear
+		Exit Function
+	End If
+	On Error GoTo 0
+
+	If doc.parseError.errorCode <> 0 Then
+		Application.Trace "Catalog XML parse for class lookup failed: " & doc.parseError.reason
+		Exit Function
+	End If
+
+	CatalogClassNameByPath = CatalogNodeClassNameByPath(doc.documentElement, objectPath)
+
+End Function
+
+Function ImageListValueForTag(imageList, tagName)
+
+	ImageListValueForTag = ""
+	If Len(tagName) = 0 Then Exit Function
+
+	On Error Resume Next
+	Dim image
+	For Each image In imageList.ListImages
+		If Err.Number <> 0 Then
+			Application.Trace "ImageList traversal failed: " & Err.Description
+			Err.Clear
+			Exit For
+		End If
+
+		Dim tagText
+		tagText = CStr(image.Tag)
+		
+		If ImageTagHasClass(tagText, tagName) Then
+			If Len(CStr(image.Key)) > 0 Then
+				ImageListValueForTag = image.Key
+			Else
+				ImageListValueForTag = image.Index
+			End If
+			Exit Function
+		End If
+	Next
+	Err.Clear
+	On Error GoTo 0
+
+End Function
+
+Function CatalogNodeClassNameByPath(xmlNode, objectPath)
+
+	CatalogNodeClassNameByPath = ""
+
+	Dim child
+	For Each child In xmlNode.childNodes
+		If child.nodeName = "Object" Then
+			If child.getAttribute("path") = objectPath Then
+				CatalogNodeClassNameByPath = child.getAttribute("type")
+				Exit Function
+			End If
+
+			Dim className
+			className = CatalogNodeClassNameByPath(child, objectPath)
+			If Len(className) > 0 Then
+				CatalogNodeClassNameByPath = className
+				Exit Function
+			End If
+		End If
+	Next
+
+End Function
+
+Sub FillPropertiesList(className)
+
+	On Error Resume Next
+	Dim list
+	Set list = Screen.Item("lstProperties")
+	If Err.Number <> 0 Then
+		Application.Trace "Properties list was not found: " & Err.Description
+		Err.Clear
+		Exit Sub
+	End If
+	On Error GoTo 0
+
+	ConfigurePropertiesListView list
+	ClearPropertiesList list
+
+	If LCase(className) = "domain" Or Len(className) = 0 Then Exit Sub
+
+	Dim imageList
+	Set imageList = BindPropertiesImageList(list)
+
+	AddCommonPropertyNames list, imageList
+
+	Select Case LCase(className)
+		Case "iotag"
+			AddIOTagPropertyNames list, imageList
+		Case "internaltag"
+			AddInternalTagPropertyNames list, imageList
+	End Select
+
+End Sub
+
+Sub ConfigurePropertiesListView(list)
+
+	On Error Resume Next
+	list.View = 3
+	list.FullRowSelect = True
+	list.HideColumnHeaders = True
+	list.ColumnHeaders.Clear
+	list.ColumnHeaders.Add , , "Property", 5000
+	If Err.Number <> 0 Then
+		Application.Trace "Properties ListView configure failed: " & Err.Description
+		Err.Clear
+	End If
+	On Error GoTo 0
+
+End Sub
+
+Sub ClearPropertiesList(list)
+
+	On Error Resume Next
+	list.ListItems.Clear
+	If Err.Number <> 0 Then
+		Application.Trace "Properties ListView clear failed: " & Err.Description
+		Err.Clear
+	End If
+	On Error GoTo 0
+
+End Sub
+
+Function BindPropertiesImageList(list)
+
+	Set BindPropertiesImageList = Nothing
+
+	On Error Resume Next
+	Dim imageList
+	Set imageList = Screen.Item("TreeImages")
+	
+	If Err.Number <> 0 Then
+		'Application.Trace "Properties ImageList was not found: " & Err.Description
+		
+		MsgBox "Properties ImageList was not found: " & Err.Description
+		Err.Clear
+		Exit Function
+	End If
+
+	Set list.SmallIcons = imageList
+	If Err.Number <> 0 Then
+		Err.Clear
+		Exit Function
+	End If
+	On Error GoTo 0
+
+	Set BindPropertiesImageList = imageList
+
+End Function
+
+Sub AddCommonPropertyNames(list, imageList)
+
+	AddPropertyToList list, imageList, "Name", "string"
+	AddPropertyToList list, imageList, "DocString", "string"
+	AddPropertyToList list, imageList, "PathName", "string"
+	AddPropertyToList list, imageList, "PathVolume", "string"
+	AddPropertyToList list, imageList, "PathContainer", "string"
+
+End Sub
+
+Sub AddIOTagPropertyNames(list, imageList)
+
+	AddPropertyToList list, imageList, "AdviseType", "variant"
+	AddPropertyToList list, imageList, "AllowRead", "variant"
+	AddPropertyToList list, imageList, "AllowWrite", "variant"
+
+	Dim i
+	For i = 0 To 31
+		AddPropertyToList list, imageList, "Bit" & Pad2(i), "boolean"
+	Next
+
+	AddPropertyToList list, imageList, "DeviceHigh", "variant"
+	AddPropertyToList list, imageList, "DeviceLow", "variant"
+	AddPropertyToList list, imageList, "EnableDeadBand", "variant"
+	AddPropertyToList list, imageList, "EnableDriverEvent", "variant"
+	AddPropertyToList list, imageList, "EnableScaling", "variant"
+	AddPropertyToList list, imageList, "EU", "variant"
+	AddPropertyToList list, imageList, "EUHigh", "variant"
+	AddPropertyToList list, imageList, "EULow", "variant"
+	AddPropertyToList list, imageList, "N1", "variant"
+	AddPropertyToList list, imageList, "N2", "variant"
+	AddPropertyToList list, imageList, "N3", "variant"
+	AddPropertyToList list, imageList, "N4", "variant"
+	AddPropertyToList list, imageList, "ParamDevice", "variant"
+	AddPropertyToList list, imageList, "ParamItem", "variant"
+	AddPropertyToList list, imageList, "PercentDeadBand", "variant"
+	AddPropertyToList list, imageList, "Quality", "variant"
+	AddPropertyToList list, imageList, "RawValue", "variant"
+	AddPropertyToList list, imageList, "Scan", "variant"
+	AddPropertyToList list, imageList, "TimeStamp", "variant"
+	AddPropertyToList list, imageList, "UseBitFields", "variant"
+	AddPropertyToList list, imageList, "Value", "variant"
+
+End Sub
+
+Sub AddInternalTagPropertyNames(list, imageList)
+
+	AddPropertyToList list, imageList, "Quality", "variant"
+	AddPropertyToList list, imageList, "Retentive", "variant"
+	AddPropertyToList list, imageList, "TimeStamp", "variant"
+	AddPropertyToList list, imageList, "Value", "variant"
+
+End Sub
+
+Sub AddPropertyToList(list, imageList, propertyName, propertyType)
+
+	Dim imageKey
+	imageKey = ""
+
+	If Not (imageList Is Nothing) Then
+	
+		imageKey = ImageListValueForTag(imageList, propertyType)
+		
+		If Len(CStr(imageKey)) = 0 Then
+			imageKey = ImageListValueForTag(imageList, "variant")
+		End If
+		If Len(CStr(imageKey)) = 0 Then
+			imageKey = ImageListValueForTag(imageList, "default")
+		End If
+	End If
+
+	On Error Resume Next
+	Dim item
+	If Len(CStr(imageKey)) > 0 Then
+		Set item = list.ListItems.Add(, , propertyName, , imageKey)
+	Else
+		Set item = list.ListItems.Add(, , propertyName)
+	End If
+	If Err.Number <> 0 Then
+		Application.Trace "Properties ListView add failed: " & propertyName & " - " & Err.Description
+		Err.Clear
+		Exit Sub
+	End If
+
+	item.Tag = propertyType
+	On Error GoTo 0
+
+End Sub
+
+<xatm_config_screens.DomainBrowser.btnCancel:btnCancel_Click()>
+Sub btnCancel_Click()
+	
+	Application.GetObject("xatm_config_data.Catalog.SelectedPath").WriteEx ""
+	Screen.Close(-1)
+
+End Sub
+
+<xatm_config_screens.DomainBrowser.btnOk:btnOk_Click()>
+Sub btnOk_Click()
+
+	Application.GetObject("xatm_config_data.Catalog.SelectedPath").WriteEx Screen.Item("txtPath").Value
+	
+	Screen.Close(0)
+
+End Sub
+
+<xatm_config_screens.DomainBrowser:DomainBrowser_OnPreShow(Arg)>
+Sub DomainBrowser_OnPreShow(Arg)
+	
+	Application.GetObject("xatm_config_data.Catalog.SelectedPath").WriteEx ""
+	
+End Sub
+
+Sub FillTree()
+
+	Dim tree
+	Set tree = Item("TreeView")
+
+	Dim xmlText
+	xmlText = CatalogXmlText()
+
+	FillTreeViewFromCatalogXml tree, xmlText
+	
+End Sub
+
+Function CatalogXmlText()
+
+	Dim xmlText
+	xmlText = ""
+
+	On Error Resume Next
+	Dim xmlTag
+	Set xmlTag = Application.GetObject("domainbrowser_Data.Catalog.XMLContent")
+	If Err.Number = 0 Then
+		xmlText = CStr(xmlTag.Value)
+	Else
+		Err.Clear
+	End If
+	Set xmlTag = Nothing
+	On Error GoTo 0
+
+	If Len(xmlText) = 0 Then
+		
+		Dim doc
+		Set doc = CreateObject("MSXML2.DOMDocument.6.0")
+		doc.async = False
+		
+		Dim xmlContent
+		xmlContent = Application.GetObject("xatm_config_data.Catalog.XMLContent").Value
+		
+		doc.loadXML xmlContent
+		
+		If doc.parseError.errorCode = 0 Then
+			xmlText = doc.xml
+		End If
+		
+		Set doc = Nothing
+	End If
+
+	CatalogXmlText = xmlText
+
+End Function
+
+Function TreeNodeText(xmlNode)
+
+	Dim text
+	text = xmlNode.getAttribute("name")
+
+	If Len(text) = 0 Then
+		text = xmlNode.getAttribute("path")
+	End If
+	If Len(text) = 0 Then
+		text = "[object]"
+	End If
+
+	TreeNodeText = text
+
+End Function
+
+Function TreeNodeImageKey(xmlNode, imageList)
+
+	Dim className
+	className = xmlNode.getAttribute("type")
+
+	Dim imageValue
+	imageValue = ImageListValueForTag(imageList, className)
+
+	If Len(CStr(imageValue)) = 0 Then
+		imageValue = ImageListValueForTag(imageList, "default")
+	End If
+
+	If Len(CStr(imageValue)) > 0 Then
+		TreeNodeImageKey = imageValue
+	ElseIf Len(className) = 0 Then
+		TreeNodeImageKey = "Object"
+	Else
+		TreeNodeImageKey = className
+	End If
+
+End Function
+
+Function ImageListValueForTag(imageList, tagName)
+
+	ImageListValueForTag = ""
+	If Len(tagName) = 0 Then Exit Function
+
+	On Error Resume Next
+	Dim image
+	For Each image In imageList.ListImages
+		If Err.Number <> 0 Then
+			Application.Trace "ImageList traversal failed: " & Err.Description
+			Err.Clear
+			Exit For
+		End If
+
+		Dim tagText
+		tagText = CStr(image.Tag)
+
+		If ImageTagHasClass(tagText, tagName) Then
+			If Len(CStr(image.Key)) > 0 Then
+				ImageListValueForTag = image.Key
+			Else
+				ImageListValueForTag = image.Index
+			End If
+			Exit Function
+		End If
+	Next
+	Err.Clear
+	On Error GoTo 0
+
+End Function
+
+Function ImageTagHasClass(tagText, className)
+
+	ImageTagHasClass = False
+
+	Dim expected
+	expected = LCase(Trim(className))
+	If Len(expected) = 0 Then Exit Function
+
+	Dim tags
+	tags = Split(tagText, ",")
+
+	Dim i
+	For i = 0 To UBound(tags)
+		Dim actual
+		actual = LCase(Trim(tags(i)))
+		If actual = expected Then
+			ImageTagHasClass = True
+			Exit Function
+		End If
+	Next
+
+End Function
+
+Function BindTreeImageList(tree)
+
+	BindTreeImageList = False
+
+	On Error Resume Next
+	Dim imageList
+	Set imageList = Item("TreeImages")
+	If Err.Number <> 0 Then
+		Application.Trace "TreeView ImageList was not found: " & Err.Description
+		Err.Clear
+		Exit Function
+	End If
+
+	Set tree.ImageList = imageList
+	If Err.Number <> 0 Then
+		Application.Trace "TreeView ImageList bind failed: " & Err.Description
+		Err.Clear
+	Else
+		BindTreeImageList = True
+	End If
+	Set imageList = Nothing
+	On Error GoTo 0
+
+End Function
+
+Function AddTreeNode(tree, parentKey, xmlNode, sequence, useImages)
+
+	sequence = sequence + 1
+
+	Dim key
+	key = "n" & CStr(sequence)
+
+	Dim text
+	text = TreeNodeText(xmlNode)
+
+	Dim imageKey
+	imageKey = ""
+	If useImages Then
+		imageKey = TreeNodeImageKey(xmlNode, tree.ImageList)
+	End If
+
+	On Error Resume Next
+	Dim treeNode
+	Set treeNode = Nothing
+	If useImages Then
+		If Len(parentKey) = 0 Then
+			Set treeNode = tree.Nodes.Add(, , key, text, imageKey, imageKey)
+		Else
+			Set treeNode = tree.Nodes.Add(parentKey, 4, key, text, imageKey, imageKey)
+		End If
+	End If
+	If Err.Number <> 0 Then
+		Application.Trace "TreeView image key failed: " & imageKey & " - " & Err.Description
+		Err.Clear
+	End If
+	If treeNode Is Nothing Then
+		If Len(parentKey) = 0 Then
+			Set treeNode = tree.Nodes.Add(, , key, text)
+		Else
+			Set treeNode = tree.Nodes.Add(parentKey, 4, key, text)
+		End If
+	End If
+	If Err.Number <> 0 Then
+		Application.Trace "TreeView add failed: " & xmlNode.getAttribute("path") & " - " & Err.Description
+		Err.Clear
+		AddTreeNode = ""
+		Exit Function
+	End If
+	On Error GoTo 0
+
+	If useImages Then
+		On Error Resume Next
+		treeNode.Image = imageKey
+		treeNode.SelectedImage = imageKey
+		If Err.Number <> 0 Then
+			Application.Trace "TreeView image assign failed: " & imageKey & " - " & Err.Description
+			Err.Clear
+		End If
+		On Error GoTo 0
+	End If
+
+	On Error Resume Next
+	treeNode.Tag = xmlNode.getAttribute("path")
+	treeNode.ToolTipText = xmlNode.getAttribute("path")
+	Err.Clear
+	On Error GoTo 0
+
+	Dim child
+	For Each child In xmlNode.childNodes
+		If child.nodeName = "Object" Then
+			Dim childKey
+			childKey = AddTreeNode(tree, key, child, sequence, useImages)
+		End If
+	Next
+
+	If xmlNode.getAttribute("depth") = "1" Then
+		On Error Resume Next
+		treeNode.Expanded = True
+		Err.Clear
+		On Error GoTo 0
+	End If
+
+	AddTreeNode = key
+
+End Function
+
+Function ElipseDomainName()
+
+	ElipseDomainName = ""
+
+	On Error Resume Next
+	Dim domainObj
+	Set domainObj = Application.GetObject("[?Server].Domain")
+	If Err.Number <> 0 Then
+		Err.Clear
+		Exit Function
+	End If
+
+	ElipseDomainName = UCase(domainObj.Domain)
+	If Err.Number <> 0 Then
+		ElipseDomainName = ""
+		Err.Clear
+	End If
+	Set domainObj = Nothing
+	On Error GoTo 0
+
+End Function
+
+Function AddTreeRootNode(tree, text, sequence, useImages)
+
+	AddTreeRootNode = ""
+	If Len(text) = 0 Then Exit Function
+
+	sequence = sequence + 1
+
+	Dim key
+	key = "n" & CStr(sequence)
+
+	Dim imageKey
+	imageKey = ""
+	If useImages Then
+		imageKey = ImageListValueForTag(tree.ImageList, "folder")
+		If Len(CStr(imageKey)) = 0 Then
+			imageKey = ImageListValueForTag(tree.ImageList, "default")
+		End If
+	End If
+
+	On Error Resume Next
+	Dim treeNode
+	Set treeNode = Nothing
+	If useImages And Len(CStr(imageKey)) > 0 Then
+		Set treeNode = tree.Nodes.Add(, , key, text, imageKey, imageKey)
+	End If
+	If Err.Number <> 0 Then
+		Application.Trace "TreeView domain image key failed: " & imageKey & " - " & Err.Description
+		Err.Clear
+	End If
+	If treeNode Is Nothing Then
+		Set treeNode = tree.Nodes.Add(, , key, text)
+	End If
+	If Err.Number <> 0 Then
+		Application.Trace "TreeView domain root add failed: " & text & " - " & Err.Description
+		Err.Clear
+		Exit Function
+	End If
+
+	treeNode.Tag = text
+	treeNode.ToolTipText = text
+	treeNode.Expanded = True
+	Err.Clear
+	On Error GoTo 0
+
+	AddTreeRootNode = key
+
+End Function
+
+Sub FillTreeViewFromCatalogXml(tree, xmlText)
+
+	On Error Resume Next
+	tree.Nodes.Clear
+	If Err.Number <> 0 Then
+		Application.Trace "TreeView clear failed: " & Err.Description
+		Err.Clear
+	End If
+	On Error GoTo 0
+
+	If Len(xmlText) = 0 Then
+		Application.Trace "Catalog XML is empty; TreeView was not filled."
+		Exit Sub
+	End If
+
+	Dim doc
+	Set doc = CreateObject("MSXML2.DOMDocument.6.0")
+	doc.async = False
+	doc.loadXML xmlText
+
+	If doc.parseError.errorCode <> 0 Then
+		Application.Trace "Catalog XML parse failed: " & doc.parseError.reason
+		Exit Sub
+	End If
+
+	Dim sequence
+	sequence = 0
+
+	Dim useImages
+	useImages = BindTreeImageList(tree)
+
+	Dim parentKey
+	parentKey = ""
+
+	Dim domainName
+	domainName = ElipseDomainName()
+	If Len(domainName) > 0 Then
+		parentKey = AddTreeRootNode(tree, domainName, sequence, useImages)
+	End If
+
+	Dim objectNode
+	For Each objectNode In doc.documentElement.childNodes
+		If objectNode.nodeName = "Object" Then
+			Dim nodeKey
+			nodeKey = AddTreeNode(tree, parentKey, objectNode, sequence, useImages)
+		End If
+	Next
+
+	Application.Trace "TreeView filled from catalog XML with " & CStr(sequence) & " nodes."
+
+End Sub
+
+<xatm_config_screens.DomainBrowser:DomainBrowser_OnShow()>
+Sub DomainBrowser_OnShow()
+	FillTree	
+End Sub
+
 <xatm_config_screens.Footer.ListBox:ListBox_MouseUp(Button, Shift, X, Y)>
 Sub ListBox_MouseUp(Button, Shift, X, Y)
 	
@@ -4232,7 +5245,7 @@ Sub AddArrayContentToList()
     Dim arrSize
     arrSize = UBound(contentArr) + 1
 
-    ' If ListCount >= arrSize, buffer is full and shifted — full redraw needed
+    ' If ListCount >= arrSize, buffer is full and shifted ï¿½ full redraw needed
     If ListCount >= arrSize Then
         Clear()
     End If
