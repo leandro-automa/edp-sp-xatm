@@ -1,5 +1,5 @@
 -----------------------
-Documentação de Scripts
+Documentaï¿½ï¿½o de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
 Fri Aug  7 14:18:31 2026
@@ -88,6 +88,49 @@ Sub WriteLog(message)
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
 	
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandReset()>
+Sub Start_CommandReset()
+
+	' The Reset tag beside this one already does the work - the latched
+	' step failures, the general block, the FSM tags and every breaker in
+	' the substation. Asking it rather than repeating it is what keeps a
+	' reset from a screen and a reset from anywhere else the same reset.
+	On Error Resume Next
+	Parent.Item("Reset").WriteEx True
+	On Error Goto 0
+
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandStartNM()>
+Sub Start_CommandStartNM()
+
+	StartMode "NM"
+
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandStartTM()>
+Sub Start_CommandStartTM()
+
+	StartMode "TM"
+
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandOperatorBlock()>
+Sub Start_CommandOperatorBlock()
+
+	' A command is a moment and not a state, so this turns the lock over
+	' rather than setting it - one command that blocks and releases, the
+	' way the buttons on the symbols already work.
+	xatm_BTC.OperatorBlock = Not xatm_BTC.OperatorBlock
+
+	If xatm_BTC.OperatorBlock Then
+		WriteLog "Blocked by operator."
+	Else
+		WriteLog "Released by operator."
+	End If
+
 End Sub
 
 <xatm_BTC.Commands.Start:Start_OnChangedValue()>
@@ -239,6 +282,70 @@ Function AnyOtherAutomationRunning()
 	Next
 
 End Function
+
+' Asks for a maneuver by writing the very tag this runs on.
+'
+' Start_OnChangedValue is what reads it, so every gate it keeps - enabled,
+' not already running, the three blocks, the preconditions, no other
+' automation in progress - is kept for a command off a screen too, and is
+' kept in the one place that has them all. A command that is refused is
+' logged there and says why, exactly as a written trigger is.
+'
+' There is no TA among the commands. That one is asked for by the
+' switchyard, through the transformer's own triggers, and never by a
+' person.
+Sub StartMode(mode)
+
+	Dim found, id
+	id = BoundTransformerId(found)
+
+	' Not something the operator did wrong: the automation has been left
+	' unbound, and Start could only reject a maneuver on transformer 0.
+	If Not found Then
+
+		WriteLog "Not started - no transformer is bound to this automation."
+		Exit Sub
+
+	End If
+
+	WriteEx mode & ":" & id
+
+End Sub
+
+
+' The Id of the transformer this instance drives, which is the trigger of
+' anything asked for from a screen. found stays False where nothing is
+' bound, or where what is bound carries no Id yet - a half-configured
+' automation rather than a maneuver to reject.
+Function BoundTransformerId(ByRef found)
+
+	found = False
+	BoundTransformerId = 0
+
+	Dim transformer
+	Set transformer = Nothing
+
+	On Error Resume Next
+	Set transformer = xatm_BTC.Transformer
+	On Error Goto 0
+
+	If transformer Is Nothing Then Exit Function
+
+	Dim id
+	id = Empty
+
+	On Error Resume Next
+	id = transformer.Id
+	On Error Goto 0
+
+	If IsEmpty(id) Or IsNull(id) Then Exit Function
+	If Not IsNumeric(id) Then Exit Function
+
+	BoundTransformerId = CInt(id)
+	found = True
+
+End Function
+
 
 ' Logs the rejection and clears the trigger without re-firing.
 ' Uses the explicit tag path (not Me) so it is safe to call from a helper.
@@ -2999,7 +3106,7 @@ Sub xatm_ConsoleLogEngine_OnWriteLineChanged()
     
     If currentSize < MAX_LINES Then
         
-        ' Array still growing — just append
+        ' Array still growing ï¿½ just append
         index = currentSize
         ReDim Preserve contentArr(currentSize)
         
@@ -3007,7 +3114,7 @@ Sub xatm_ConsoleLogEngine_OnWriteLineChanged()
         
         index = MAX_LINES - 1
 
-        ' Array at capacity — shift and append
+        ' Array at capacity ï¿½ shift and append
         Dim j
         For j = 0 To MAX_LINES - 2
             contentArr(j) = contentArr(j + 1)

@@ -1796,6 +1796,33 @@ Sub xatm_BTC_OnStartRunning()
 		"Field conditions that block the automation. Bound to an expression - True keeps a sequence from starting, alongside OperatorBlock and GeneralBlock.", _
 		"Condi��es de campo que bloqueiam o automatismo. Vinculada a uma express�o - True impede a partida, junto com OperatorBlock e GeneralBlock."
 
+	' --- the command interface -----------------------------------------
+	'
+	' What a screen writes to ask this automation for something. They are
+	' tags of the object and not values on it: a command is a moment, and
+	' the object clears it once it has been read, which is what a tag does
+	' and a property does not.
+	'
+	' There is no TA among them. A TA is asked for by the switchyard - the
+	' transformer's protection trips and the trigger comes from there - so
+	' there is nothing for a screen to write.
+
+	AddProperty bag, "CommandReset", "InternalTag", Empty, _
+		"Reset command. Clears the latched step failures and the general block, so that a sequence can be started again.", _
+		"Comando de reset. Apaga as falhas seladas de passo e o bloqueio geral, para que uma sequência possa partir novamente."
+
+	AddProperty bag, "CommandStartTM", "InternalTag", Empty, _
+		"Start command for a manual transfer. Written by the operator's screen to ask for the maneuver.", _
+		"Comando de partida da transferência manual. Escrito pela tela do operador para pedir a manobra."
+
+	AddProperty bag, "CommandStartNM", "InternalTag", Empty, _
+		"Start command for a manual normalisation. Written by the operator's screen to ask for the maneuver.", _
+		"Comando de partida da normalização manual. Escrito pela tela do operador para pedir a manobra."
+
+	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
+		"Operator lock command. Written by the operator's screen to set or release OperatorBlock.", _
+		"Comando de bloqueio do operador. Escrito pela tela do operador para marcar ou liberar o OperatorBlock."
+
 	Dim i
 	For i = 1 To 6
 
@@ -1819,6 +1846,20 @@ Sub xatm_BTC_OnStartRunning()
 	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE
 	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE
 	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+
+	' The command interface is shown and nothing more. No EXPOSE_EDIT and
+	' no EXPOSE_FORCE, because either one would let the panel start a real
+	' maneuver on a live switchyard; no EXPOSE_VALUE, because a command is
+	' written and never read, and reading one back shows the last thing
+	' written to it as though it were a state.
+	'
+	' EXPOSE_SAVED all the same: what these hold is which tag the object
+	' talks through, which is configuration - and without it ResetReadings
+	' would put every one of them back to Empty on the next import.
+	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandStartTM",       EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandStartNM",       EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED
 
 	Set Value = bag
 
