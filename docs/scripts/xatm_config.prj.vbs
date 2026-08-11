@@ -4451,8 +4451,12 @@ Sub btnSave_Click()
 
 	' 3. The layout the screen is showing, and then the project file. The
 	' objects the import just wrote are in the same container, so one Save
-	' persists them - and the interface tags with them, which is why this
-	' happens even on the way out of a failed import.
+	' persists them.
+	'
+	' Not the interface: that is a data server of its own and a container
+	' of its own, and RebuildInterface has already saved it. This runs on
+	' the way out of a failed import all the same, because the import may
+	' have written some of the document before it stopped.
 	Dim layoutFolder
 	Set layoutFolder = Application.GetObject("XATM_Data.Automation.Layout")
 
@@ -4540,7 +4544,7 @@ Sub RebuildInterface()
 	Dim problem
 	problem = ""
 
-	InterfaceFolder root, Application.GetObject(DATA_ROOT), problem
+	InterfaceFolder root, Application.GetObject(DATA_ROOT), "", problem
 
 	' Written here, and not left to the Save that persists XATM_Data: the
 	' interface is a data server of its own, and the container holding the
@@ -4641,7 +4645,13 @@ End Sub
 ' manifest speaks for, and then the same for whatever is under it. A
 ' class with no manifest is not a device, so it is treated as a folder -
 ' and one E3 will not enumerate simply adds nothing.
-Sub InterfaceFolder(root, folder, problem)
+'
+' path is where the walk has got to, as the chain of folder names under
+' the interface root that mirrors it - "" at XATM_Data itself, then
+' "Substation", then "Substation.Busbar". The interface comes out shaped
+' like the data it speaks for, so a tie breaker is found where the tree
+' says it is rather than in a heap with everything else.
+Sub InterfaceFolder(root, folder, path, problem)
 
 	Dim item, bag
 
@@ -4651,12 +4661,12 @@ Sub InterfaceFolder(root, folder, problem)
 
 		If Not bag Is Nothing Then
 
-			InterfaceObject root, item, bag, problem
+			InterfaceObject root, path, item, bag, problem
 
 		Else
 
 			On Error Resume Next
-			InterfaceFolder root, item, problem
+			InterfaceFolder root, item, ChildPath(path, item.Name), problem
 			On Error Goto 0
 
 		End If
@@ -4666,10 +4676,65 @@ Sub InterfaceFolder(root, folder, problem)
 End Sub
 
 
+' One name onto a path, and the first name is the whole of it.
+Function ChildPath(path, name)
+
+	If path = "" Then
+		ChildPath = name
+	Else
+		ChildPath = path & "." & name
+	End If
+
+End Function
+
+
+' The folder at a path under the interface root, each level made where it
+' is not already there.
+'
+' Made on the way to something rather than mirrored up front, because a
+' folder is only wanted where something goes into it: the data project
+' also holds Layout and every folder an engineer adds, and an interface
+' full of empty folders says nothing about what is on it.
+Function EnsureFolder(root, path, problem)
+
+	Set EnsureFolder = root
+	If path = "" Then Exit Function
+
+	Dim names
+	names = Split(path, ".")
+
+	Dim parent, child, i
+	Set parent = root
+
+	For i = 0 To UBound(names)
+
+		Set child = Nothing
+
+		On Error Resume Next
+		Set child = parent.Item(names(i))
+		On Error Goto 0
+
+		If child Is Nothing Then Set child = NewChild(parent, INTERFACE_FOLDER, names(i))
+
+		If child Is Nothing Then
+			problem = problem & vbCrLf & "  no folder for " & path
+			Set EnsureFolder = Nothing
+			Exit Function
+		End If
+
+		Set parent = child
+
+	Next
+
+	Set EnsureFolder = parent
+
+End Function
+
+
 ' One object's folder, and a tag in it for each property the manifest
 ' interfaces. An object with nothing interfaced gets no folder at all,
 ' rather than an empty one to wonder about.
-Sub InterfaceObject(root, obj, bag, problem)
+Sub InterfaceObject(root, path, obj, bag, problem)
 
 	Dim key, p
 
@@ -4682,8 +4747,12 @@ Sub InterfaceObject(root, obj, bag, problem)
 
 	If Not wanted Then Exit Sub
 
+	Dim parent
+	Set parent = EnsureFolder(root, path, problem)
+	If parent Is Nothing Then Exit Sub
+
 	Dim folder
-	Set folder = NewChild(root, INTERFACE_FOLDER, obj.Name)
+	Set folder = NewChild(parent, INTERFACE_FOLDER, obj.Name)
 
 	If folder Is Nothing Then
 		problem = problem & vbCrLf & "  no folder for " & obj.Name
