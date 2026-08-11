@@ -2090,6 +2090,28 @@ Sub xatm_Breaker_OnStartRunning()
 		"Select tag for the close command on relay 2. Optional.", _
 		"Tag de sele��o do comando de fechamento no rel� 2. Opcional."
 
+	' --- what the plant and the automation say back ---------------------
+	'
+	' None of the four is configured with a value. Defective is configured
+	' with an expression, and the other three are written by the breaker
+	' and by the automation as they go.
+
+	AddProperty bag, "Defective", "Boolean", False, _
+		"Equipment is defective and must not be operated. Bound to an expression - not in remote, spring discharged, whatever the panel reports.", _
+		"Equipamento com defeito e que não deve ser operado. Vinculada a uma expressão - fora de remoto, mola descarregada, o que o painel indicar."
+
+	AddProperty bag, "Position", "Integer", 0, _
+		"Position as the automation reads it: 1 open, 2 closed, 0 neither. Always these three, whatever raw values the protocol carries - the raw ones are configured above and translated into this.", _
+		"Posição como o automatismo a lê: 1 aberto, 2 fechado, 0 indefinido. Sempre estes três, quaisquer que sejam os valores brutos do protocolo - os brutos são configurados acima e traduzidos para esta."
+
+	AddProperty bag, "CommandOpenFailed", "Boolean", False, _
+		"Latched failure of an open command sent by the automation. Set when the breaker does not reach the open position inside CommandTimeout, cleared by Reset.", _
+		"Falha selada de um comando de abertura enviado pelo automatismo. Marcada quando o disjuntor não atinge a posição aberta dentro de CommandTimeout, apagada pelo Reset."
+
+	AddProperty bag, "CommandCloseFailed", "Boolean", False, _
+		"Latched failure of a close command sent by the automation. Set when the breaker does not reach the closed position inside CommandTimeout, cleared by Reset.", _
+		"Falha selada de um comando de fechamento enviado pelo automatismo. Marcada quando o disjuntor não atinge a posição fechada dentro de CommandTimeout, apagada pelo Reset."
+
 	' The command outputs are write-only, so they get no EXPOSE_VALUE -
 	' there is nothing to read back. Forcing one sends the raw value
 	' configured for it rather than flipping a boolean, because a protocol
@@ -2120,6 +2142,24 @@ Sub xatm_Breaker_OnStartRunning()
 	SetExposure bag, "CommandSBOClose",      EXPOSE_VIEW + EXPOSE_SAVED
 	SetExposure bag, "CommandCloseAlt",      EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
 	SetExposure bag, "CommandSBOCloseAlt",   EXPOSE_VIEW + EXPOSE_SAVED
+
+	' Defective is configured the way a transformer's relays are: an
+	' expression is written for it on the panel, it can be forced for a
+	' test, and it is never saved - the expression is the configuration
+	' and the reading is whatever the switchyard was doing at the time.
+	SetExposure bag, "Defective", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
+
+	' Position is shown and never touched. Reading it back on the panel is
+	' how an engineer sees that the raw values above were configured the
+	' right way round, which is worth a row of its own; forcing it would
+	' only make the panel lie about the switchyard.
+	SetExposure bag, "Position", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE
+
+	' The two command failures are latches the automation sets and Reset
+	' clears - the breaker's own StepExecutionFailed. Nothing about them
+	' is configuration, so they are interfaced and nothing else.
+	SetExposure bag, "CommandOpenFailed",  EXPOSE_INTERFACE
+	SetExposure bag, "CommandCloseFailed", EXPOSE_INTERFACE
 
 	Set Value = bag
 
