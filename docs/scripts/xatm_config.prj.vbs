@@ -564,8 +564,18 @@ End Sub
 
 
 ' Puts one value onto an object, late-bound, the way ReadProperty takes
-' one off. A property typed xatm_ holds the path of another object, so it
-' is an association and has to be Set rather than assigned.
+' one off.
+'
+' A property typed xatm_ points at another object, but what it is given
+' is that object's path and not the object: E3 refuses a Set here, and
+' says only that the object does not support the property. Reading one
+' back is the other way about - ReadProperty does Set and gets an object -
+' so the two are not symmetric, however much they look it.
+'
+' The object is still looked up before the path is written. That is what
+' catches a path the document carries and the project no longer has, and
+' what turns whatever was written into the PathName E3 itself answers
+' with, brackets and all.
 Sub WriteValue(obj, name, dataType, newValue, report, where)
 
 	Dim failed
@@ -578,7 +588,7 @@ Sub WriteValue(obj, name, dataType, newValue, report, where)
 	If IsObjectType(dataType) Then
 
 		Set gWriteObject = Application.GetObject(E3Path(CStr(gWriteValue)))
-		Execute "Set obj." & name & " = gWriteObject"
+		Execute "obj." & name & " = gWriteObject.PathName"
 
 	Else
 
@@ -4420,28 +4430,29 @@ End Sub
 <xatm_config_screens.Config.btnSave:btnSave_Click()>
 Sub btnSave_Click()
 
-	' 1. The document into the project. Nothing else happens if it will
-	' not go in - a file saved against a project that does not match it is
-	' worse than no save at all.
+	' 1. The document into the project.
 	Dim importer
 	Set importer = Application.GetObject(IMPORT_XML)
 	importer.WriteEx True
 
-	If importer.DocString <> EXIT_SUCCESS Then
-		MsgBox "Nothing was saved. The document could not be written into the " & _
-		       "project - the console says why.", vbCritical, "Save"
-		Exit Sub
-	End If
+	Dim imported
+	imported = (importer.DocString = EXIT_SUCCESS)
 
 	' 2. The interface the Elipse application binds to, made again from
-	' what the project holds now. After the import, so a rename made on
-	' this screen has already landed; before the save below, which is what
-	' writes the tags it creates to disk.
+	' what the project holds now.
+	'
+	' After the import, so a rename made on this screen has already
+	' landed. Whether or not the import had anything to write, and even
+	' where it refused: the interface is built from the project and not
+	' from the document, so what the document did is not its business, and
+	' a project left without its tags is worse than one whose tags are a
+	' rename behind.
 	RebuildInterface
 
 	' 3. The layout the screen is showing, and then the project file. The
 	' objects the import just wrote are in the same container, so one Save
-	' persists them too.
+	' persists them - and the interface tags with them, which is why this
+	' happens even on the way out of a failed import.
 	Dim layoutFolder
 	Set layoutFolder = Application.GetObject("XATM_Data.Automation.Layout")
 
@@ -4449,6 +4460,15 @@ Sub btnSave_Click()
 	layoutFolder.Item("Busbar").WriteEx Screen.Item("SelectLayoutBusbar").Index
 
 	layoutFolder.Context("Container").Save()
+
+	' The file is the one thing the import does gate: written against a
+	' project that does not match it, it is worse than no file at all.
+	If Not imported Then
+		MsgBox "The project and the interface were saved, but the document " & _
+		       "could not be written into the project, so the XML file was " & _
+		       "left alone - the console says why.", vbCritical, "Save"
+		Exit Sub
+	End If
 
 	' 4. And the file.
 	Dim saver
@@ -4478,7 +4498,7 @@ Const EXIT_SUCCESS = "EXIT_SUCCESS"
 ' XObject.
 Const INTERFACE_ROOT     = "XATM_Interface"
 Const INTERFACE_ROOT_ALT = "XATM_Data.XATM_Interface"
-Const INTERFACE_FOLDER   = "Folder"
+Const INTERFACE_FOLDER   = "DataFolder"
 Const INTERFACE_TAG      = "InternalTag"
 
 Const DATA_ROOT     = "XATM_Data"
@@ -4488,6 +4508,10 @@ Const HELPER_FOLDER = "PropertiesHelper"
 ' Scratch cell for the late-bound write done through Execute, the way the
 ' import keeps one.
 Dim gInterfaceTag
+
+' What the last rebuild came out at, for the line it writes to the log.
+Dim gFolders
+Dim gTags
 
 
 ' Builds the interface again from what the project holds this moment.
@@ -4510,13 +4534,60 @@ Sub RebuildInterface()
 
 	ClearFolder root
 
+	gFolders = 0
+	gTags    = 0
+
 	Dim problem
 	problem = ""
 
 	InterfaceFolder root, Application.GetObject(DATA_ROOT), problem
 
+	' Written here, and not left to the Save that persists XATM_Data: the
+	' interface is a data server of its own, and the container holding the
+	' automation objects is not the container holding these tags.
+	On Error Resume Next
+	Err.Clear
+
+	root.Save()
+
+	If Err.Number <> 0 Then
+		problem = problem & vbCrLf & "  not saved - " & Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+	' Said out loud even when it all went through. A routine that builds
+	' forty tags and mentions only the ones it could not build reads the
+	' same whether it ran or never got called at all, and the log is the
+	' only place the difference shows.
+	If gFolders = 0 Then
+		WriteLog "Interface - nothing is marked for it."
+	Else
+		WriteLog "Interface - " & gFolders & " objects, " & gTags & " tags."
+	End If
+
 	If problem <> "" Then
+		WriteLog "Interface is incomplete:" & problem
 		MsgBox "The interface is incomplete:" & vbCrLf & problem, vbExclamation, "Save"
+	End If
+
+End Sub
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[Interface] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[Interface] - " & message
 	End If
 
 End Sub
@@ -4619,6 +4690,8 @@ Sub InterfaceObject(root, obj, bag, problem)
 		Exit Sub
 	End If
 
+	gFolders = gFolders + 1
+
 	For Each key In bag.Keys
 
 		Set p = bag(key)
@@ -4651,6 +4724,8 @@ Sub InterfaceProperty(folder, obj, p, problem)
 		problem = problem & vbCrLf & "  no tag for " & obj.Name & "." & p.Name
 		Exit Sub
 	End If
+
+	gTags = gTags + 1
 
 	If LCase(p.DataType & "") = "internaltag" Then
 
