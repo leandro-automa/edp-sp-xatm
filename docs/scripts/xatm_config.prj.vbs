@@ -1619,10 +1619,19 @@ Function ManifestOf(className)
 End Function
 
 
-' A property whose configuration is an association, not a value.
+' A property whose configuration is an association, not a value. Two of
+' them: an IOTag is wired to a tag out in the project, an InternalTag to
+' one of the object's own - the BTC's command interface. Both export as a
+' source and neither carries a value, because what is configured is the
+' tag it points at, and whatever that tag happens to be holding at the
+' time is not configuration at all.
 Function IsLinkType(dataType)
 
-	IsLinkType = (LCase(dataType) = "iotag")
+	IsLinkType = False
+
+	Select Case LCase(dataType)
+		Case "iotag", "internaltag" : IsLinkType = True
+	End Select
 
 End Function
 
@@ -4151,10 +4160,19 @@ Function ManifestOf(className)
 End Function
 
 
-' A property whose configuration is an association, not a value.
+' A property whose configuration is an association, not a value. Two of
+' them: an IOTag is wired to a tag out in the project, an InternalTag to
+' one of the object's own - the BTC's command interface. Both export as a
+' source and neither carries a value, because what is configured is the
+' tag it points at, and whatever that tag happens to be holding at the
+' time is not configuration at all.
 Function IsLinkType(dataType)
 
-	IsLinkType = (LCase(dataType) = "iotag")
+	IsLinkType = False
+
+	Select Case LCase(dataType)
+		Case "iotag", "internaltag" : IsLinkType = True
+	End Select
 
 End Function
 

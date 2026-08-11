@@ -573,7 +573,7 @@ End Function
 '
 ' EXPOSE_EDIT is not the question, though it reads like it: that flag
 ' says the value field may be typed into, which is the one thing an
-' IOTag row does not do - what is configured is the tag it is associated
+' tag row does not do - what is configured is the tag it is associated
 ' with, not a value - and no manifest gives it to one. The type is what
 ' decides, and EXPOSE_SAVED that the association is configuration rather
 ' than something read off the plant.
@@ -581,7 +581,7 @@ Function PicksTag()
 
 	PicksTag = False
 
-	If LCase(PropertyType & "") <> "iotag" Then Exit Function
+	If Not IsTagProperty() Then Exit Function
 
 	PicksTag = Can(EXPOSE_SAVED)
 
@@ -611,6 +611,13 @@ Function ConfiguredText()
 	ConfiguredText = ""
 
 	If IsObjectProperty() Then Exit Function
+
+	' A tag property has no value of its own to configure - the tag it is
+	' wired to is the whole of it, and that belongs in the source column.
+	' Asked here rather than left to the document, so a row built from an
+	' export written before this was understood shows a blank field and
+	' not a path in the wrong column.
+	If IsTagProperty() Then Exit Function
 
 	If IsEmpty(Value) Or IsNull(Value) Then Exit Function
 
@@ -658,6 +665,22 @@ Function IsObjectProperty()
 End Function
 
 
+' A property configured by the tag it is wired to rather than by a value
+' of its own. An IOTag names a tag out in the project, an InternalTag one
+' of the object's own - a breaker's trip output and a BTC's start command
+' - and the row shows the two alike, because what there is to show of
+' either is which tag it points at.
+Function IsTagProperty()
+
+	IsTagProperty = False
+
+	Select Case LCase(PropertyType & "")
+		Case "iotag", "internaltag" : IsTagProperty = True
+	End Select
+
+End Function
+
+
 ' Where the current value is read from, "" when there is nothing to read.
 '
 ' A command is written and never read. The manifest says so by withholding
@@ -679,7 +702,7 @@ Function LiveSource()
 
 	If Not Can(EXPOSE_VALUE) Then Exit Function
 
-	If LCase(PropertyType & "") = "iotag" Then
+	If IsTagProperty() Then
 
 		If Trim(PropertySource & "") <> "" Then LiveSource = PropertySource & ".Value"
 		Exit Function
