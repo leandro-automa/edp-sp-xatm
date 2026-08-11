@@ -552,14 +552,15 @@ End Sub
 ' rather than shared: the flags are declared in the manifests over in
 ' xatm_config, and one E3 object cannot read another's constants - which
 ' is also why the Exposure property documents them in its own help.
-Const EXPOSE_VIEW       = 1
-Const EXPOSE_VALUE      = 2
-Const EXPOSE_EDIT       = 4
-Const EXPOSE_EXPRESSION = 8
-Const EXPOSE_FORCE      = 16
-Const EXPOSE_SAVED      = 32
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
 
-Const MAX_SOURCE_LENGTH = 40
+Const MAX_SOURCE_LENGTH = 128
 
 ' Whether the manifest allowed this. Empty And anything is 0, so a row
 ' built without an Exposure allows nothing.

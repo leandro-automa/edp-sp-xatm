@@ -1846,15 +1846,29 @@ Sub xatm_BTC_OnStartRunning()
 	'
 	' The four that are readings - the blocks and Preconditions - are not
 	' saved: their expression is the configuration, and the reading is
-	' whatever the switchyard was doing at the time. StepExecutionFailed1
-	' to 6 are latches the automation sets and Reset clears, so they are
-	' neither shown nor saved.
+	' whatever the switchyard was doing at the time.
+	'
+	' EXPOSE_INTERFACE is a different question from the rest, and answered
+	' separately: not what the panel may do with a property, but whether
+	' the Elipse application is given a tag of its own for it. What a
+	' screen draws or acts on is interfaced; what only an engineer sets -
+	' the transformer this instance drives - is not.
 	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
-	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE
-	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE
-	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
+	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE
+	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE
+	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
+
+	' Running and the six step latches are the automation talking about
+	' itself. Neither belongs on the configuration panel - there is
+	' nothing about them to configure - but both are what a screen draws,
+	' so they are interfaced and nothing else.
+	SetExposure bag, "Running", EXPOSE_INTERFACE
+
+	For i = 1 To 6
+		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE
+	Next
 
 	' The command interface is shown and nothing more. No EXPOSE_EDIT and
 	' no EXPOSE_FORCE, because either one would let the panel start a real
@@ -1865,10 +1879,10 @@ Sub xatm_BTC_OnStartRunning()
 	' EXPOSE_SAVED all the same: what these hold is which tag the object
 	' talks through, which is configuration - and without it ResetReadings
 	' would put every one of them back to Empty on the next import.
-	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED
-	SetExposure bag, "CommandStartTM",       EXPOSE_VIEW + EXPOSE_SAVED
-	SetExposure bag, "CommandStartNM",       EXPOSE_VIEW + EXPOSE_SAVED
-	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
+	SetExposure bag, "CommandStartTM",       EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
+	SetExposure bag, "CommandStartNM",       EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
+	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
 
 	Set Value = bag
 
@@ -1888,6 +1902,7 @@ Const EXPOSE_EDIT       = 4     ' the value can be typed
 Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
 Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
 Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
 
 
 
@@ -1935,6 +1950,10 @@ Class PropertyInfo
 
 	Public Function IsSaved()
 		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
 	End Function
 
 	' Empty And anything is 0, so a property nobody classified answers no
@@ -2110,6 +2129,7 @@ Const EXPOSE_EDIT       = 4     ' the value can be typed
 Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
 Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
 Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
 
 
 Class PropertyInfo
@@ -2156,6 +2176,10 @@ Class PropertyInfo
 
 	Public Function IsSaved()
 		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
 	End Function
 
 	' Empty And anything is 0, so a property nobody classified answers no
@@ -2249,6 +2273,7 @@ Const EXPOSE_EDIT       = 4     ' the value can be typed
 Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
 Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
 Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
 
 
 Class PropertyInfo
@@ -2295,6 +2320,10 @@ Class PropertyInfo
 
 	Public Function IsSaved()
 		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
 	End Function
 
 	' Empty And anything is 0, so a property nobody classified answers no
@@ -4404,7 +4433,13 @@ Sub btnSave_Click()
 		Exit Sub
 	End If
 
-	' 2. The layout the screen is showing, and then the project file. The
+	' 2. The interface the Elipse application binds to, made again from
+	' what the project holds now. After the import, so a rename made on
+	' this screen has already landed; before the save below, which is what
+	' writes the tags it creates to disk.
+	RebuildInterface
+
+	' 3. The layout the screen is showing, and then the project file. The
 	' objects the import just wrote are in the same container, so one Save
 	' persists them too.
 	Dim layoutFolder
@@ -4415,7 +4450,7 @@ Sub btnSave_Click()
 
 	layoutFolder.Context("Container").Save()
 
-	' 3. And the file.
+	' 4. And the file.
 	Dim saver
 	Set saver = Application.GetObject(SAVE_XML)
 	saver.WriteEx True
@@ -4431,6 +4466,249 @@ End Sub
 Const IMPORT_XML   = "xatm_config_data.Config.ImportXml"
 Const SAVE_XML     = "xatm_config_data.Config.SaveXML"
 Const EXIT_SUCCESS = "EXIT_SUCCESS"
+
+
+' ------------------------------------------------------------
+'  THE INTERFACE
+' ------------------------------------------------------------
+
+' Where the Elipse application meets the automation: one internal tag per
+' interfaced property, in a folder named after the object it belongs to,
+' so a detached project binds to XATM_Interface and never reaches into an
+' XObject.
+Const INTERFACE_ROOT     = "XATM_Interface"
+Const INTERFACE_ROOT_ALT = "XATM_Data.XATM_Interface"
+Const INTERFACE_FOLDER   = "Folder"
+Const INTERFACE_TAG      = "InternalTag"
+
+Const DATA_ROOT     = "XATM_Data"
+Const CONFIG_DATA   = "xatm_config_data"
+Const HELPER_FOLDER = "PropertiesHelper"
+
+' Scratch cell for the late-bound write done through Execute, the way the
+' import keeps one.
+Dim gInterfaceTag
+
+
+' Builds the interface again from what the project holds this moment.
+'
+' Everything under the root goes first and is made again rather than
+' brought up to date. A device can be renamed on this screen, and a
+' folder named after the name it used to have is indistinguishable from
+' one nobody wants any more - so nothing tries to tell them apart. There
+' is no history in a tag like these to lose by rebuilding it.
+Sub RebuildInterface()
+
+	Dim root
+	Set root = InterfaceRoot()
+
+	If root Is Nothing Then
+		MsgBox "The interface was not built - the project has no data server " & _
+		       "at " & INTERFACE_ROOT & ".", vbExclamation, "Save"
+		Exit Sub
+	End If
+
+	ClearFolder root
+
+	Dim problem
+	problem = ""
+
+	InterfaceFolder root, Application.GetObject(DATA_ROOT), problem
+
+	If problem <> "" Then
+		MsgBox "The interface is incomplete:" & vbCrLf & problem, vbExclamation, "Save"
+	End If
+
+End Sub
+
+
+' The data server the interface is built in. Named at the root of the
+' data project, and looked for inside XATM_Data as well because which of
+' the two it sits under is a matter of how the project was laid out.
+Function InterfaceRoot()
+
+	Set InterfaceRoot = Nothing
+
+	On Error Resume Next
+	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT)
+	On Error Goto 0
+
+	If Not InterfaceRoot Is Nothing Then Exit Function
+
+	On Error Resume Next
+	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT_ALT)
+	On Error Goto 0
+
+End Function
+
+
+' Empties a folder. Taken out in a second pass, because a collection is
+' not walked while what is in it is being removed.
+Sub ClearFolder(folder)
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim item
+	For Each item In folder
+		doomed.Add doomed.Count, item.Name
+	Next
+
+	Dim n
+	For Each n In doomed.Keys
+
+		On Error Resume Next
+		folder.DeleteObject doomed(n)
+		On Error Goto 0
+
+	Next
+
+End Sub
+
+
+' One folder of the project: an interface for every object in it a
+' manifest speaks for, and then the same for whatever is under it. A
+' class with no manifest is not a device, so it is treated as a folder -
+' and one E3 will not enumerate simply adds nothing.
+Sub InterfaceFolder(root, folder, problem)
+
+	Dim item, bag
+
+	For Each item In folder
+
+		Set bag = ManifestOf(TypeName(item))
+
+		If Not bag Is Nothing Then
+
+			InterfaceObject root, item, bag, problem
+
+		Else
+
+			On Error Resume Next
+			InterfaceFolder root, item, problem
+			On Error Goto 0
+
+		End If
+
+	Next
+
+End Sub
+
+
+' One object's folder, and a tag in it for each property the manifest
+' interfaces. An object with nothing interfaced gets no folder at all,
+' rather than an empty one to wonder about.
+Sub InterfaceObject(root, obj, bag, problem)
+
+	Dim key, p
+
+	Dim wanted
+	wanted = False
+
+	For Each key In bag.Keys
+		If bag(key).IsInterfaced() Then wanted = True
+	Next
+
+	If Not wanted Then Exit Sub
+
+	Dim folder
+	Set folder = NewChild(root, INTERFACE_FOLDER, obj.Name)
+
+	If folder Is Nothing Then
+		problem = problem & vbCrLf & "  no folder for " & obj.Name
+		Exit Sub
+	End If
+
+	For Each key In bag.Keys
+
+		Set p = bag(key)
+		If p.IsInterfaced() Then InterfaceProperty folder, obj, p, problem
+
+	Next
+
+End Sub
+
+
+' One tag for one property, and what ties the two together.
+'
+' A reading is linked to the property and follows it: the tag is a window
+' on what the automation holds, and writing to it would be writing to the
+' link. A command is the other way about - nothing in this project drives
+' it, the detached project writes it - so it is left unlinked and the
+' object's property is pointed at it instead.
+'
+' An IOTag is never interfaced, whatever a manifest says: a breaker is
+' commanded and read through its IED, and those tags are the engineer's
+' to configure.
+Sub InterfaceProperty(folder, obj, p, problem)
+
+	If LCase(p.DataType & "") = "iotag" Then Exit Sub
+
+	Dim tag
+	Set tag = NewChild(folder, INTERFACE_TAG, p.Name)
+
+	If tag Is Nothing Then
+		problem = problem & vbCrLf & "  no tag for " & obj.Name & "." & p.Name
+		Exit Sub
+	End If
+
+	If LCase(p.DataType & "") = "internaltag" Then
+
+		gInterfaceTag = tag.PathName
+
+		On Error Resume Next
+		Execute "obj." & p.Name & " = gInterfaceTag"
+
+		If Err.Number <> 0 Then
+			problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
+			          " would not take its tag - " & Err.Description
+			Err.Clear
+		End If
+
+		On Error Goto 0
+
+		Exit Sub
+
+	End If
+
+	On Error Resume Next
+	tag.Links.CreateLink "Value", obj.PathName & "." & p.Name
+
+	If Err.Number <> 0 Then
+		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
+		          " would not link - " & Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+End Sub
+
+
+' A new child of a folder, Nothing when it would not take one -
+' AddObject(ClassName, [Activate], [ObjectName]).
+Function NewChild(parent, className, name)
+
+	Set NewChild = Nothing
+
+	On Error Resume Next
+	Set NewChild = parent.AddObject(className, True, name)
+	On Error Goto 0
+
+End Function
+
+
+' The manifest declared for a class, or Nothing when the class has none -
+' the same lookup the export and the import do.
+Function ManifestOf(className)
+
+	Set ManifestOf = Nothing
+
+	On Error Resume Next
+	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
+	On Error Goto 0
+
+End Function
 
 Sub Foo()
 	
