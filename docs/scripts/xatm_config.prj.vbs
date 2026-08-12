@@ -1417,6 +1417,652 @@ Sub SetProperty_OnStartRunning()
 
 End Sub
 
+<xatm_config_data.Config.FindPowerSubstations:FindPowerSubstations_OnChangedValue()>
+Sub FindPowerSubstations_OnChangedValue()
+
+	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub   ' self-cleared write, ignore
+	If Not CBool(Value) Then Exit Sub
+
+	Dim ts
+	ts = TimeStamp                         ' preserved for the silent clear
+
+	' Where the answer is left. A DocString says how it went and nothing
+	' more, so what was found travels on a tag of its own - the way
+	' SetProperty takes its payload off PropertyValue rather than out of
+	' the command.
+	Dim answerTag
+	Set answerTag = Nothing
+	On Error Resume Next
+	Set answerTag = Parent.Item(ANSWER_TAG)
+	On Error Goto 0
+
+	If answerTag Is Nothing Then
+		DocString = EXIT_FAILURE
+		WriteLog "There is no " & ANSWER_TAG & " tag to answer on."
+		WriteEx Empty, ts
+		Exit Sub
+	End If
+
+	Set gFound = CreateObject("Scripting.Dictionary")
+	Set gSeen  = CreateObject("Scripting.Dictionary")
+
+	ScanForSubstations Application, 0
+
+	' One path per line. A path holds no newline, so the button gets its
+	' list back by splitting and needs no escaping either way.
+	Dim answer
+	answer = Join(gFound.Keys, vbCrLf)
+
+	answerTag.WriteEx answer
+
+	DocString = EXIT_SUCCESS
+	WriteLog "Found " & gFound.Count & " " & SUBSTATION_CLASS & "."
+
+	Set gFound = Nothing
+	Set gSeen  = Nothing
+
+	WriteEx Empty, ts                      ' clear without re-firing
+
+End Sub
+
+
+' The class the scan is looking for, and the tag the answer is left on.
+Const SUBSTATION_CLASS = "PowerSubstation"
+Const ANSWER_TAG       = "PowerSubstationList"
+
+Const EXIT_SUCCESS     = "EXIT_SUCCESS"
+Const EXIT_FAILURE     = "EXIT_FAILURE"
+
+' How deep the walk goes. A substation sits a few levels into a data
+' server, well inside this. The cap is what stops a container that
+' answers For Each with something holding itself from scanning forever.
+Const MAX_DEPTH        = 12
+
+' What the scan has found, and what it has already been through. Held
+' here because the walk recurses and threading two dictionaries through
+' every call buys nothing - the same reason the tree keeps its images.
+Dim gFound
+Dim gSeen
+
+
+' Everything under a container, to the depth the cap allows.
+'
+' The whole domain is walked from Application rather than from a known
+' data server: which project a substation was put in is the engineer's
+' choice, and a scan that only looks where this one expects would answer
+' "none" for a project that is laid out differently.
+Sub ScanForSubstations(container, depth)
+
+	If depth > MAX_DEPTH Then Exit Sub
+
+	' A tag, a property, anything that is not a container refuses For
+	' Each - which is how the walk finds the leaves, so the error is
+	' the answer here and not a fault to report.
+	On Error Resume Next
+
+	Dim item
+	For Each item In container
+
+		If Err.Number <> 0 Then
+			Err.Clear
+			Exit For
+		End If
+
+		Consider item, depth
+
+		If Err.Number <> 0 Then Err.Clear
+
+	Next
+
+	If Err.Number <> 0 Then Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' One object: kept when it is a substation, walked into when it is not.
+Sub Consider(item, depth)
+
+	Dim className, path
+	className = ""
+	path      = ""
+
+	On Error Resume Next
+	className = TypeName(item)
+	path      = item.PathName
+	On Error Goto 0
+
+	If UCase(className) = UCase(SUBSTATION_CLASS) Then
+
+		' An object that will not say where it is cannot be handed to
+		' the button, which has only a path to find it by again.
+		If path <> "" Then
+			If Not gFound.Exists(path) Then gFound.Add path, True
+		End If
+
+		' Nothing looks for a substation inside a substation.
+		Exit Sub
+
+	End If
+
+	' Walked once however many places it is reachable from. A domain is
+	' a graph rather than a tree - a server is under Application and
+	' under the objects that link to it - and without this the scan
+	' does the same subtree again for each way in.
+	If path <> "" Then
+		If gSeen.Exists(path) Then Exit Sub
+		gSeen.Add path, True
+	End If
+
+	ScanForSubstations item, depth + 1
+
+End Sub
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_config_data.Config.FindPowerSubstations:FindPowerSubstations_OnStartRunning()>
+Sub FindPowerSubstations_OnStartRunning()
+
+	DocString = ""
+
+End Sub
+
+<xatm_config_data.Config.BuildAlarms:BuildAlarms_OnChangedValue()>
+Sub BuildAlarms_OnChangedValue()
+
+	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub
+	If Trim(CStr(Value)) = "" Then Exit Sub
+
+	Dim ts
+	ts = TimeStamp                         ' preserved for the silent clear
+
+	Dim substationPath
+	substationPath = Trim(CStr(Value))
+
+	Dim substation
+	Set substation = Nothing
+	On Error Resume Next
+	Set substation = Application.GetObject(substationPath)
+	On Error Goto 0
+
+	If substation Is Nothing Then
+		Fail "there is nothing at " & substationPath & ".", ts
+		Exit Sub
+	End If
+
+	' Where the alarms bind. Read from the project rather than assumed,
+	' because the interface sits at the root of the data project in some
+	' layouts and inside XATM_Data in others - and an alarm bound to a
+	' path that is merely plausible is an alarm that never raises.
+	Dim interfaceServer
+	Set interfaceServer = InterfaceRoot()
+
+	If interfaceServer Is Nothing Then
+		Fail "the project has no interface data server, so there is " & _
+		     "nothing for the alarms to bind to.", ts
+		Exit Sub
+	End If
+
+	gInterfaceRoot = interfaceServer.PathName
+
+	' The folder the alarms are built in - emptied and made again rather
+	' than brought up to date, the way the interface is. A device can be
+	' renamed on the Config screen, and a folder named after the name it
+	' used to have cannot be told from one nobody wants any more.
+	Dim folder
+	Set folder = ChildFolder(substation, ALARM_FOLDER)
+
+	If folder Is Nothing Then
+		Fail "the substation would not take a " & ALARM_FOLDER & " folder.", ts
+		Exit Sub
+	End If
+
+	ClearFolder folder
+
+	gFolders = 0
+	gAlarms  = 0
+
+	Dim problem
+	problem = ""
+
+	AlarmFolder folder, Application.GetObject(DATA_ROOT), "", problem
+
+	' Written here rather than left to the Save that persists XATM_Data:
+	' these objects are in the substation's container, which is not the
+	' container holding the automation.
+	On Error Resume Next
+	Err.Clear
+
+	folder.Context("Container").Save()
+
+	If Err.Number <> 0 Then
+		problem = problem & vbCrLf & "  not saved - " & Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+	' Said out loud even when it all went through, for the same reason
+	' the interface rebuild says it: a routine that builds thirteen
+	' alarms and mentions only what it could not build reads the same
+	' whether it ran or was never called.
+	If gAlarms = 0 Then
+		WriteLog "Alarms - nothing is on the alarm table."
+	Else
+		WriteLog "Alarms - " & gAlarms & " on " & gFolders & " objects, under " & _
+		         substationPath & "." & ALARM_FOLDER & "."
+	End If
+
+	If problem <> "" Then
+		WriteLog "Alarms are incomplete:" & problem
+		DocString = EXIT_FAILURE
+		WriteEx Empty, ts
+		Exit Sub
+	End If
+
+	DocString = EXIT_SUCCESS
+	WriteEx Empty, ts                      ' clear without re-firing
+
+End Sub
+
+
+' The folder the alarms are built in, under the chosen PowerSubstation.
+Const ALARM_FOLDER   = "XATM_Alarms"
+
+' What an alarm is made of: a tag carrying the reading, and the source
+' on it that turns a change of the reading into an event.
+Const ALARM_FOLDER_CLASS = "DataFolder"
+Const ALARM_TAG_CLASS    = "InternalTag"
+Const ALARM_SOURCE_CLASS = "DigitalAlarmSource"
+Const ALARM_SOURCE_NAME  = "Alarm"
+
+Const DATA_ROOT          = "XATM_Data"
+Const CONFIG_DATA        = "xatm_config_data"
+Const HELPER_FOLDER      = "PropertiesHelper"
+
+Const INTERFACE_ROOT     = "XATM_Interface"
+Const INTERFACE_ROOT_ALT = "XATM_Data.XATM_Interface"
+
+Const EXIT_SUCCESS       = "EXIT_SUCCESS"
+Const EXIT_FAILURE       = "EXIT_FAILURE"
+
+' Anything at or above this has to be acknowledged. A status the control
+' room is merely told about - a sequence being in progress - is not
+' something to make an operator clear off the list by hand.
+Const ACK_FROM_SEVERITY  = 500
+
+' Where the interface was found this run, as the head of every path the
+' alarms bind to.
+Dim gInterfaceRoot
+
+' What the last build came out at, for the line it writes to the log.
+Dim gFolders
+Dim gAlarms
+
+
+' One folder of the data project: an alarm for every object in it a
+' manifest speaks for, and then the same for whatever is under it.
+'
+' The walk the interface rebuild does, over the same tree and reading
+' the same manifests - so the folders come out shaped alike and an
+' alarm is found where the tree says its device is.
+Sub AlarmFolder(root, folder, path, problem)
+
+	Dim item, bag
+
+	For Each item In folder
+
+		Set bag = ManifestOf(TypeName(item))
+
+		If Not bag Is Nothing Then
+
+			AlarmObject root, path, item, bag, problem
+
+		Else
+
+			On Error Resume Next
+			AlarmFolder root, item, ChildPath(path, item.Name), problem
+			On Error Goto 0
+
+		End If
+
+	Next
+
+End Sub
+
+
+' One name onto a path, and the first name is the whole of it.
+Function ChildPath(path, objectName)
+
+	If path = "" Then
+		ChildPath = objectName
+	Else
+		ChildPath = path & "." & objectName
+	End If
+
+End Function
+
+
+' The folder at a path under the alarm root, each level made where it is
+' not already there. An object with nothing on the alarm table gets no
+' folder, rather than an empty one to wonder about.
+Function EnsureFolder(root, path, problem)
+
+	Set EnsureFolder = root
+	If path = "" Then Exit Function
+
+	Dim names
+	names = Split(path, ".")
+
+	Dim parent, child, i
+	Set parent = root
+
+	For i = 0 To UBound(names)
+
+		Set child = Nothing
+
+		On Error Resume Next
+		Set child = parent.Item(names(i))
+		On Error Goto 0
+
+		If child Is Nothing Then Set child = NewChild(parent, ALARM_FOLDER_CLASS, names(i))
+
+		If child Is Nothing Then
+			problem = problem & vbCrLf & "  no folder for " & path
+			Set EnsureFolder = Nothing
+			Exit Function
+		End If
+
+		Set parent = child
+
+	Next
+
+	Set EnsureFolder = parent
+
+End Function
+
+
+' One object's folder, and an alarm in it for each property the manifest
+' puts on the alarm table.
+Sub AlarmObject(root, path, obj, bag, problem)
+
+	Dim key, p
+
+	Dim wanted
+	wanted = False
+
+	For Each key In bag.Keys
+		If bag(key).IsAlarmed() Then wanted = True
+	Next
+
+	If Not wanted Then Exit Sub
+
+	Dim parent
+	Set parent = EnsureFolder(root, path, problem)
+	If parent Is Nothing Then Exit Sub
+
+	Dim folder
+	Set folder = NewChild(parent, ALARM_FOLDER_CLASS, obj.Name)
+
+	If folder Is Nothing Then
+		problem = problem & vbCrLf & "  no folder for " & obj.Name
+		Exit Sub
+	End If
+
+	gFolders = gFolders + 1
+
+	' Where this object's readings are on the interface. The alarms bind
+	' there and never to the XObject: the interface is where the Elipse
+	' application meets the automation, and an alarm is the application
+	' asking to be told about a reading.
+	Dim interfacePath
+	interfacePath = gInterfaceRoot & "." & ChildPath(path, obj.Name)
+
+	For Each key In bag.Keys
+
+		Set p = bag(key)
+		If p.IsAlarmed() Then AlarmTag folder, interfacePath, obj, p, problem
+
+	Next
+
+End Sub
+
+
+' One alarm for one property: a tag that reads the interface, and the
+' source on it that turns a change into an event.
+Sub AlarmTag(folder, interfacePath, obj, p, problem)
+
+	Dim source
+	source = interfacePath & "." & p.Name
+
+	' Checked before it is bound to. The interface is emptied and rebuilt
+	' on every Save, so alarms built before that rebuild would bind to
+	' tags on their way out - and a link to a tag that is not there fails
+	' quietly, leaving an alarm that simply never raises. Better to say
+	' so here than to hand over a substation that looks alarmed and is not.
+	Dim target
+	Set target = Nothing
+	On Error Resume Next
+	Set target = Application.GetObject(source)
+	On Error Goto 0
+
+	If target Is Nothing Then
+		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
+		          " has no interface tag at " & source
+		Exit Sub
+	End If
+
+	Dim tag
+	Set tag = NewChild(folder, ALARM_TAG_CLASS, p.Name)
+
+	If tag Is Nothing Then
+		problem = problem & vbCrLf & "  no tag for " & obj.Name & "." & p.Name
+		Exit Sub
+	End If
+
+	On Error Resume Next
+	Err.Clear
+
+	tag.Links.CreateLink "Value", source
+
+	If Err.Number <> 0 Then
+		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
+		          " would not bind to " & source & " - " & Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+	Dim alarm
+	Set alarm = NewChild(tag, ALARM_SOURCE_CLASS, ALARM_SOURCE_NAME)
+
+	If alarm Is Nothing Then
+		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
+		          " would not take a " & ALARM_SOURCE_CLASS
+		Exit Sub
+	End If
+
+	' Each written on its own and reported on its own. What this version
+	' of Power accepts is what decides the shape of an alarm, and a
+	' property it does not know should cost that one setting rather than
+	' the whole alarm.
+	Dim where
+	where = obj.Name & "." & p.Name
+
+	SetMember alarm, "DigitalLimit",             p.AlarmLimit(),      where, problem
+	SetMember alarm, "DigitalMessageText",       p.AlarmActiveText(), where, problem
+	SetMember alarm, "DigitalReturnMessageText", p.AlarmNormalText(), where, problem
+	SetMember alarm, "DigitalSeverity",          p.AlarmSeverity,     where, problem
+	SetMember alarm, "DigitalAckRequired", _
+	          (p.AlarmSeverity >= ACK_FROM_SEVERITY), where, problem
+
+	gAlarms = gAlarms + 1
+
+End Sub
+
+
+' One setting onto the alarm source, late-bound the way the import
+' writes a property, and named in the log when it will not take.
+Sub SetMember(alarm, memberName, newValue, where, problem)
+
+	gMemberValue = newValue
+
+	On Error Resume Next
+	Err.Clear
+
+	Execute "alarm." & memberName & " = gMemberValue"
+
+	If Err.Number <> 0 Then
+		problem = problem & vbCrLf & "  " & where & " would not take " & _
+		          memberName & " - " & Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+End Sub
+
+' Scratch cell for the late-bound write done through Execute, the way
+' the interface rebuild keeps one.
+Dim gMemberValue
+
+
+' A child of a container by name, made where it is not already there.
+Function ChildFolder(parent, folderName)
+
+	Set ChildFolder = Nothing
+
+	On Error Resume Next
+	Set ChildFolder = parent.Item(folderName)
+	On Error Goto 0
+
+	If Not ChildFolder Is Nothing Then Exit Function
+
+	Set ChildFolder = NewChild(parent, ALARM_FOLDER_CLASS, folderName)
+
+End Function
+
+
+' Empties a folder. Taken out in a second pass, because a collection is
+' not walked while what is in it is being removed.
+Sub ClearFolder(folder)
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim item
+	For Each item In folder
+		doomed.Add doomed.Count, item.Name
+	Next
+
+	Dim n
+	For Each n In doomed.Keys
+
+		On Error Resume Next
+		folder.DeleteObject doomed(n)
+		On Error Goto 0
+
+	Next
+
+End Sub
+
+
+' A new child of a container, Nothing when it would not take one -
+' AddObject(ClassName, [Activate], [ObjectName]).
+Function NewChild(parent, className, objectName)
+
+	Set NewChild = Nothing
+
+	On Error Resume Next
+	Set NewChild = parent.AddObject(className, True, objectName)
+	On Error Goto 0
+
+End Function
+
+
+' The data server the interface was built in. Named at the root of the
+' data project, and looked for inside XATM_Data as well, because which
+' of the two it sits under is a matter of how the project was laid out.
+Function InterfaceRoot()
+
+	Set InterfaceRoot = Nothing
+
+	On Error Resume Next
+	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT)
+	On Error Goto 0
+
+	If Not InterfaceRoot Is Nothing Then Exit Function
+
+	On Error Resume Next
+	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT_ALT)
+	On Error Goto 0
+
+End Function
+
+
+' The manifest declared for a class, or Nothing when the class has none -
+' the same lookup the export, the import and the interface do.
+Function ManifestOf(className)
+
+	Set ManifestOf = Nothing
+
+	On Error Resume Next
+	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
+	On Error Goto 0
+
+End Function
+
+
+' Said, logged, and the command cleared, for a build that got nowhere.
+Sub Fail(message, ts)
+
+	DocString = EXIT_FAILURE
+	WriteLog message
+	WriteEx Empty, ts
+
+End Sub
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_config_data.Config.BuildAlarms:BuildAlarms_OnStartRunning()>
+Sub BuildAlarms_OnStartRunning()
+
+	DocString = ""
+
+End Sub
+
 <xatm_config_data.Config.UpdateTreeviewSignal:UpdateTreeviewSignal_OnStartRunning()>
 Sub UpdateTreeviewSignal_OnStartRunning()
 	
@@ -1875,6 +2521,29 @@ Sub xatm_BTC_OnStartRunning()
 	SetExposure bag, "CommandStartNM",       EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
 	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
 
+
+	' --- what the operator is alarmed on --------------------------------
+	'
+	' The automation talking about itself, which is what the control room
+	' wants from it: a step that would not execute, whatever is holding a
+	' start back, and whether a sequence is on.
+	'
+	' Running is here as a status and not a fault - low severity, and a
+	' pair reading PARADO and EM OPERAÇÃO rather than NORMAL and
+	' ATUADO, because nothing about a sequence in progress is abnormal.
+	'
+	' Preconditions is the one that raises on False. It is True while the
+	' maneuver is permitted, so PAIR_PRECONDITION carries a limit of 0.
+	SetAlarm bag, "GeneralBlock",   "BLOQUEIO GERAL",      PAIR_BLOCKED,      SEV_HIGH
+	SetAlarm bag, "OperatorBlock",  "BLOQUEIO OPERADOR",   PAIR_BLOCKED,      SEV_MEDIUM
+	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO", PAIR_BLOCKED,      SEV_MEDIUM
+	SetAlarm bag, "Preconditions",  "PRECONDIÇÕES",        PAIR_PRECONDITION, SEV_MEDIUM
+	SetAlarm bag, "Running",        "AUTOMATISMO",         PAIR_RUNNING,      SEV_LOW
+
+	For i = 1 To 6
+		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
+	Next
+
 	Set Value = bag
 
 End Sub
@@ -1896,6 +2565,25 @@ Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
 Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
 
 
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "PARADO|EM OPERAÇÃO|1"
+
+' DigitalSeverity. The manifests ask for medium unless the signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_LOW    = 250
+Const SEV_MEDIUM = 500
+Const SEV_HIGH   = 750
+
+
 
 Class PropertyInfo
 
@@ -1905,6 +2593,15 @@ Class PropertyInfo
 	Public Exposure
 	Public HelpEn
 	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
 
 	Public Function Help(lang)
 
@@ -1947,6 +2644,41 @@ Class PropertyInfo
 		IsInterfaced = Has(EXPOSE_INTERFACE)
 	End Function
 
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	' The digital state that raises the alarm - DigitalLimit. It travels
+	' inside the pair rather than beside it, so the words and the state
+	' they describe cannot be changed independently of one another.
+	Public Function AlarmLimit()
+		AlarmLimit = CLng("0" & PairPart(2))
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
+
 	' Empty And anything is 0, so a property nobody classified answers no
 	' to all of these.
 	Private Function Has(flag)
@@ -1974,6 +2706,25 @@ End Sub
 ' What the screen may do with a property. Set apart from AddProperty so
 ' the classifications read as a table, and so changing one never means
 ' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
 Sub SetExposure(bag, name, exposure)
 
 	Dim k
@@ -2142,6 +2893,19 @@ Sub xatm_Breaker_OnStartRunning()
 	' is configuration, so they are interfaced and nothing else.
 	SetExposure bag, "CommandOpenFailed",  EXPOSE_INTERFACE
 	SetExposure bag, "CommandCloseFailed", EXPOSE_INTERFACE
+
+
+	' --- what the operator is alarmed on --------------------------------
+	'
+	' The two command failures and nothing else.
+	'
+	' Defective is deliberately off the list: the PowerSubstation alarms
+	' that condition already, and a second source on it puts one event on
+	' the operator's list twice. Position is a state rather than an event
+	' - the panel draws it, and an alarm per position change would be
+	' noise the control room learns to ignore.
+	SetAlarm bag, "CommandOpenFailed",  "FALHA ABERTURA",   PAIR_ACTUATED, SEV_HIGH
+	SetAlarm bag, "CommandCloseFailed", "FALHA FECHAMENTO", PAIR_ACTUATED, SEV_HIGH
 	
 	Set Value = bag
 
@@ -2164,6 +2928,25 @@ Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
 Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
 
 
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "PARADO|EM OPERAÇÃO|1"
+
+' DigitalSeverity. The manifests ask for medium unless the signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_LOW    = 250
+Const SEV_MEDIUM = 500
+Const SEV_HIGH   = 750
+
+
 Class PropertyInfo
 
 	Public Name
@@ -2172,6 +2955,15 @@ Class PropertyInfo
 	Public Exposure
 	Public HelpEn
 	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
 
 	Public Function Help(lang)
 
@@ -2213,6 +3005,41 @@ Class PropertyInfo
 	Public Function IsInterfaced()
 		IsInterfaced = Has(EXPOSE_INTERFACE)
 	End Function
+
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	' The digital state that raises the alarm - DigitalLimit. It travels
+	' inside the pair rather than beside it, so the words and the state
+	' they describe cannot be changed independently of one another.
+	Public Function AlarmLimit()
+		AlarmLimit = CLng("0" & PairPart(2))
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
 	
 	' Empty And anything is 0, so a property nobody classified answers no
 	' to all of these.
@@ -2241,6 +3068,25 @@ End Sub
 ' What the screen may do with a property. Set apart from AddProperty so
 ' the classifications read as a table, and so changing one never means
 ' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
 Sub SetExposure(bag, name, exposure)
 
 	Dim k
@@ -2307,6 +3153,25 @@ Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never save
 Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
 Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
 
+
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "PARADO|EM OPERAÇÃO|1"
+
+' DigitalSeverity. The manifests ask for medium unless the signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_LOW    = 250
+Const SEV_MEDIUM = 500
+Const SEV_HIGH   = 750
+
 Class PropertyInfo
 
 	Public Name
@@ -2315,6 +3180,15 @@ Class PropertyInfo
 	Public Exposure
 	Public HelpEn
 	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
 
 	Public Function Help(lang)
 
@@ -2356,6 +3230,41 @@ Class PropertyInfo
 	Public Function IsInterfaced()
 		IsInterfaced = Has(EXPOSE_INTERFACE)
 	End Function
+
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	' The digital state that raises the alarm - DigitalLimit. It travels
+	' inside the pair rather than beside it, so the words and the state
+	' they describe cannot be changed independently of one another.
+	Public Function AlarmLimit()
+		AlarmLimit = CLng("0" & PairPart(2))
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
 	
 	' Empty And anything is 0, so a property nobody classified answers no
 	' to all of these.
@@ -2384,6 +3293,25 @@ End Sub
 ' What the screen may do with a property. Set apart from AddProperty so
 ' the classifications read as a table, and so changing one never means
 ' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
 Sub SetExposure(bag, name, exposure)
 
 	Dim k
@@ -4882,6 +5810,150 @@ Sub Foo()
 	
 	
 End Sub
+
+<xatm_config_screens.Config.btnAlarms:btnAlarms_Click()>
+Sub btnAlarms_Click()
+
+	Dim substation
+	substation = ChosenSubstation()
+
+	If substation = "" Then Exit Sub
+
+	' The build runs on the server, for the reason the search did: a
+	' screen cannot make objects in a data server. The substation it
+	' chose travels as the payload.
+	Dim builder
+	Set builder = Nothing
+	On Error Resume Next
+	Set builder = Application.GetObject(BUILD_ALARMS)
+	On Error Goto 0
+
+	If builder Is Nothing Then
+		MsgBox "This project has no " & BUILD_ALARMS & " tag, so the alarms " & _
+		       "cannot be built.", vbCritical, ALARMS_TITLE
+		Exit Sub
+	End If
+
+	builder.WriteEx substation
+
+	If builder.DocString <> EXIT_SUCCESS Then
+		MsgBox "The alarms were not built, or were built only in part - the " & _
+		       "console says which.", vbExclamation, ALARMS_TITLE
+		Exit Sub
+	End If
+
+	MsgBox "The alarms were built on:" & vbCrLf & vbCrLf & substation, _
+	       vbInformation, ALARMS_TITLE
+
+End Sub
+
+
+' The tag that does the looking, and the one it answers on.
+'
+' A screen is a viewer resource: it holds no server objects and cannot
+' walk them, so it cannot find a PowerSubstation itself. It writes to
+' the command tag instead and reads the answer back off the other - the
+' way the Save button gets its work done on the server.
+Const FIND_SUBSTATIONS = "xatm_config_data.Config.FindPowerSubstations"
+Const SUBSTATION_LIST  = "xatm_config_data.Config.PowerSubstationList"
+Const BUILD_ALARMS     = "xatm_config_data.Config.BuildAlarms"
+
+Const EXIT_SUCCESS     = "EXIT_SUCCESS"
+Const ALARMS_TITLE     = "Alarms"
+
+
+' The substation to build the alarms on, or "" when there is none to
+' build on or the operator backed out of choosing.
+Function ChosenSubstation()
+
+	ChosenSubstation = ""
+
+	Dim finder
+	Set finder = Nothing
+	On Error Resume Next
+	Set finder = Application.GetObject(FIND_SUBSTATIONS)
+	On Error Goto 0
+
+	If finder Is Nothing Then
+		MsgBox "This project has no " & FIND_SUBSTATIONS & " tag, so the " & _
+		       "substations cannot be looked for.", vbCritical, ALARMS_TITLE
+		Exit Function
+	End If
+
+	finder.WriteEx True
+
+	If finder.DocString <> EXIT_SUCCESS Then
+		MsgBox "The substations could not be looked for - the console says why.", _
+		       vbCritical, ALARMS_TITLE
+		Exit Function
+	End If
+
+	Dim answer
+	answer = ""
+	On Error Resume Next
+	answer = CStr(Application.GetObject(SUBSTATION_LIST).Value)
+	On Error Goto 0
+
+	If Trim(answer) = "" Then
+		MsgBox "No PowerSubstation was found in this domain.", _
+		       vbExclamation, ALARMS_TITLE
+		Exit Function
+	End If
+
+	Dim found
+	found = Split(answer, vbCrLf)
+
+	If UBound(found) = 0 Then
+		ChosenSubstation = found(0)
+		Exit Function
+	End If
+
+	ChosenSubstation = PickSubstation(found)
+
+End Function
+
+
+' Which of several, asked as a number against a numbered list.
+'
+' An InputBox is what a viewer has to ask with, so the list goes into
+' the prompt and the answer comes back as free text - checked here,
+' because anything at all can be typed into one.
+Function PickSubstation(found)
+
+	PickSubstation = ""
+
+	Dim prompt, i
+	prompt = "More than one PowerSubstation was found." & vbCrLf & _
+	         "Type the number of the one to build the alarms on:" & vbCrLf & vbCrLf
+
+	For i = 0 To UBound(found)
+		prompt = prompt & "  " & (i + 1) & " - " & found(i) & vbCrLf
+	Next
+
+	Dim reply
+	reply = InputBox(prompt, ALARMS_TITLE, "1")
+
+	' Cancel and an empty box both come back "", and neither is a choice.
+	If Trim(reply) = "" Then Exit Function
+
+	If Not IsNumeric(reply) Then
+		MsgBox "'" & reply & "' is not one of the numbers on the list.", _
+		       vbExclamation, ALARMS_TITLE
+		Exit Function
+	End If
+
+	Dim choice
+	choice = CLng(reply)
+
+	If choice < 1 Or choice > UBound(found) + 1 Then
+		MsgBox "There is no " & choice & " on the list.", _
+		       vbExclamation, ALARMS_TITLE
+		Exit Function
+	End If
+
+	PickSubstation = found(choice - 1)
+
+End Function
 
 <xatm_config_screens.Config:Config_OnPreShow(Arg)>
 Sub Config_OnPreShow(Arg)
