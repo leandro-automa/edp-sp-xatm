@@ -1,8 +1,8 @@
 -----------------------
-Documentaï¿½ï¿½o de Scripts
+Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Fri Aug  7 14:18:31 2026
+Wed Aug 12 11:19:09 2026
 -----------------------
 
 <xatm_BTC.Commands.Reset:Reset_OnChangedTimeStamp()>
@@ -90,36 +90,20 @@ Sub WriteLog(message)
 	
 End Sub
 
-<xatm_BTC.Commands.Start:Start_CommandReset()>
-Sub Start_CommandReset()
-
-	' The Reset tag beside this one already does the work - the latched
-	' step failures, the general block, the FSM tags and every breaker in
-	' the substation. Asking it rather than repeating it is what keeps a
-	' reset from a screen and a reset from anywhere else the same reset.
-	On Error Resume Next
-	Parent.Item("Reset").WriteEx True
-	On Error Goto 0
-
-End Sub
-
-<xatm_BTC.Commands.Start:Start_CommandStartNM()>
-Sub Start_CommandStartNM()
-
-	StartMode "NM"
-
-End Sub
-
-<xatm_BTC.Commands.Start:Start_CommandStartTM()>
-Sub Start_CommandStartTM()
-
-	StartMode "TM"
-
+<xatm_BTC.Commands.Reset:Reset_Reset()>
+Sub Reset_Reset()
+	
+	If xatm_BTC.CommandReset.Value = 0 Then Exit Sub
+	
+	WriteEx True
+		
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandOperatorBlock()>
 Sub Start_CommandOperatorBlock()
-
+	
+	If xatm_BTC.CommandOperatorBlock.Value = 0 Then Exit Sub
+	
 	' A command is a moment and not a state, so this turns the lock over
 	' rather than setting it - one command that blocks and releases, the
 	' way the buttons on the symbols already work.
@@ -130,7 +114,25 @@ Sub Start_CommandOperatorBlock()
 	Else
 		WriteLog "Released by operator."
 	End If
+	
+End Sub
 
+<xatm_BTC.Commands.Start:Start_CommandStartNM()>
+Sub Start_CommandStartNM()
+	
+	If xatm_BTC.CommandStartNM.Value = 0 Then Exit Sub
+	
+	StartMode "NM"
+	
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandStartTM()>
+Sub Start_CommandStartTM()
+
+	If xatm_BTC.CommandStartTM.Value = 0 Then Exit Sub
+
+	StartMode "TM"
+	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_OnChangedValue()>
@@ -283,6 +285,7 @@ Function AnyOtherAutomationRunning()
 
 End Function
 
+
 ' Asks for a maneuver by writing the very tag this runs on.
 '
 ' Start_OnChangedValue is what reads it, so every gate it keeps - enabled,
@@ -345,7 +348,6 @@ Function BoundTransformerId(ByRef found)
 	found = True
 
 End Function
-
 
 ' Logs the rejection and clears the trigger without re-firing.
 ' Uses the explicit tag path (not Me) so it is safe to call from a helper.
@@ -3005,7 +3007,7 @@ Sub Reset_OnChangedTimeStamp()
 		End If
 		
 	Next
-
+	
 	' ================
 	' RESET COMMAND FAILURES
 	' ================
@@ -3014,7 +3016,7 @@ Sub Reset_OnChangedTimeStamp()
 	' command would be gone before anybody saw it.
 	xatm_Breaker.CommandOpenFailed  = False
 	xatm_Breaker.CommandCloseFailed = False
-
+	
 End Sub
 
 <xatm_Breaker.Data.Timers.CommandTimer:CommandTimer_Counter()>
@@ -3133,7 +3135,7 @@ Sub xatm_ConsoleLogEngine_OnWriteLineChanged()
     
     If currentSize < MAX_LINES Then
         
-        ' Array still growing ï¿½ just append
+        ' Array still growing — just append
         index = currentSize
         ReDim Preserve contentArr(currentSize)
         
@@ -3141,7 +3143,7 @@ Sub xatm_ConsoleLogEngine_OnWriteLineChanged()
         
         index = MAX_LINES - 1
 
-        ' Array at capacity ï¿½ shift and append
+        ' Array at capacity — shift and append
         Dim j
         For j = 0 To MAX_LINES - 2
             contentArr(j) = contentArr(j + 1)

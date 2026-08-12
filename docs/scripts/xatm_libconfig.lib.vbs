@@ -1,8 +1,8 @@
 -----------------------
-Documentaï¿½ï¿½o de Scripts
+Documentação de Scripts
 -----------------------
 XATM_LIBCONFIG (C:\ProjDev\edp_sp\xatm_libconfig.lib)
-Tue Aug 11 11:41:53 2026
+Wed Aug 12 11:18:51 2026
 -----------------------
 
 <xatm_BTCStatus.Source:xatm_BTCStatus_OnSourceChanged()>
@@ -200,6 +200,37 @@ Sub btnPickTag_Click()
 End Sub
 
 
+' The command tag in xatm_config that owns the document, and the kind of
+' edit this button sends. Written out again here because one E3 object
+' cannot call another's, and a library has no other way up to the project
+' it runs under.
+Const SET_PROPERTY   = "xatm_config_data.Config.SetProperty"
+Const PROPERTY_VALUE = "xatm_config_data.Config.PropertyValue"
+Const KIND_SOURCE    = "source"
+Const EXIT_SUCCESS   = "EXIT_SUCCESS"
+
+
+' Scratch cell for the association written through Execute. The property
+' is named at runtime, so the line is built as text, and an object has to
+' be waiting in a variable for it to name.
+Dim gPickedTag
+
+
+' How much of a path the source column has room for - the same cut the
+' row makes for itself when it is built.
+Const MAX_SOURCE_LENGTH = 128
+
+Function SourceText(path)
+
+	If Len(path) > MAX_SOURCE_LENGTH Then
+		SourceText = Left(path, MAX_SOURCE_LENGTH - 3) & "..."
+	Else
+		SourceText = CStr(path)
+	End If
+
+End Function
+
+
 ' Stages the association in the document, on the two tags every other
 ' edit on this panel travels on: the path on one, and the command that
 ' reads it on the other.
@@ -246,37 +277,6 @@ Sub SendSource(path)
 	End If
 
 End Sub
-
-
-' The command tag in xatm_config that owns the document, and the kind of
-' edit this button sends. Written out again here because one E3 object
-' cannot call another's, and a library has no other way up to the project
-' it runs under.
-Const SET_PROPERTY   = "xatm_config_data.Config.SetProperty"
-Const PROPERTY_VALUE = "xatm_config_data.Config.PropertyValue"
-Const KIND_SOURCE    = "source"
-Const EXIT_SUCCESS   = "EXIT_SUCCESS"
-
-
-' Scratch cell for the association written through Execute. The property
-' is named at runtime, so the line is built as text, and an object has to
-' be waiting in a variable for it to name.
-Dim gPickedTag
-
-
-' How much of a path the source column has room for - the same cut the
-' row makes for itself when it is built.
-Const MAX_SOURCE_LENGTH = 40
-
-Function SourceText(path)
-
-	If Len(path) > MAX_SOURCE_LENGTH Then
-		SourceText = Left(path, MAX_SOURCE_LENGTH - 3) & "..."
-	Else
-		SourceText = CStr(path)
-	End If
-
-End Function
 
 <xatm_PropertyRow.txtConfiguredValue:txtConfiguredValue_Validate(Cancel, NewValue)>
 Sub txtConfiguredValue_Validate(Cancel, NewValue)
@@ -589,6 +589,7 @@ Function PicksTag()
 End Function
 
 
+
 ' Shows or hides one of the row's objects, and says nothing when the
 ' control has not been given it - so a row still builds while a button
 ' is only half added to it in Studio.
@@ -612,14 +613,14 @@ Function ConfiguredText()
 	ConfiguredText = ""
 
 	If IsObjectProperty() Then Exit Function
-
+	
 	' A tag property has no value of its own to configure - the tag it is
 	' wired to is the whole of it, and that belongs in the source column.
 	' Asked here rather than left to the document, so a row built from an
 	' export written before this was understood shows a blank field and
 	' not a path in the wrong column.
 	If IsTagProperty() Then Exit Function
-
+	
 	If IsEmpty(Value) Or IsNull(Value) Then Exit Function
 
 	ConfiguredText = CStr(Value)

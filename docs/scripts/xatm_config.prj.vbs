@@ -1,8 +1,8 @@
 -----------------------
-Documentaï¿½ï¿½o de Scripts
+Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Tue Aug 11 11:42:18 2026
+Wed Aug 12 11:18:24 2026
 -----------------------
 
 <xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
@@ -564,18 +564,8 @@ End Sub
 
 
 ' Puts one value onto an object, late-bound, the way ReadProperty takes
-' one off.
-'
-' A property typed xatm_ points at another object, but what it is given
-' is that object's path and not the object: E3 refuses a Set here, and
-' says only that the object does not support the property. Reading one
-' back is the other way about - ReadProperty does Set and gets an object -
-' so the two are not symmetric, however much they look it.
-'
-' The object is still looked up before the path is written. That is what
-' catches a path the document carries and the project no longer has, and
-' what turns whatever was written into the PathName E3 itself answers
-' with, brackets and all.
+' one off. A property typed xatm_ holds the path of another object, so it
+' is an association and has to be Set rather than assigned.
 Sub WriteValue(obj, name, dataType, newValue, report, where)
 
 	Dim failed
@@ -1645,7 +1635,6 @@ Function IsLinkType(dataType)
 
 End Function
 
-
 ' Value of a property, read late-bound because E3 has no
 ' GetProperty. An object-typed property exports as the path of
 ' the object it points at.
@@ -1788,55 +1777,47 @@ Sub xatm_BTC_OnStartRunning()
 
 	AddProperty bag, "Enabled", "Boolean", True, _
 		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
-		"Habilitaï¿½ï¿½o geral deste automatismo. Pedidos de partida sï¿½o recusados e a sequï¿½ncia em andamento para enquanto estiver False."
+		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
 
 	AddProperty bag, "Running", "Boolean", False, _
 		"True while a sequence is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
-		"True enquanto uma sequï¿½ncia estï¿½ em andamento. Lido pelos demais automatismos para exclusï¿½o mï¿½tua, de modo que apenas um execute por vez."
+		"True enquanto uma sequência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
 
 	AddProperty bag, "Transformer", "xatm_Transformer", Empty, _
 		"Transformer XObject this automation instance is bound to.", _
-		"XObject do transformador ao qual esta instï¿½ncia do automatismo estï¿½ vinculada."
+		"XObject do transformador ao qual esta instância do automatismo está vinculada."
 	
 	AddProperty bag, "Preconditions", "Boolean", True, _
 		"Field conditions that have to hold before a sequence may start. Bound to an expression - True while the maneuver is permitted.", _
-		"Condiï¿½ï¿½es de campo que devem valer antes de uma sequï¿½ncia partir. Vinculada a uma expressï¿½o - True enquanto a manobra ï¿½ permitida."
+		"Condições de campo que devem valer antes de uma sequência partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
 
 	AddProperty bag, "OperatorBlock", "Boolean", False, _
 		"Operator lock. Blocks the start until the operator releases it.", _
-		"Bloqueio do operador. Impede a partida atï¿½ que o operador libere."
+		"Bloqueio do operador. Impede a partida até que o operador libere."
 
 	AddProperty bag, "GeneralBlock", "Boolean", False, _
 		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
-		"Intertravamento geral. Impede a partida e ï¿½ selado por uma falha de passo atï¿½ que o Reset o apague."
+		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
 		
 	
 	AddProperty bag, "AutomaticBlock", "Boolean", False, _
 		"Field conditions that block the automation. Bound to an expression - True keeps a sequence from starting, alongside OperatorBlock and GeneralBlock.", _
-		"Condiï¿½ï¿½es de campo que bloqueiam o automatismo. Vinculada a uma expressï¿½o - True impede a partida, junto com OperatorBlock e GeneralBlock."
+		"Condições de campo que bloqueiam o automatismo. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
+
 
 	' --- the command interface -----------------------------------------
-	'
-	' What a screen writes to ask this automation for something. They are
-	' tags of the object and not values on it: a command is a moment, and
-	' the object clears it once it has been read, which is what a tag does
-	' and a property does not.
-	'
-	' There is no TA among them. A TA is asked for by the switchyard - the
-	' transformer's protection trips and the trigger comes from there - so
-	' there is nothing for a screen to write.
 
 	AddProperty bag, "CommandReset", "InternalTag", Empty, _
 		"Reset command. Clears the latched step failures and the general block, so that a sequence can be started again.", _
-		"Comando de reset. Apaga as falhas seladas de passo e o bloqueio geral, para que uma sequÃªncia possa partir novamente."
+		"Comando de reset. Apaga as falhas seladas de passo e o bloqueio geral, para que uma sequência possa partir novamente."
 
 	AddProperty bag, "CommandStartTM", "InternalTag", Empty, _
 		"Start command for a manual transfer. Written by the operator's screen to ask for the maneuver.", _
-		"Comando de partida da transferÃªncia manual. Escrito pela tela do operador para pedir a manobra."
+		"Comando de partida da transferência manual. Escrito pela tela do operador para pedir a manobra."
 
 	AddProperty bag, "CommandStartNM", "InternalTag", Empty, _
 		"Start command for a manual normalisation. Written by the operator's screen to ask for the maneuver.", _
-		"Comando de partida da normalizaÃ§Ã£o manual. Escrito pela tela do operador para pedir a manobra."
+		"Comando de partida da normalização manual. Escrito pela tela do operador para pedir a manobra."
 
 	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
 		"Operator lock command. Written by the operator's screen to set or release OperatorBlock.", _
@@ -1847,7 +1828,7 @@ Sub xatm_BTC_OnStartRunning()
 
 		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
 			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
-			"Falha selada do passo " & i & ". Marcada quando o passo nï¿½o executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
+			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
 
 	Next
 	
@@ -1961,7 +1942,7 @@ Class PropertyInfo
 	Public Function IsSaved()
 		IsSaved = Has(EXPOSE_SAVED)
 	End Function
-
+	
 	Public Function IsInterfaced()
 		IsInterfaced = Has(EXPOSE_INTERFACE)
 	End Function
@@ -2012,27 +1993,27 @@ Sub xatm_Breaker_OnStartRunning()
 
 	AddProperty bag, "Id", "Integer", Empty, _
 		"Unique numeric identifier used by the automation to locate this breaker.", _
-		"Identificador numï¿½rico ï¿½nico usado pelo automatismo para localizar este disjuntor."
+		"Identificador numérico único usado pelo automatismo para localizar este disjuntor."
 
 	AddProperty bag, "PositionOpen", "IOTag", Empty, _
 		"Open-position input of relay 1. Double-point word, or the 52b contact when UseDoublePoints is False.", _
-		"Entrada de posiï¿½ï¿½o aberto do relï¿½ 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
+		"Entrada de posição aberto do relé 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
 
 	AddProperty bag, "PositionClosed", "IOTag", Empty, _
 		"Closed-position input of relay 1. Double-point word, or the 52a contact when UseDoublePoints is False.", _
-		"Entrada de posiï¿½ï¿½o fechado do relï¿½ 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
+		"Entrada de posição fechado do relé 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
 
 	AddProperty bag, "PositionOpenAlt", "IOTag", Empty, _
 		"Open-position input of relay 2. Leave empty when there is no redundant relay.", _
-		"Entrada de posiï¿½ï¿½o aberto do relï¿½ 2. Deixe vazio quando nï¿½o houver relï¿½ redundante."
+		"Entrada de posição aberto do relé 2. Deixe vazio quando não houver relé redundante."
 
 	AddProperty bag, "PositionClosedAlt", "IOTag", Empty, _
 		"Closed-position input of relay 2. Leave empty when there is no redundant relay.", _
-		"Entrada de posiï¿½ï¿½o fechado do relï¿½ 2. Deixe vazio quando nï¿½o houver relï¿½ redundante."
+		"Entrada de posição fechado do relé 2. Deixe vazio quando não houver relé redundante."
 
 	AddProperty bag, "UseDoublePoints", "Boolean", True, _
 		"True - position comes from a double-point word. False - position comes from the 52a/52b contact pair.", _
-		"True - a posiï¿½ï¿½o vem de uma palavra de duplo ponto. False - a posiï¿½ï¿½o vem do par de contatos 52a/52b."
+		"True - a posição vem de uma palavra de duplo ponto. False - a posição vem do par de contatos 52a/52b."
 
 	AddProperty bag, "RawValueOpen", "Integer", 2, _
 		"Raw value from the driver that means OPEN.", _
@@ -2044,52 +2025,52 @@ Sub xatm_Breaker_OnStartRunning()
 
 	AddProperty bag, "NormalState", "EdbSwitchState", 1, _
 		"Normal state of the equipment. Reference for normalisation and for Simulation Mode.", _
-		"Estado normal do equipamento. Referï¿½ncia para a normalizaï¿½ï¿½o e para o Modo Simulaï¿½ï¿½o."
+		"Estado normal do equipamento. Referência para a normalização e para o Modo Simulação."
 
 	AddProperty bag, "CommandTimeout", "Integer", 40, _
 		"Command supervision window in seconds. The command is re-sent once at half the window and fails when it expires.", _
-		"Janela de supervisï¿½o do comando em segundos. O comando ï¿½ reenviado uma vez na metade da janela e falha ao expirar."
+		"Janela de supervisão do comando em segundos. O comando é reenviado uma vez na metade da janela e falha ao expirar."
 
 	AddProperty bag, "RawValueCommandOpen", "Integer", 0, _
 		"Raw value written to the open (trip) output.", _
-		"Valor bruto escrito na saï¿½da de abertura (trip)."
+		"Valor bruto escrito na saída de abertura (trip)."
 
 	AddProperty bag, "RawValueCommandClose", "Integer", 1, _
 		"Raw value written to the close output.", _
-		"Valor bruto escrito na saï¿½da de fechamento."
+		"Valor bruto escrito na saída de fechamento."
 
 	AddProperty bag, "CommandOpen", "IOTag", Empty, _
 		"Open (trip) output of relay 1. Falls back to relay 2 when empty.", _
-		"Saï¿½da de abertura (trip) do relï¿½ 1. Recorre ao relï¿½ 2 quando vazio."
+		"Saída de abertura (trip) do relé 1. Recorre ao relé 2 quando vazio."
 
 	AddProperty bag, "CommandSBOOpen", "IOTag", Empty, _
 		"Select tag for the open command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
-		"Tag de seleï¿½ï¿½o do comando de abertura no relï¿½ 1. Opcional - o Select-Before-Operate sï¿½ ocorre quando preenchido."
+		"Tag de seleção do comando de abertura no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
 
 	AddProperty bag, "CommandOpenAlt", "IOTag", Empty, _
 		"Open (trip) output of relay 2. Used when relay 1 is unavailable.", _
-		"Saï¿½da de abertura (trip) do relï¿½ 2. Usada quando o relï¿½ 1 estï¿½ indisponï¿½vel."
+		"Saída de abertura (trip) do relé 2. Usada quando o relé 1 está indisponível."
 
 	AddProperty bag, "CommandSBOOpenAlt", "IOTag", Empty, _
 		"Select tag for the open command on relay 2. Optional.", _
-		"Tag de seleï¿½ï¿½o do comando de abertura no relï¿½ 2. Opcional."
+		"Tag de seleção do comando de abertura no relé 2. Opcional."
 
 	AddProperty bag, "CommandClose", "IOTag", Empty, _
 		"Close output of relay 1. Falls back to relay 2 when empty.", _
-		"Saï¿½da de fechamento do relï¿½ 1. Recorre ao relï¿½ 2 quando vazio."
+		"Saída de fechamento do relé 1. Recorre ao relé 2 quando vazio."
 
 	AddProperty bag, "CommandSBOClose", "IOTag", Empty, _
 		"Select tag for the close command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
-		"Tag de seleï¿½ï¿½o do comando de fechamento no relï¿½ 1. Opcional - o Select-Before-Operate sï¿½ ocorre quando preenchido."
+		"Tag de seleção do comando de fechamento no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
 
 	AddProperty bag, "CommandCloseAlt", "IOTag", Empty, _
 		"Close output of relay 2. Used when relay 1 is unavailable.", _
-		"Saï¿½da de fechamento do relï¿½ 2. Usada quando o relï¿½ 1 estï¿½ indisponï¿½vel."
+		"Saída de fechamento do relé 2. Usada quando o relé 1 está indisponível."
 
 	AddProperty bag, "CommandSBOCloseAlt", "IOTag", Empty, _
 		"Select tag for the close command on relay 2. Optional.", _
-		"Tag de seleï¿½ï¿½o do comando de fechamento no relï¿½ 2. Opcional."
-
+		"Tag de seleção do comando de fechamento no relé 2. Opcional."
+	
 	' --- what the plant and the automation say back ---------------------
 	'
 	' None of the four is configured with a value. Defective is configured
@@ -2098,19 +2079,19 @@ Sub xatm_Breaker_OnStartRunning()
 
 	AddProperty bag, "Defective", "Boolean", False, _
 		"Equipment is defective and must not be operated. Bound to an expression - not in remote, spring discharged, whatever the panel reports.", _
-		"Equipamento com defeito e que nÃ£o deve ser operado. Vinculada a uma expressÃ£o - fora de remoto, mola descarregada, o que o painel indicar."
+		"Equipamento com defeito e que não deve ser operado. Vinculada a uma expressão - fora de remoto, mola descarregada, o que o painel indicar."
 
 	AddProperty bag, "Position", "Integer", 0, _
 		"Position as the automation reads it: 1 open, 2 closed, 0 neither. Always these three, whatever raw values the protocol carries - the raw ones are configured above and translated into this.", _
-		"PosiÃ§Ã£o como o automatismo a lÃª: 1 aberto, 2 fechado, 0 indefinido. Sempre estes trÃªs, quaisquer que sejam os valores brutos do protocolo - os brutos sÃ£o configurados acima e traduzidos para esta."
+		"Posição como o automatismo a lê: 1 aberto, 2 fechado, 0 indefinido. Sempre estes três, quaisquer que sejam os valores brutos do protocolo - os brutos são configurados acima e traduzidos para esta."
 
 	AddProperty bag, "CommandOpenFailed", "Boolean", False, _
 		"Latched failure of an open command sent by the automation. Set when the breaker does not reach the open position inside CommandTimeout, cleared by Reset.", _
-		"Falha selada de um comando de abertura enviado pelo automatismo. Marcada quando o disjuntor nÃ£o atinge a posiÃ§Ã£o aberta dentro de CommandTimeout, apagada pelo Reset."
+		"Falha selada de um comando de abertura enviado pelo automatismo. Marcada quando o disjuntor não atinge a posição aberta dentro de CommandTimeout, apagada pelo Reset."
 
 	AddProperty bag, "CommandCloseFailed", "Boolean", False, _
 		"Latched failure of a close command sent by the automation. Set when the breaker does not reach the closed position inside CommandTimeout, cleared by Reset.", _
-		"Falha selada de um comando de fechamento enviado pelo automatismo. Marcada quando o disjuntor nÃ£o atinge a posiÃ§Ã£o fechada dentro de CommandTimeout, apagada pelo Reset."
+		"Falha selada de um comando de fechamento enviado pelo automatismo. Marcada quando o disjuntor não atinge a posição fechada dentro de CommandTimeout, apagada pelo Reset."
 
 	' The command outputs are write-only, so they get no EXPOSE_VALUE -
 	' there is nothing to read back. Forcing one sends the raw value
@@ -2142,7 +2123,8 @@ Sub xatm_Breaker_OnStartRunning()
 	SetExposure bag, "CommandSBOClose",      EXPOSE_VIEW + EXPOSE_SAVED
 	SetExposure bag, "CommandCloseAlt",      EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
 	SetExposure bag, "CommandSBOCloseAlt",   EXPOSE_VIEW + EXPOSE_SAVED
-
+	
+	
 	' Defective is configured the way a transformer's relays are: an
 	' expression is written for it on the panel, it can be forced for a
 	' test, and it is never saved - the expression is the configuration
@@ -2160,7 +2142,7 @@ Sub xatm_Breaker_OnStartRunning()
 	' is configuration, so they are interfaced and nothing else.
 	SetExposure bag, "CommandOpenFailed",  EXPOSE_INTERFACE
 	SetExposure bag, "CommandCloseFailed", EXPOSE_INTERFACE
-
+	
 	Set Value = bag
 
 End Sub
@@ -2227,11 +2209,11 @@ Class PropertyInfo
 	Public Function IsSaved()
 		IsSaved = Has(EXPOSE_SAVED)
 	End Function
-
+	
 	Public Function IsInterfaced()
 		IsInterfaced = Has(EXPOSE_INTERFACE)
 	End Function
-
+	
 	' Empty And anything is 0, so a property nobody classified answers no
 	' to all of these.
 	Private Function Has(flag)
@@ -2278,23 +2260,23 @@ Sub xatm_Transformer_OnStartRunning()
 
 	AddProperty bag, "OutOfService", "Boolean", False, _
 		"Transformer is out of service (impediment). The automation reads it to plan the maneuver around this transformer.", _
-		"Transformador fora de serviï¿½o (impedimento). O automatismo o lï¿½ para planejar a manobra sem este transformador."
+		"Transformador fora de serviço (impedimento). O automatismo o lê para planejar a manobra sem este transformador."
 
 	AddProperty bag, "Id", "Integer", Empty, _
 		"Unique numeric identifier used by the automation to locate this transformer.", _
-		"Identificador numï¿½rico ï¿½nico usado pelo automatismo para localizar este transformador."
+		"Identificador numérico único usado pelo automatismo para localizar este transformador."
 
 	AddProperty bag, "LockingOutRelay", "Boolean", False, _
 		"Locking out relay (86) of the transformer is actuated.", _
-		"Relï¿½ de bloqueio (86) do transformador atuado."
+		"Relé de bloqueio (86) do transformador atuado."
 
 	AddProperty bag, "UndervoltageRelay", "Boolean", False, _
 		"Undervoltage relay (27) of the transformer is actuated.", _
-		"Relï¿½ de subtensï¿½o (27) do transformador atuado."
+		"Relé de subtensão (27) do transformador atuado."
 
 	AddProperty bag, "UndervoltageDelay", "Integer", 25, _
 		"Time in seconds the undervoltage (27) condition has to persist before the automation acts on it.", _
-		"Tempo em segundos que a condiï¿½ï¿½o de subtensï¿½o (27) deve permanecer antes que o automatismo atue."
+		"Tempo em segundos que a condição de subtensão (27) deve permanecer antes que o automatismo atue."
 
 	' The three readings take an expression and can be forced for a test,
 	' and none of them is saved - the expression is the configuration.
@@ -2324,7 +2306,6 @@ Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
 Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
 Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
 Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
-
 
 Class PropertyInfo
 
@@ -2371,11 +2352,11 @@ Class PropertyInfo
 	Public Function IsSaved()
 		IsSaved = Has(EXPOSE_SAVED)
 	End Function
-
+	
 	Public Function IsInterfaced()
 		IsInterfaced = Has(EXPOSE_INTERFACE)
 	End Function
-
+	
 	' Empty And anything is 0, so a property nobody classified answers no
 	' to all of these.
 	Private Function Has(flag)
@@ -2421,7 +2402,7 @@ Sub SimulationMode_OnChangedValue()
 
 End Sub
 
-' Returns True if at least one position tag has good quality ï¿½ breaker does NOT need sim mode.
+' Returns True if at least one position tag has good quality — breaker does NOT need sim mode.
 Function AnyBreakerTagHealthy(breaker)
 
     If TagHealthy(breaker.PositionOpen)      Then AnyBreakerTagHealthy = True : Exit Function
@@ -2541,7 +2522,7 @@ Const HELP_LANG = "pt-BR"
 ' The object's own name has no manifest entry, so its help is stated here
 ' the way its exposure is.
 Const NAME_HELP_EN = "The name this object is known by in the project."
-Const NAME_HELP_PT = "Nome pelo qual este objeto ï¿½ conhecido no projeto."
+Const NAME_HELP_PT = "Nome pelo qual este objeto é conhecido no projeto."
 
 ' Where the manifests live - the same place the export and the import
 ' read them from.
@@ -4549,6 +4530,8 @@ Const DATA_ROOT     = "XATM_Data"
 Const CONFIG_DATA   = "xatm_config_data"
 Const HELPER_FOLDER = "PropertiesHelper"
 
+Const SELF_MARK 	= "$XATM$"
+
 ' Scratch cell for the late-bound write done through Execute, the way the
 ' import keeps one.
 Dim gInterfaceTag
@@ -4828,7 +4811,8 @@ Sub InterfaceProperty(folder, obj, p, problem)
 
 	Dim tag
 	Set tag = NewChild(folder, INTERFACE_TAG, p.Name)
-
+	tag.DocString = SELF_MARK
+	
 	If tag Is Nothing Then
 		problem = problem & vbCrLf & "  no tag for " & obj.Name & "." & p.Name
 		Exit Sub
@@ -4895,6 +4879,7 @@ Function ManifestOf(className)
 End Function
 
 Sub Foo()
+	
 	
 End Sub
 
@@ -5805,7 +5790,7 @@ Sub AddArrayContentToList()
     Dim arrSize
     arrSize = UBound(contentArr) + 1
 
-    ' If ListCount >= arrSize, buffer is full and shifted ï¿½ full redraw needed
+    ' If ListCount >= arrSize, buffer is full and shifted — full redraw needed
     If ListCount >= arrSize Then
         Clear()
     End If
