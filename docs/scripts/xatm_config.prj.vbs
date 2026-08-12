@@ -1702,10 +1702,15 @@ Const INTERFACE_ROOT_ALT = "XATM_Data.XATM_Interface"
 Const EXIT_SUCCESS       = "EXIT_SUCCESS"
 Const EXIT_FAILURE       = "EXIT_FAILURE"
 
-' Anything at or above this has to be acknowledged. A status the control
-' room is merely told about - a sequence being in progress - is not
-' something to make an operator clear off the list by hand.
-Const ACK_FROM_SEVERITY  = 500
+' Anything this severe or worse has to be acknowledged. A status the
+' control room is merely told about - a sequence being in progress - is
+' not something to make an operator clear off the list by hand.
+'
+' Tested with <=, because Power's severity scale runs backwards:
+' critical is -2 and low is 2, so "this severe or worse" is the smaller
+' number. Written out as a literal because the SEV_ constants belong to
+' the manifests, and this scope cannot see them.
+Const ACK_FROM_SEVERITY  = 1     ' medium
 
 ' Where the interface was found this run, as the head of every path the
 ' alarms bind to.
@@ -1910,7 +1915,7 @@ Sub AlarmTag(folder, interfacePath, obj, p, problem)
 	SetMember alarm, "DigitalReturnMessageText", p.AlarmNormalText(), where, problem
 	SetMember alarm, "DigitalSeverity",          p.AlarmSeverity,     where, problem
 	SetMember alarm, "DigitalAckRequired", _
-	          (p.AlarmSeverity >= ACK_FROM_SEVERITY), where, problem
+	          (p.AlarmSeverity <= ACK_FROM_SEVERITY), where, problem
 
 	gAlarms = gAlarms + 1
 
@@ -2577,11 +2582,17 @@ Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
 Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
 Const PAIR_RUNNING      = "PARADO|EM OPERAÇÃO|1"
 
-' DigitalSeverity. The manifests ask for medium unless the signal earns
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
 ' otherwise; the overlay is what moves a single alarm off its default.
-Const SEV_LOW    = 250
-Const SEV_MEDIUM = 500
-Const SEV_HIGH   = 750
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
 
 
 
@@ -2938,13 +2949,19 @@ Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
 Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
 Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
 Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
-Const PAIR_RUNNING      = "PARADO|EM OPERAÇÃO|1"
+Const PAIR_RUNNING      = "FINALIZADO|EM ANDAMENTO|1"
 
-' DigitalSeverity. The manifests ask for medium unless the signal earns
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
 ' otherwise; the overlay is what moves a single alarm off its default.
-Const SEV_LOW    = 250
-Const SEV_MEDIUM = 500
-Const SEV_HIGH   = 750
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
 
 
 Class PropertyInfo
@@ -3166,11 +3183,17 @@ Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
 Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
 Const PAIR_RUNNING      = "PARADO|EM OPERAÇÃO|1"
 
-' DigitalSeverity. The manifests ask for medium unless the signal earns
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
 ' otherwise; the overlay is what moves a single alarm off its default.
-Const SEV_LOW    = 250
-Const SEV_MEDIUM = 500
-Const SEV_HIGH   = 750
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
 
 Class PropertyInfo
 
