@@ -1696,6 +1696,19 @@ Const AUTOMATION_TAG_CLASS    = "InternalTag"
 Const ALARM_SOURCE_CLASS      = "DigitalAlarmSource"
 Const ALARM_SOURCE_NAME       = "Alarm"
 
+' How a link carries the value - the BindType argument of CreateLink,
+' which is a Simple Link when it is left off.
+'
+'   simple    source -> property   the tag follows the interface
+'   reverse   property -> source   the interface follows the tag
+'
+' Both are one-way, and both live on the substation tag, so which one is
+' asked for is the whole of the difference between a reading and a
+' command. The link is not moved to the other end for a command - it
+' would be wiped by the next interface rebuild if it were.
+Const LINK_SIMPLE  = 0
+Const LINK_REVERSE = 5
+
 Const DATA_ROOT          = "XATM_Data"
 Const CONFIG_DATA        = "xatm_config_data"
 Const HELPER_FOLDER      = "PropertiesHelper"
@@ -1873,23 +1886,31 @@ Function IsCommand(p)
 End Function
 
 
-' The tag one property gets in the substation's folder, bound to the
+' The tag one property gets in the substation's folder, wired to the
 ' interface tag standing for it. Nothing when it could not be made.
 '
-' A reading and a command are bound the same way and differ only in what
-' is hung on the tag afterwards, so the binding is done once here.
-Function BoundTag(folder, interfacePath, obj, p, problem)
+' A link carries a value one way, so the direction is the whole of the
+' difference between the two kinds:
+'
+'   reading   automation -> interface -> substation, on a simple link
+'   command   substation -> interface -> automation, on a reverse one
+'
+' A command left on a simple link is a command the automation never
+' sees: the operator writes a tag that is downstream of the thing it was
+' meant to drive, and the write is overwritten by the value it was
+' supposed to change. Nothing errors, and the maneuver never starts.
+Function BoundTag(folder, interfacePath, obj, p, problem, linkType)
 
 	Set BoundTag = Nothing
 
 	Dim source
 	source = interfacePath & "." & p.Name
 
-	' Checked before it is bound to. The interface is emptied and rebuilt
-	' on every Save, so tags built before that rebuild would bind to ones
-	' on their way out - and a link to a tag that is not there fails
-	' quietly, leaving an alarm that never raises or a command that goes
-	' nowhere. Better said here than handed over looking like it works.
+	' Checked before it is wired. The interface is emptied and rebuilt on
+	' every Save, so tags built before that rebuild would wire to ones on
+	' their way out - and a link to a tag that is not there fails quietly,
+	' leaving an alarm that never raises or a command that goes nowhere.
+	' Better said here than handed over looking like it works.
 	Dim target
 	Set target = Nothing
 	On Error Resume Next
@@ -1913,11 +1934,11 @@ Function BoundTag(folder, interfacePath, obj, p, problem)
 	On Error Resume Next
 	Err.Clear
 
-	tag.Links.CreateLink "Value", source
+	tag.Links.CreateLink "Value", source, linkType
 
 	If Err.Number <> 0 Then
 		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
-		          " would not bind to " & source & " - " & Err.Description
+		          " would not wire to " & source & " - " & Err.Description
 		Err.Clear
 	End If
 
@@ -1933,7 +1954,7 @@ End Function
 Sub AlarmTag(folder, interfacePath, obj, p, problem)
 
 	Dim tag
-	Set tag = BoundTag(folder, interfacePath, obj, p, problem)
+	Set tag = BoundTag(folder, interfacePath, obj, p, problem, LINK_SIMPLE)
 	If tag Is Nothing Then Exit Sub
 
 	Dim alarm
@@ -1964,8 +1985,8 @@ Sub AlarmTag(folder, interfacePath, obj, p, problem)
 End Sub
 
 
-' One command for the substation side to write. The bound tag and
-' nothing else on it.
+' One command for the substation side to write, on a reverse link so
+' that writing it reaches the automation.
 '
 ' No alarm source: a command is what the operator's screen asks for, not
 ' something the control room is told about, and an event per request
@@ -1973,7 +1994,7 @@ End Sub
 Sub CommandTag(folder, interfacePath, obj, p, problem)
 
 	Dim tag
-	Set tag = BoundTag(folder, interfacePath, obj, p, problem)
+	Set tag = BoundTag(folder, interfacePath, obj, p, problem, LINK_REVERSE)
 	If tag Is Nothing Then Exit Sub
 
 	gCommands = gCommands + 1
