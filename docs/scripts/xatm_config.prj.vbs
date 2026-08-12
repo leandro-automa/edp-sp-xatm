@@ -1626,17 +1626,18 @@ Sub BuildAlarms_OnChangedValue()
 	' renamed on the Config screen, and a folder named after the name it
 	' used to have cannot be told from one nobody wants any more.
 	Dim folder
-	Set folder = ChildFolder(substation, ALARM_FOLDER)
+	Set folder = ChildFolder(substation, AUTOMATION_FOLDER)
 
 	If folder Is Nothing Then
-		Fail "the substation would not take a " & ALARM_FOLDER & " folder.", ts
+		Fail "the substation would not take a " & AUTOMATION_FOLDER & " folder.", ts
 		Exit Sub
 	End If
 
 	ClearFolder folder
 
-	gFolders = 0
-	gAlarms  = 0
+	gFolders  = 0
+	gAlarms   = 0
+	gCommands = 0
 
 	Dim problem
 	problem = ""
@@ -1659,18 +1660,18 @@ Sub BuildAlarms_OnChangedValue()
 	On Error Goto 0
 
 	' Said out loud even when it all went through, for the same reason
-	' the interface rebuild says it: a routine that builds thirteen
-	' alarms and mentions only what it could not build reads the same
-	' whether it ran or was never called.
-	If gAlarms = 0 Then
-		WriteLog "Alarms - nothing is on the alarm table."
+	' the interface rebuild says it: a routine that mentions only what it
+	' could not build reads the same whether it ran or was never called.
+	If gAlarms = 0 And gCommands = 0 Then
+		WriteLog "Automation - no alarms and no commands are interfaced."
 	Else
-		WriteLog "Alarms - " & gAlarms & " on " & gFolders & " objects, under " & _
-		         substationPath & "." & ALARM_FOLDER & "."
+		WriteLog "Automation - " & gAlarms & " alarms and " & gCommands & _
+		         " commands on " & gFolders & " objects, under " & _
+		         substationPath & "." & AUTOMATION_FOLDER & "."
 	End If
 
 	If problem <> "" Then
-		WriteLog "Alarms are incomplete:" & problem
+		WriteLog "Automation is incomplete:" & problem
 		DocString = EXIT_FAILURE
 		WriteEx Empty, ts
 		Exit Sub
@@ -1682,15 +1683,18 @@ Sub BuildAlarms_OnChangedValue()
 End Sub
 
 
-' The folder the alarms are built in, under the chosen PowerSubstation.
-Const ALARM_FOLDER   = "XATM_Alarms"
+' The folder built under the chosen PowerSubstation. Named for what it
+' holds rather than for the alarms alone: the substation side both reads
+' the alarms in it and writes the commands beside them.
+Const AUTOMATION_FOLDER  = "Automatismos"
 
-' What an alarm is made of: a tag carrying the reading, and the source
-' on it that turns a change of the reading into an event.
-Const ALARM_FOLDER_CLASS = "DataFolder"
-Const ALARM_TAG_CLASS    = "InternalTag"
-Const ALARM_SOURCE_CLASS = "DigitalAlarmSource"
-Const ALARM_SOURCE_NAME  = "Alarm"
+' What the folder is made of. The first two carry a reading and a
+' command alike; the last two are the alarm's own, and a command tag
+' gets neither.
+Const AUTOMATION_FOLDER_CLASS = "DataFolder"
+Const AUTOMATION_TAG_CLASS    = "InternalTag"
+Const ALARM_SOURCE_CLASS      = "DigitalAlarmSource"
+Const ALARM_SOURCE_NAME       = "Alarm"
 
 Const DATA_ROOT          = "XATM_Data"
 Const CONFIG_DATA        = "xatm_config_data"
@@ -1719,6 +1723,7 @@ Dim gInterfaceRoot
 ' What the last build came out at, for the line it writes to the log.
 Dim gFolders
 Dim gAlarms
+Dim gCommands
 
 
 ' One folder of the data project: an alarm for every object in it a
@@ -1786,7 +1791,7 @@ Function EnsureFolder(root, path, problem)
 		Set child = parent.Item(names(i))
 		On Error Goto 0
 
-		If child Is Nothing Then Set child = NewChild(parent, ALARM_FOLDER_CLASS, names(i))
+		If child Is Nothing Then Set child = NewChild(parent, AUTOMATION_FOLDER_CLASS, names(i))
 
 		If child Is Nothing Then
 			problem = problem & vbCrLf & "  no folder for " & path
@@ -1803,8 +1808,10 @@ Function EnsureFolder(root, path, problem)
 End Function
 
 
-' One object's folder, and an alarm in it for each property the manifest
-' puts on the alarm table.
+' One object's folder, and in it a tag for each property worth carrying:
+' an alarm for a reading the manifest puts on the alarm table, and a
+' plain tag for each command the interface holds. An object with neither
+' gets no folder at all.
 Sub AlarmObject(root, path, obj, bag, problem)
 
 	Dim key, p
@@ -1814,6 +1821,7 @@ Sub AlarmObject(root, path, obj, bag, problem)
 
 	For Each key In bag.Keys
 		If bag(key).IsAlarmed() Then wanted = True
+		If IsCommand(bag(key)) Then wanted = True
 	Next
 
 	If Not wanted Then Exit Sub
@@ -1823,7 +1831,7 @@ Sub AlarmObject(root, path, obj, bag, problem)
 	If parent Is Nothing Then Exit Sub
 
 	Dim folder
-	Set folder = NewChild(parent, ALARM_FOLDER_CLASS, obj.Name)
+	Set folder = NewChild(parent, AUTOMATION_FOLDER_CLASS, obj.Name)
 
 	If folder Is Nothing Then
 		problem = problem & vbCrLf & "  no folder for " & obj.Name
@@ -1842,25 +1850,46 @@ Sub AlarmObject(root, path, obj, bag, problem)
 	For Each key In bag.Keys
 
 		Set p = bag(key)
-		If p.IsAlarmed() Then AlarmTag folder, interfacePath, obj, p, problem
+
+		If p.IsAlarmed() Then
+			AlarmTag folder, interfacePath, obj, p, problem
+		ElseIf IsCommand(p) Then
+			CommandTag folder, interfacePath, obj, p, problem
+		End If
 
 	Next
 
 End Sub
 
 
-' One alarm for one property: a tag that reads the interface, and the
-' source on it that turns a change into an event.
-Sub AlarmTag(folder, interfacePath, obj, p, problem)
+' A command the interface carries: an InternalTag property a manifest
+' interfaces. RebuildInterface leaves these unlinked and points the
+' XObject's property at them, so they are the automation's inputs - the
+' substation side writes them to ask for a maneuver.
+Function IsCommand(p)
+
+	IsCommand = (LCase(p.DataType & "") = "internaltag") And p.IsInterfaced()
+
+End Function
+
+
+' The tag one property gets in the substation's folder, bound to the
+' interface tag standing for it. Nothing when it could not be made.
+'
+' A reading and a command are bound the same way and differ only in what
+' is hung on the tag afterwards, so the binding is done once here.
+Function BoundTag(folder, interfacePath, obj, p, problem)
+
+	Set BoundTag = Nothing
 
 	Dim source
 	source = interfacePath & "." & p.Name
 
 	' Checked before it is bound to. The interface is emptied and rebuilt
-	' on every Save, so alarms built before that rebuild would bind to
-	' tags on their way out - and a link to a tag that is not there fails
-	' quietly, leaving an alarm that simply never raises. Better to say
-	' so here than to hand over a substation that looks alarmed and is not.
+	' on every Save, so tags built before that rebuild would bind to ones
+	' on their way out - and a link to a tag that is not there fails
+	' quietly, leaving an alarm that never raises or a command that goes
+	' nowhere. Better said here than handed over looking like it works.
 	Dim target
 	Set target = Nothing
 	On Error Resume Next
@@ -1870,15 +1899,15 @@ Sub AlarmTag(folder, interfacePath, obj, p, problem)
 	If target Is Nothing Then
 		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
 		          " has no interface tag at " & source
-		Exit Sub
+		Exit Function
 	End If
 
 	Dim tag
-	Set tag = NewChild(folder, ALARM_TAG_CLASS, p.Name)
+	Set tag = NewChild(folder, AUTOMATION_TAG_CLASS, p.Name)
 
 	If tag Is Nothing Then
 		problem = problem & vbCrLf & "  no tag for " & obj.Name & "." & p.Name
-		Exit Sub
+		Exit Function
 	End If
 
 	On Error Resume Next
@@ -1893,6 +1922,19 @@ Sub AlarmTag(folder, interfacePath, obj, p, problem)
 	End If
 
 	On Error Goto 0
+
+	Set BoundTag = tag
+
+End Function
+
+
+' One alarm for one reading: the bound tag, and the source on it that
+' turns a change into an event.
+Sub AlarmTag(folder, interfacePath, obj, p, problem)
+
+	Dim tag
+	Set tag = BoundTag(folder, interfacePath, obj, p, problem)
+	If tag Is Nothing Then Exit Sub
 
 	Dim alarm
 	Set alarm = NewChild(tag, ALARM_SOURCE_CLASS, ALARM_SOURCE_NAME)
@@ -1921,6 +1963,22 @@ Sub AlarmTag(folder, interfacePath, obj, p, problem)
 
 End Sub
 
+
+' One command for the substation side to write. The bound tag and
+' nothing else on it.
+'
+' No alarm source: a command is what the operator's screen asks for, not
+' something the control room is told about, and an event per request
+' would put the asking on the list as though the switchyard had done it.
+Sub CommandTag(folder, interfacePath, obj, p, problem)
+
+	Dim tag
+	Set tag = BoundTag(folder, interfacePath, obj, p, problem)
+	If tag Is Nothing Then Exit Sub
+
+	gCommands = gCommands + 1
+
+End Sub
 
 ' One setting onto the alarm source, late-bound the way the import
 ' writes a property, and named in the log when it will not take.
@@ -1959,7 +2017,7 @@ Function ChildFolder(parent, folderName)
 
 	If Not ChildFolder Is Nothing Then Exit Function
 
-	Set ChildFolder = NewChild(parent, ALARM_FOLDER_CLASS, folderName)
+	Set ChildFolder = NewChild(parent, AUTOMATION_FOLDER_CLASS, folderName)
 
 End Function
 
