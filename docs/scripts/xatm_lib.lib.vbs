@@ -2,8 +2,49 @@
 Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Wed Aug 12 11:19:09 2026
+Wed Aug 12 16:59:28 2026
 -----------------------
+
+<xatm_BTC.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
+Sub OperatorBlock_CommandOperatorBlock()
+	
+	Dim v
+	v = False
+	
+	On Error Resume Next
+	v = CBool(xatm_BTC.CommandOperatorBlock.Value)
+	On Error Goto 0
+	
+	xatm_BTC.OperatorBlock = v
+
+End Sub
+
+<xatm_BTC.Commands.OperatorBlock:OperatorBlock_OnChangedValue()>
+Sub OperatorBlock_OnChangedValue()
+	
+	If xatm_BTC.OperatorBlock Then
+		WriteLog "Blocked by operator."
+	Else
+		WriteLog "Released by operator."
+	End If
+
+End Sub
+	
+Sub WriteLog(message)
+	
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+	
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+	
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+			
+End Sub
 
 <xatm_BTC.Commands.Reset:Reset_OnChangedTimeStamp()>
 Sub Reset_OnChangedTimeStamp()
@@ -97,24 +138,6 @@ Sub Reset_Reset()
 	
 	WriteEx True
 		
-End Sub
-
-<xatm_BTC.Commands.Start:Start_CommandOperatorBlock()>
-Sub Start_CommandOperatorBlock()
-	
-	If xatm_BTC.CommandOperatorBlock.Value = 0 Then Exit Sub
-	
-	' A command is a moment and not a state, so this turns the lock over
-	' rather than setting it - one command that blocks and releases, the
-	' way the buttons on the symbols already work.
-	xatm_BTC.OperatorBlock = Not xatm_BTC.OperatorBlock
-
-	If xatm_BTC.OperatorBlock Then
-		WriteLog "Blocked by operator."
-	Else
-		WriteLog "Released by operator."
-	End If
-	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartNM()>
