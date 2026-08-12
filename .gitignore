@@ -16,3 +16,6 @@ EDP_SP.txt
 # Ignore old files
 docs/scripts/old/*
 docs/sketches/*
+
+GTW/*
+IHM/*
