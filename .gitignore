@@ -17,5 +17,8 @@ EDP_SP.txt
 docs/scripts/old/*
 docs/sketches/*
 
+# Drivers
+*.dll
+
 GTW/*
 IHM/*
