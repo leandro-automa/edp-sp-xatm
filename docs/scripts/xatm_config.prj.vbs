@@ -2177,8 +2177,28 @@ Sub BuildDistribution_OnChangedValue()
 	Dim ts
 	ts = TimeStamp                         ' preserved for the silent clear
 
-	Dim driverPath
-	driverPath = Trim(CStr(Value))
+	' offset|path, split at the first bar. The offset is a number and
+	' carries no bar of its own, so whatever a driver's path contains
+	' travels whole - which a Split on every bar would not manage.
+	Dim payload
+	payload = Trim(CStr(Value))
+
+	Dim bar
+	bar = InStr(payload, "|")
+
+	If bar = 0 Then
+		Fail "the command carries no starting address (expected offset|path).", ts
+		Exit Sub
+	End If
+
+	Dim offsetText, driverPath
+	offsetText = Trim(Left(payload, bar - 1))
+	driverPath = Trim(Mid(payload, bar + 1))
+
+	If Not IsNumeric(offsetText) Then
+		Fail "'" & offsetText & "' is not a starting address.", ts
+		Exit Sub
+	End If
 
 	Dim driver
 	Set driver = Nothing
@@ -2223,8 +2243,11 @@ Sub BuildDistribution_OnChangedValue()
 	gMonitors = 0
 	gCommands = 0
 
-	gNextMonitor = IOA_BASE_MONITOR
-	gNextCommand = IOA_BASE_COMMAND
+	' One run of addresses for both kinds. A monitored point and a
+	' command share an address space in 104, so numbering them from
+	' separate bases would only be two ways to land on one address.
+	gFirstAddress = CLng(offsetText)
+	gNextAddress  = gFirstAddress
 
 	Dim problem
 	problem = ""
@@ -2276,9 +2299,8 @@ Sub BuildDistribution_OnChangedValue()
 	Else
 		WriteLog "Distribution - " & gMonitors & " monitored and " & gCommands & _
 		         " commanded on " & gFolders & " objects, under " & driverPath & _
-		         "." & DISTRIBUTION_FOLDER & ". Monitor addresses " & _
-		         IOA_BASE_MONITOR & ".." & (gNextMonitor - 1) & ", command " & _
-		         IOA_BASE_COMMAND & ".." & (gNextCommand - 1) & "."
+		         "." & DISTRIBUTION_FOLDER & ". Addresses " & gFirstAddress & _
+		         ".." & (gNextAddress - 1) & "."
 	End If
 
 	If problem <> "" Then
@@ -2299,11 +2321,14 @@ Const DISTRIBUTION_FOLDER = "Automatismos"
 Const IO_FOLDER_CLASS     = "IOFolder"
 Const IO_TAG_CLASS        = "IOTag"
 
-' Where the numbering starts, one base per direction so a monitored
-' point and a command never collide and either range can be read off the
-' point list at a glance. Addresses are handed out in walk order.
-Const IOA_BASE_MONITOR    = 1
-Const IOA_BASE_COMMAND    = 5001
+' What marks a tag as this configuration's to remake - the same mark the
+' interface puts on the tags it builds.
+Const SELF_MARK           = "$XATM$"
+
+' Always in advise: the driver keeps the point up to date of its own
+' accord rather than waiting to be asked, which is what a slave
+' publishing to a control centre has to do.
+Const ADVISE_ALWAYS       = 0
 
 ' What the driver is told each tag is - the mnemonic at the head of the
 ' configuration string.
@@ -2341,9 +2366,9 @@ Const EXIT_FAILURE        = "EXIT_FAILURE"
 ' distribution reads from.
 Dim gInterfaceRoot
 
-' The next address to hand out, per direction.
-Dim gNextMonitor
-Dim gNextCommand
+' Where the numbering started this run, and the next one to hand out.
+Dim gFirstAddress
+Dim gNextAddress
 
 ' What the last build came out at, for the line it writes to the log.
 Dim gFolders
@@ -2504,20 +2529,11 @@ Function IsCommand(p)
 End Function
 
 
-' The next address for a direction, and the one after it kept for the
-' next caller.
-Function NextMonitorAddress()
+' The next address, and the one after it kept for the next caller.
+Function NextAddress()
 
-	NextMonitorAddress = gNextMonitor
-	gNextMonitor = gNextMonitor + 1
-
-End Function
-
-
-Function NextCommandAddress()
-
-	NextCommandAddress = gNextCommand
-	gNextCommand = gNextCommand + 1
+	NextAddress = gNextAddress
+	gNextAddress = gNextAddress + 1
 
 End Function
 
@@ -2570,7 +2586,10 @@ Function BoundIOTag(folder, interfacePath, obj, p, problem, linkType, configStri
 	' reported on its own, the way an alarm's settings are: a driver that
 	' will not take one string should cost that point rather than the
 	' whole distribution.
-	SetMember tag, "ParamItem", configString, where, problem
+	SetMember tag, "ParamItem",      configString,  where, problem
+	SetMember tag, "DocString",      SELF_MARK,     where, problem
+	SetMember tag, "AdviseType",     ADVISE_ALWAYS, where, problem
+	SetMember tag, "EnableDeadBand", False,         where, problem
 
 	On Error Resume Next
 	Err.Clear
@@ -2595,7 +2614,7 @@ End Function
 Sub MonitorTag(folder, interfacePath, obj, p, problem)
 
 	Dim configString
-	configString = TYPE_MONITOR & ":" & NextMonitorAddress()
+	configString = TYPE_MONITOR & ":" & NextAddress()
 
 	Dim tag
 	Set tag = BoundIOTag(folder, interfacePath, obj, p, problem, LINK_SIMPLE, configString)
@@ -2617,7 +2636,7 @@ End Sub
 Sub CommandTag(folder, interfacePath, obj, p, problem)
 
 	Dim configString
-	configString = TYPE_COMMAND & ":" & NextCommandAddress() & "." & COMMAND_ACTION
+	configString = TYPE_COMMAND & ":" & NextAddress() & "." & COMMAND_ACTION
 
 	Dim tag
 	Set tag = BoundIOTag(folder, interfacePath, obj, p, problem, LINK_REVERSE, configString)
@@ -2628,6 +2647,12 @@ Sub CommandTag(folder, interfacePath, obj, p, problem)
 
 	SetMember tag, "AllowRead",  True,  where, problem
 	SetMember tag, "AllowWrite", False, where, problem
+
+	' The driver raises an event when the centre sends this, rather than
+	' the value simply appearing on the tag. The same command asked for
+	' twice running is the same value twice, and without this the second
+	' one would look like nothing had happened at all.
+	SetMember tag, "EnableDriverEvent", True, where, problem
 
 	gCommands = gCommands + 1
 
@@ -6766,6 +6791,11 @@ Sub btnDistribution_Click()
 
 	If driver = "" Then Exit Sub
 
+	Dim offset
+	offset = ChosenOffset()
+
+	If offset = "" Then Exit Sub
+
 	' The build runs on the server, for the reason the search did: a
 	' screen cannot make objects in a driver. The driver it chose
 	' travels as the payload.
@@ -6781,7 +6811,7 @@ Sub btnDistribution_Click()
 		Exit Sub
 	End If
 
-	builder.WriteEx driver
+	builder.WriteEx offset & "|" & driver
 
 	If builder.DocString <> EXIT_SUCCESS Then
 		MsgBox "The signals were not distributed, or only in part - the " & _
@@ -6816,6 +6846,11 @@ Const BUILD_DISTRIBUTION = "xatm_config_data.Config.BuildDistribution"
 
 Const EXIT_SUCCESS       = "EXIT_SUCCESS"
 Const DISTRIBUTION_TITLE = "Distribution"
+
+' What the address box offers before anything is typed. The operation
+' centre's point list decides the real one, and every substation
+' answering to that centre needs a range of its own.
+Const DEFAULT_OFFSET     = "3000"
 
 
 ' One object of a class, chosen by the operator where there is more than
@@ -6912,6 +6947,39 @@ Function PickObject(found, className)
 
 End Function
 
+
+' Where the point numbering starts, asked rather than fixed.
+'
+' An InputBox is what a viewer has to ask with, so the answer comes back
+' as free text and is checked here - anything at all can be typed in.
+Function ChosenOffset()
+
+	ChosenOffset = ""
+
+	Dim reply
+	reply = InputBox("Address to start the point numbering from:" & vbCrLf & vbCrLf & _
+	                 "Every signal is numbered upwards from here, monitored " & _
+	                 "points and commands alike.", DISTRIBUTION_TITLE, DEFAULT_OFFSET)
+
+	' Cancel and an empty box both come back "", and neither is an answer.
+	If Trim(reply) = "" Then Exit Function
+
+	If Not IsNumeric(reply) Then
+		MsgBox "'" & reply & "' is not a number.", vbExclamation, DISTRIBUTION_TITLE
+		Exit Function
+	End If
+
+	Dim offset
+	offset = CLng(reply)
+
+	If offset < 0 Then
+		MsgBox "An address cannot be negative.", vbExclamation, DISTRIBUTION_TITLE
+		Exit Function
+	End If
+
+	ChosenOffset = CStr(offset)
+
+End Function
 
 ' E3 will not take a Function as the last thing in a scope. The script
 ' is refused with nothing useful said about why, so an empty Sub goes
