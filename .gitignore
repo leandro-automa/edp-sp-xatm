@@ -20,5 +20,8 @@ docs/sketches/*
 # Drivers
 *.dll
 
+*.xml
+
 GTW/*
 IHM/*
+drivers/LD/*
