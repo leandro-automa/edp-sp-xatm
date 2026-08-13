@@ -1,5 +1,5 @@
 -----------------------
-Documentação de Scripts
+Documentaï¿½ï¿½o de Scripts
 -----------------------
 XATM_LIBCONFIG (C:\ProjDev\edp_sp\xatm_libconfig.lib)
 Wed Aug 12 11:18:51 2026
@@ -218,7 +218,7 @@ Dim gPickedTag
 
 ' How much of a path the source column has room for - the same cut the
 ' row makes for itself when it is built.
-Const MAX_SOURCE_LENGTH = 128
+Const MAX_SOURCE_LENGTH = 48
 
 Function SourceText(path)
 
@@ -527,7 +527,8 @@ Sub xatm_PropertyRow_OnStartRunning()
 	' the value comes from, which a breaker's twelve tags and a BTC's
 	' Transformer both have and a CommandTimeout does not.
 	Item("txtConfiguredSource").Value = ConfiguredSource()
-
+	Item("txtConfiguredSource").Tip = PropertySource
+	
 	' Read only. A tag or an object is picked, not spelled out, and it is
 	' the picker that will set this.
 	Item("txtConfiguredSource").IsSetPoint = False
@@ -560,7 +561,7 @@ Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never save
 Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
 Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
 
-Const MAX_SOURCE_LENGTH = 128
+Const MAX_SOURCE_LENGTH = 48
 
 ' Whether the manifest allowed this. Empty And anything is 0, so a row
 ' built without an Exposure allows nothing.
