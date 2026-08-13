@@ -1015,6 +1015,263 @@ Sub SaveXML_OnStartRunning()
 		
 End Sub
 
+<xatm_config_data.Config.XMLFilePath:XMLFilePath_OnStartRunning()>
+Sub XMLFilePath_OnStartRunning()
+
+	Dim filePath
+	filePath = ConfigFilePath()
+
+	' Somewhere writable rather than nowhere. This tag holds no
+	' configured path to fall back on - it is worked out fresh at every
+	' start - so a start that works nothing out leaves the export with
+	' nowhere at all to go.
+	If filePath = "" Then filePath = FallbackFilePath()
+
+	If filePath = "" Then
+		WriteLog "Neither the data project nor a temporary folder could be " & _
+		         "had, so " & Name & " is empty and the export has nowhere " & _
+		         "to be written."
+		Exit Sub
+	End If
+
+	WriteEx filePath
+
+	WriteLog Name & " is " & filePath
+
+End Sub
+
+
+' What is looked for, and what is written beside it.
+'
+' The data project is found rather than configured because it is not the
+' same folder twice: xatm_data.prj sits in a folder of its own per
+' substation - se_gul for Guarulhos - and a path typed in by hand is
+' right until this configuration is copied to the next site.
+Const DATA_PROJECT_FILE = "xatm_data.prj"
+Const XML_FILE_NAME     = "AutomationConfig.xml"
+
+' Where the export goes when the data project was not found -
+' GetSpecialFolder's TemporaryFolder.
+Const TEMPORARY_FOLDER  = 2
+
+' How far under the starting folder to look. The domain file sits at the
+' top and each substation is a folder under it, so the project is one
+' level down - and a couple more costs nothing and allows for a project
+' laid out with a little more nesting.
+Const MAX_SEARCH_DEPTH  = 3
+
+' Every folder holding a data project, in the order they were come
+' across. A dictionary rather than a single answer so that a domain
+' carrying two of them is something that can be said out loud rather
+' than silently resolved to whichever was met first.
+Dim gFound
+
+
+' The full path to write the export to, "" when the data project was not
+' found.
+'
+' Asked of the file system rather than of E3. A container knows where it
+' was loaded from, but not under a property name written down anywhere
+' that could be found - so this goes the plain way instead.
+Function ConfigFilePath()
+
+	ConfigFilePath = ""
+
+	Dim base
+	base = StartFolder()
+
+	If base = "" Then
+		WriteLog "The current directory could not be read, so " & _
+		         DATA_PROJECT_FILE & " was not looked for."
+		Exit Function
+	End If
+
+	Dim fso
+	Set fso = Nothing
+	On Error Resume Next
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	On Error Goto 0
+
+	If fso Is Nothing Then
+		WriteLog "There is no file system object to look with."
+		Exit Function
+	End If
+
+	If Not fso.FolderExists(base) Then
+		WriteLog "The current directory, " & base & ", is not a folder."
+		Exit Function
+	End If
+
+	Set gFound = CreateObject("Scripting.Dictionary")
+
+	SearchFolder fso.GetFolder(base), 0
+
+	If gFound.Count = 0 Then
+		WriteLog DATA_PROJECT_FILE & " was not found under " & base & _
+		         " within " & MAX_SEARCH_DEPTH & " folders."
+		Set gFound = Nothing
+		Exit Function
+	End If
+
+	Dim folders
+	folders = gFound.Keys
+
+	' Said out loud and not resolved quietly. Two data projects under one
+	' domain is a domain this configuration cannot speak for, and writing
+	' the export into whichever folder was met first would be a choice
+	' nobody made.
+	If gFound.Count > 1 Then
+		WriteLog "More than one " & DATA_PROJECT_FILE & " is under " & base & _
+		         " - " & Join(folders, ", ") & ". The first is being used, " & _
+		         "which may not be the one meant."
+	End If
+
+	ConfigFilePath = fso.BuildPath(folders(0), XML_FILE_NAME)
+
+	Set gFound = Nothing
+
+End Function
+
+
+' Somewhere the export can always be written, for when the data project
+' was not found. "" only when there is no temporary folder either, which
+' is a machine with larger problems than this one.
+'
+' The file turning up in TEMP is itself the sign that something went
+' wrong - nobody would put it there on purpose - and the line logged
+' just above it says which of the ways it got there.
+Function FallbackFilePath()
+
+	FallbackFilePath = ""
+
+	Dim fso
+	Set fso = Nothing
+	On Error Resume Next
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	On Error Goto 0
+
+	If fso Is Nothing Then Exit Function
+
+	Dim tempFolder
+	tempFolder = ""
+
+	On Error Resume Next
+	tempFolder = fso.GetSpecialFolder(TEMPORARY_FOLDER).Path
+	On Error Goto 0
+
+	If Trim(tempFolder & "") = "" Then Exit Function
+
+	FallbackFilePath = fso.BuildPath(tempFolder, XML_FILE_NAME)
+
+	WriteLog "Falling back to the temporary folder - " & FallbackFilePath
+
+End Function
+
+
+' Where E3 was started from, which is the folder the domain file sits in.
+Function StartFolder()
+
+	StartFolder = ""
+
+	Dim shell
+	Set shell = Nothing
+
+	On Error Resume Next
+	Err.Clear
+
+	Set shell = CreateObject("WScript.Shell")
+	If Not shell Is Nothing Then StartFolder = Trim(shell.CurrentDirectory & "")
+
+	If Err.Number <> 0 Then
+		StartFolder = ""
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+End Function
+
+
+' One folder and what is under it, to the depth the cap allows. A folder
+' that will not be read is stepped over rather than reported: a domain
+' folder holds all sorts, and one of them being unreadable says nothing
+' about where the data project is.
+Sub SearchFolder(folder, depth)
+
+	If depth > MAX_SEARCH_DEPTH Then Exit Sub
+
+	On Error Resume Next
+
+	Dim theFile
+	For Each theFile In folder.Files
+		If LCase(theFile.Name) = LCase(DATA_PROJECT_FILE) Then
+			If Not gFound.Exists(folder.Path) Then gFound.Add folder.Path, True
+		End If
+	Next
+
+	If Err.Number <> 0 Then Err.Clear
+
+	Dim child
+	For Each child In folder.SubFolders
+		If Not Skipped(child) Then SearchFolder child, depth + 1
+	Next
+
+	If Err.Number <> 0 Then Err.Clear
+
+	On Error Goto 0
+
+End Sub
+
+
+' Folders not worth walking into. A working copy carries .git, which
+' holds thousands of files and no data project, and E3 puts nothing of
+' ours anywhere hidden.
+Function Skipped(folder)
+
+	Skipped = True
+
+	Dim folderName
+	folderName = ""
+
+	On Error Resume Next
+	folderName = folder.Name
+	On Error Goto 0
+
+	If folderName = "" Then Exit Function
+	If Left(folderName, 1) = "." Then Exit Function
+
+	Dim attributes
+	attributes = 0
+
+	On Error Resume Next
+	attributes = folder.Attributes
+	On Error Goto 0
+
+	If (attributes And 2) <> 0 Then Exit Function     ' hidden
+	If (attributes And 4) <> 0 Then Exit Function     ' system
+
+	Skipped = False
+
+End Function
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+
+End Sub
+
 <xatm_config_data.Config.SetProperty:SetProperty_OnChangedValue()>
 Sub SetProperty_OnChangedValue()
 	
