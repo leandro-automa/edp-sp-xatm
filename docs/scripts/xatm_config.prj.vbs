@@ -1658,17 +1658,27 @@ Sub BuildAlarms_OnChangedValue()
 	' Written here rather than left to the Save that persists XATM_Data:
 	' these objects are in the substation's container, which is not the
 	' container holding the automation.
+	'
+	' Save answers True or False and raises nothing, so the answer is what
+	' decides. An On Error still wraps the call for a container that will
+	' not give one at all, and saved starts False so that a call which
+	' never returns is a failure rather than a silence.
+	Dim saved
+	saved = False
+
 	On Error Resume Next
 	Err.Clear
 
-	folder.Context("Container").Save()
+	saved = folder.Context("Container").Save()
 
-	If Err.Number <> 0 Then
-		problem = problem & vbCrLf & "  not saved - " & Err.Description
-		Err.Clear
-	End If
-
+	If Err.Number <> 0 Then Err.Clear
 	On Error Goto 0
+
+	If Not saved Then
+		problem = problem & vbCrLf & "  not saved - E3 would not write the " & _
+		          "substation's project. A licence that will not carry this " & _
+		          "many tags is the usual reason."
+	End If
 
 	' Said out loud even when it all went through, for the same reason
 	' the interface rebuild says it: a routine that mentions only what it
@@ -2232,25 +2242,24 @@ Sub BuildDistribution_OnChangedValue()
 	' The tags are made either way, so a Save that fails leaves a project
 	' that looks built and comes back empty - which is worth saying
 	' loudly rather than leaving as one line among the rest.
-	Dim saveProblem
-	saveProblem = ""
+	' Save answers True or False and raises nothing, so the answer is what
+	' decides. saved starts False so a call that never returns counts as a
+	' refusal rather than passing for success.
+	Dim saved
+	saved = False
 
 	On Error Resume Next
 	Err.Clear
 
-	folder.Context("Container").Save()
+	saved = folder.Context("Container").Save()
 
-	If Err.Number <> 0 Then
-		saveProblem = Err.Description
-		Err.Clear
-	End If
-
+	If Err.Number <> 0 Then Err.Clear
 	On Error Goto 0
 
-	If saveProblem <> "" Then
+	If Not saved Then
 
-		WriteLog "NOT SAVED - " & built & " tags were built and the save was " & _
-		         "refused: " & saveProblem
+		WriteLog "NOT SAVED - " & built & " tags were built and E3 would not " & _
+		         "write them."
 		WriteLog "NOT SAVED - E3 will not save past about " & LICENCE_TAG_HINT & _
 		         " tags without a valid licence. The tags are in the project " & _
 		         "now and will be gone when it is closed. Check the licence " & _
@@ -6135,7 +6144,16 @@ Sub btnSave_Click()
 	layoutFolder.Item("Transformer").WriteEx Screen.Item("SelectLayoutTransformer").Index
 	layoutFolder.Item("Busbar").WriteEx Screen.Item("SelectLayoutBusbar").Index
 
-	layoutFolder.Context("Container").Save()
+	' Save answers True or False and raises nothing. Unchecked, a refused
+	' save reported success and the file went out against a project that
+	' had not taken the changes - which is the one thing the import is
+	' gated on below, and no less true here.
+	If Not layoutFolder.Context("Container").Save() Then
+		MsgBox "The project was not saved - E3 would not write it, and the " & _
+		       "XML file has been left alone. A licence that will not carry " & _
+		       "this many tags is the usual reason.", vbCritical, "Save"
+		Exit Sub
+	End If
 
 	' The file is the one thing the import does gate: written against a
 	' project that does not match it, it is worse than no file at all.
@@ -6223,17 +6241,24 @@ Sub RebuildInterface()
 	' Written here, and not left to the Save that persists XATM_Data: the
 	' interface is a data server of its own, and the container holding the
 	' automation objects is not the container holding these tags.
+	'
+	' Save answers True or False and raises nothing, so the answer is what
+	' decides rather than Err.
+	Dim saved
+	saved = False
+
 	On Error Resume Next
 	Err.Clear
 
-	root.Save()
+	saved = root.Save()
 
-	If Err.Number <> 0 Then
-		problem = problem & vbCrLf & "  not saved - " & Err.Description
-		Err.Clear
-	End If
-
+	If Err.Number <> 0 Then Err.Clear
 	On Error Goto 0
+
+	If Not saved Then
+		problem = problem & vbCrLf & "  not saved - E3 would not write the " & _
+		          "interface data server."
+	End If
 
 	' Said out loud even when it all went through. A routine that builds
 	' forty tags and mentions only the ones it could not build reads the
