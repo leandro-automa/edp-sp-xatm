@@ -4106,6 +4106,388 @@ Sub SetExposure(bag, name, exposure)
 	
 End Sub
 
+<xatm_config_data.PropertiesHelper.xatm_Disconnector:xatm_Disconnector_OnStartRunning()>
+Sub xatm_Disconnector_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	AddProperty bag, "Id", "Integer", Empty, _
+		"Unique numeric identifier used by the automation to locate this breaker.", _
+		"Identificador numérico único usado pelo automatismo para localizar este disjuntor."
+
+	AddProperty bag, "PositionOpen", "IOTag", Empty, _
+		"Open-position input of relay 1. Double-point word, or the 52b contact when UseDoublePoints is False.", _
+		"Entrada de posição aberto do relé 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
+
+	AddProperty bag, "PositionClosed", "IOTag", Empty, _
+		"Closed-position input of relay 1. Double-point word, or the 52a contact when UseDoublePoints is False.", _
+		"Entrada de posição fechado do relé 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
+
+	AddProperty bag, "PositionOpenAlt", "IOTag", Empty, _
+		"Open-position input of relay 2. Leave empty when there is no redundant relay.", _
+		"Entrada de posição aberto do relé 2. Deixe vazio quando não houver relé redundante."
+
+	AddProperty bag, "PositionClosedAlt", "IOTag", Empty, _
+		"Closed-position input of relay 2. Leave empty when there is no redundant relay.", _
+		"Entrada de posição fechado do relé 2. Deixe vazio quando não houver relé redundante."
+
+	AddProperty bag, "UseDoublePoints", "Boolean", True, _
+		"True - position comes from a double-point word. False - position comes from the 52a/52b contact pair.", _
+		"True - a posição vem de uma palavra de duplo ponto. False - a posição vem do par de contatos 52a/52b."
+
+	AddProperty bag, "RawValueOpen", "Integer", 2, _
+		"Raw value from the driver that means OPEN.", _
+		"Valor bruto do driver que significa ABERTO."
+
+	AddProperty bag, "RawValueClosed", "Integer", 1, _
+		"Raw value from the driver that means CLOSED.", _
+		"Valor bruto do driver que significa FECHADO."
+
+	AddProperty bag, "NormalState", "EdbSwitchState", 1, _
+		"Normal state of the equipment. Reference for normalisation and for Simulation Mode.", _
+		"Estado normal do equipamento. Referência para a normalização e para o Modo Simulação."
+
+	' --- whether it can be operated at all ------------------------------
+	'
+	' A disconnector is not always motorised. One switched by hand is read
+	' and never commanded, and the automation has to know the difference
+	' before it puts a step on one: a sequence that waits for a hand-
+	' operated disconnector to travel waits until CommandTimeout expires
+	' and then reports a step failure that never had a chance of not
+	' happening.
+
+	AddProperty bag, "Motorized", "Boolean", True, _
+		"True when the disconnector has a motor drive the automation can command. False for a hand-operated one, which is read and never commanded.", _
+		"True quando a seccionadora tem comando motorizado que o automatismo pode acionar. False para manobra manual, que é apenas lida e nunca comandada."
+
+	AddProperty bag, "CommandTimeout", "Integer", 40, _
+		"Command supervision window in seconds. The command is re-sent once at half the window and fails when it expires.", _
+		"Janela de supervisão do comando em segundos. O comando é reenviado uma vez na metade da janela e falha ao expirar."
+
+	AddProperty bag, "RawValueCommandOpen", "Integer", 0, _
+		"Raw value written to the open (trip) output.", _
+		"Valor bruto escrito na saída de abertura (trip)."
+
+	AddProperty bag, "RawValueCommandClose", "Integer", 1, _
+		"Raw value written to the close output.", _
+		"Valor bruto escrito na saída de fechamento."
+
+	AddProperty bag, "CommandOpen", "IOTag", Empty, _
+		"Open (trip) output of relay 1. Falls back to relay 2 when empty.", _
+		"Saída de abertura (trip) do relé 1. Recorre ao relé 2 quando vazio."
+
+	AddProperty bag, "CommandSBOOpen", "IOTag", Empty, _
+		"Select tag for the open command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
+		"Tag de seleção do comando de abertura no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
+
+	AddProperty bag, "CommandOpenAlt", "IOTag", Empty, _
+		"Open (trip) output of relay 2. Used when relay 1 is unavailable.", _
+		"Saída de abertura (trip) do relé 2. Usada quando o relé 1 está indisponível."
+
+	AddProperty bag, "CommandSBOOpenAlt", "IOTag", Empty, _
+		"Select tag for the open command on relay 2. Optional.", _
+		"Tag de seleção do comando de abertura no relé 2. Opcional."
+
+	AddProperty bag, "CommandClose", "IOTag", Empty, _
+		"Close output of relay 1. Falls back to relay 2 when empty.", _
+		"Saída de fechamento do relé 1. Recorre ao relé 2 quando vazio."
+
+	AddProperty bag, "CommandSBOClose", "IOTag", Empty, _
+		"Select tag for the close command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
+		"Tag de seleção do comando de fechamento no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
+
+	AddProperty bag, "CommandCloseAlt", "IOTag", Empty, _
+		"Close output of relay 2. Used when relay 1 is unavailable.", _
+		"Saída de fechamento do relé 2. Usada quando o relé 1 está indisponível."
+
+	AddProperty bag, "CommandSBOCloseAlt", "IOTag", Empty, _
+		"Select tag for the close command on relay 2. Optional.", _
+		"Tag de seleção do comando de fechamento no relé 2. Opcional."
+	
+	' --- what the plant and the automation say back ---------------------
+	'
+	' None of the four is configured with a value. Defective is configured
+	' with an expression, and the other three are written by the breaker
+	' and by the automation as they go.
+
+	AddProperty bag, "Defective", "Boolean", False, _
+		"Equipment is defective and must not be operated. Bound to an expression - not in remote, spring discharged, whatever the panel reports.", _
+		"Equipamento com defeito e que não deve ser operado. Vinculada a uma expressão - fora de remoto, mola descarregada, o que o painel indicar."
+
+	AddProperty bag, "Position", "Integer", 0, _
+		"Position as the automation reads it: 1 open, 2 closed, 0 neither. Always these three, whatever raw values the protocol carries - the raw ones are configured above and translated into this.", _
+		"Posição como o automatismo a lê: 1 aberto, 2 fechado, 0 indefinido. Sempre estes três, quaisquer que sejam os valores brutos do protocolo - os brutos são configurados acima e traduzidos para esta."
+
+	AddProperty bag, "CommandOpenFailed", "Boolean", False, _
+		"Latched failure of an open command sent by the automation. Set when the breaker does not reach the open position inside CommandTimeout, cleared by Reset.", _
+		"Falha selada de um comando de abertura enviado pelo automatismo. Marcada quando o disjuntor não atinge a posição aberta dentro de CommandTimeout, apagada pelo Reset."
+
+	AddProperty bag, "CommandCloseFailed", "Boolean", False, _
+		"Latched failure of a close command sent by the automation. Set when the breaker does not reach the closed position inside CommandTimeout, cleared by Reset.", _
+		"Falha selada de um comando de fechamento enviado pelo automatismo. Marcada quando o disjuntor não atinge a posição fechada dentro de CommandTimeout, apagada pelo Reset."
+
+	' The command outputs are write-only, so they get no EXPOSE_VALUE -
+	' there is nothing to read back. Forcing one sends the raw value
+	' configured for it rather than flipping a boolean, because a protocol
+	' may want 65 to close.
+	'
+	' Id is shown and never edited: it is what the automation locates this
+	' breaker by, and what the panel and the import address it by.
+	SetExposure bag, "Id",                   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+
+	SetExposure bag, "PositionOpen",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionClosed",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionOpenAlt",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionClosedAlt",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+
+	SetExposure bag, "UseDoublePoints",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueOpen",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueClosed",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "NormalState",          EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "Motorized",            EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "CommandTimeout",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueCommandOpen",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueCommandClose", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+
+	SetExposure bag, "CommandOpen",          EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpen",       EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandOpenAlt",       EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpenAlt",    EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandClose",         EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOClose",      EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandCloseAlt",      EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOCloseAlt",   EXPOSE_VIEW + EXPOSE_SAVED
+	
+	
+	' Defective is configured the way a transformer's relays are: an
+	' expression is written for it on the panel, it can be forced for a
+	' test, and it is never saved - the expression is the configuration
+	' and the reading is whatever the switchyard was doing at the time.
+	SetExposure bag, "Defective", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
+
+	' Position is shown and never touched. Reading it back on the panel is
+	' how an engineer sees that the raw values above were configured the
+	' right way round, which is worth a row of its own; forcing it would
+	' only make the panel lie about the switchyard.
+	SetExposure bag, "Position", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE
+
+	' The two command failures are latches the automation sets and Reset
+	' clears - the breaker's own StepExecutionFailed. Nothing about them
+	' is configuration, so they are interfaced and nothing else.
+	SetExposure bag, "CommandOpenFailed",  EXPOSE_INTERFACE
+	SetExposure bag, "CommandCloseFailed", EXPOSE_INTERFACE
+
+
+	' --- what the operator is alarmed on --------------------------------
+	'
+	' The two command failures and nothing else.
+	'
+	' Defective is deliberately off the list: the PowerSubstation alarms
+	' that condition already, and a second source on it puts one event on
+	' the operator's list twice. Position is a state rather than an event
+	' - the panel draws it, and an alarm per position change would be
+	' noise the control room learns to ignore.
+	SetAlarm bag, "CommandOpenFailed",  "FALHA ABERTURA",   PAIR_ACTUATED, SEV_HIGH
+	SetAlarm bag, "CommandCloseFailed", "FALHA FECHAMENTO", PAIR_ACTUATED, SEV_HIGH
+	
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
+
+
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "FINALIZADO|EM ANDAMENTO|1"
+
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
+
+
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
+
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+	
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
+	End Function
+
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	' The digital state that raises the alarm - DigitalLimit. It travels
+	' inside the pair rather than beside it, so the words and the state
+	' they describe cannot be changed independently of one another.
+	Public Function AlarmLimit()
+		AlarmLimit = CLng("0" & PairPart(2))
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
+	
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+	
+End Sub
+
 <xatm_config_data.PropertiesHelper.xatm_Transformer:xatm_Transformer_OnStartRunning()>
 Sub xatm_Transformer_OnStartRunning()
 
@@ -5514,10 +5896,20 @@ End Sub
 <xatm_config_screens.Config.btnApply:btnApply_Click()>
 Sub btnApply_Click()
 
-	Dim transformerType, busbarType
+	Dim transformerType, busbarType, incomeType
 	transformerType = SelectedLayout("SelectLayoutTransformer")
 	busbarType      = SelectedLayout("SelectLayoutBusbar")
+	incomeType      = SelectedLayout("SelectLayoutIncome")
 
+	' Asked apart from the pairing below. No TM or TA step operates income
+	' equipment, so the income layout cannot make a combination
+	' unsupported - but a name this screen does not know would quietly
+	' build nothing at all, which is worth saying out loud.
+	If Not IsIncomeLayout(incomeType) Then
+		MsgBox "'" & incomeType & "' is not an income layout this screen can " & _
+		       "apply. Nothing was changed.", vbExclamation, "Apply"
+		Exit Sub
+	End If
 	If Not IsSupportedCombination(transformerType, busbarType) Then
 
 		If MsgBox(UnsupportedCombinationText(transformerType, busbarType) & vbCrLf & vbCrLf & _
@@ -5561,18 +5953,36 @@ Sub btnApply_Click()
 	added   = ""
 	failed  = ""
 
-	SyncFolder doc, TRANSFORMER_PATH, TransformerDevices(transformerType), removed, added, failed
+	' The Transformer folder is fed by both axes: what the transformer
+	' layout declares, plus the high-voltage disconnectors that exist
+	' only because there is an income to connect to.
+	SyncFolder doc, TRANSFORMER_PATH, _
+	           BothLists(TransformerDevices(transformerType), _
+	                     TransformerHVDevices(transformerType, incomeType)), _
+	           removed, added, failed
+
 	SyncFolder doc, BUSBAR_PATH, BusbarDevices(busbarType), removed, added, failed
+
+	' Skipped rather than reported when there is nothing to put there and
+	' no folder to put it in. A substation that never had an income has no
+	' Income folder either, and saying so at every Apply would be noise.
+	If Not (IncomeWanted(incomeType) Or HasFolder(doc, INCOME_PATH)) Then
+		' nothing to do
+	Else
+		SyncFolder doc, INCOME_PATH, IncomeDevices(incomeType), removed, added, failed
+	End If
+
 	SyncAutomation doc, AutomationCount(transformerType), removed, added, failed
 
 	SetLayoutTag doc, "Transformer", transformerType
 	SetLayoutTag doc, "Busbar", busbarType
+	SetLayoutTag doc, "Income", incomeType
 
 	contentTag.WriteEx DocumentText(doc)
 	
 	Application.GetObject("xatm_config_data.Config.UpdateTreeviewSignal").WriteEx True
 	
-	MsgBox ApplyReport(transformerType, busbarType, removed, added, failed), vbInformation, "Apply"
+	MsgBox ApplyReport(transformerType, busbarType, incomeType, removed, added, failed), vbInformation, "Apply"
 
 End Sub
 
@@ -5582,6 +5992,7 @@ Const AUTOMATION_PATH  = "/xatm-config/folder[@name='Automation']"
 Const LAYOUT_PATH      = "/xatm-config/folder[@name='Automation']/folder[@name='Layout']"
 Const TRANSFORMER_PATH = "/xatm-config/folder[@name='Substation']/folder[@name='Transformer']"
 Const BUSBAR_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Busbar']"
+Const INCOME_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Income']"
 
 Const BTC_CLASS         = "xatm_BTC"
 Const TRANSFORMER_CLASS = "xatm_Transformer"
@@ -5624,6 +6035,125 @@ Function TransformerDevices(layoutType)
 End Function
 
 
+' Every device the income layout expects to find in the Income folder,
+' as "class:Id" - the two line bays, each a breaker with its line
+' disconnector and one disconnector per income busbar.
+'
+' The tens digit is the bay and the units digit the role. Nothing is
+' numbered 0: an unconfigured Id reads as Empty, and VBScript makes
+' Empty equal to 0 - so a device with Id 0 collides with every device
+' nobody has configured yet, both in FindInFolder's comparison and as a
+' Dictionary key in BuildDeviceDictionary.
+Function IncomeDevices(layoutType)
+
+	Select Case UCase(layoutType)
+
+		Case "2BR2BB"
+			IncomeDevices = Array("xatm_Breaker:10", "xatm_Disconnector:12", _
+			                      "xatm_Disconnector:14", "xatm_Disconnector:15", _
+			                      "xatm_Breaker:20", "xatm_Disconnector:22", _
+			                      "xatm_Disconnector:24", "xatm_Disconnector:25")
+
+		' No income supervised by this automation - and with it, no
+		' high-voltage disconnectors on the transformers either.
+		Case "NONE"
+			IncomeDevices = Array()
+
+		Case Else
+			IncomeDevices = Array()
+
+	End Select
+
+End Function
+
+
+' The transformers' high-voltage disconnectors, which belong to neither
+' layout on its own.
+'
+' They sit in the Transformer folder, but how many there are is
+' transformers x income busbars - so the transformer layout cannot name
+' them and neither can the income layout. They are the devices that
+' exist only where the two axes cross, which is why 4TR4LV does not
+' mention them in its name.
+Function TransformerHVDevices(transformerType, incomeType)
+
+	TransformerHVDevices = Array()
+
+	If UCase(incomeType) <> "2BR2BB" Then Exit Function
+
+	Dim count
+	count = TransformerCount(transformerType)
+	If count < 1 Then Exit Function
+
+	Dim list()
+	ReDim list(count * 2 - 1)
+
+	Dim i, base
+	For i = 1 To count
+
+		base = i * 100
+		list((i - 1) * 2)     = "xatm_Disconnector:" & (base + HV_TO_BAR_A)
+		list((i - 1) * 2 + 1) = "xatm_Disconnector:" & (base + HV_TO_BAR_B)
+
+	Next
+
+	TransformerHVDevices = list
+
+End Function
+
+' The two offsets a transformer's high-voltage disconnectors are
+' numbered at, one per income busbar - the lower offset to bar A, the
+' higher to bar B.
+'
+' The income bays pair the same way round: +30 and +4 land on bar A,
+' +80 and +5 on bar B. Bar B is the upper of the two on the drawing,
+' which is the opposite of what the label order suggests.
+Const HV_TO_BAR_A = 30
+Const HV_TO_BAR_B = 80
+
+
+' How many transformers a layout has. The same count as the automations
+' - one BTC per transformer - but asked as its own question, because the
+' high-voltage disconnectors are per transformer and not per automation.
+Function TransformerCount(layoutType)
+
+	Select Case UCase(layoutType)
+		Case "4TR4LV" : TransformerCount = 4
+		Case "2TR2LV" : TransformerCount = 2
+		Case Else     : TransformerCount = 0
+	End Select
+
+End Function
+
+
+' Two device lists as one, for a folder fed by more than one layout.
+Function BothLists(first, second)
+
+	If UBound(first) < 0 Then
+		BothLists = second
+		Exit Function
+	End If
+
+	If UBound(second) < 0 Then
+		BothLists = first
+		Exit Function
+	End If
+
+	Dim list()
+	ReDim list(UBound(first) + UBound(second) + 1)
+
+	Dim i
+	For i = 0 To UBound(first)
+		list(i) = first(i)
+	Next
+	For i = 0 To UBound(second)
+		list(UBound(first) + 1 + i) = second(i)
+	Next
+
+	BothLists = list
+
+End Function
+
 ' Every device the busbar layout expects to find in the Busbar folder,
 ' as "class:Id" - the bus-tie and bus-section breakers.
 Function BusbarDevices(layoutType)
@@ -5654,6 +6184,7 @@ Function TypePrefix(className)
 
 		Case "xatm_breaker"      : TypePrefix = "DJ"
 		Case "xatm_transformer"  : TypePrefix = "TR"
+		Case "xatm_disconnector" : TypePrefix = "SC"    ' seccionadora
 
 		' A class with no tag of its own falls back to the first two
 		' letters of its name - XATM_Feeder is FE.
@@ -5701,6 +6232,19 @@ Function IsBusbarLayout(layoutType)
 	Select Case UCase(layoutType)
 		Case "6BB6TIERING", "2BB1TIE" : IsBusbarLayout = True
 		Case Else                     : IsBusbarLayout = False
+	End Select
+
+End Function
+
+
+' NONE is a layout like any other here - it is the answer for a
+' substation whose income this automation does not supervise, and is
+' not the same thing as a name nobody recognises.
+Function IsIncomeLayout(layoutType)
+
+	Select Case UCase(layoutType)
+		Case "2BR2BB", "NONE" : IsIncomeLayout = True
+		Case Else             : IsIncomeLayout = False
 	End Select
 
 End Function
@@ -5796,9 +6340,16 @@ Sub SyncFolder(doc, folderPath, devices, removed, added, failed)
 	Set folder = doc.selectSingleNode(folderPath)
 
 	If folder Is Nothing Then
+
+		' The document is an export of the project, so a folder missing
+		' here is a folder missing in E3 - and the import creates objects
+		' but never folders. Saying which one and where it belongs turns
+		' this from a puzzle into a one-line job.
 		failed = failed & vbCrLf & "  the " & FolderLabel(folderPath) & _
-		         " folder is not in the document"
+		         " folder is not in the document - create it in the project " & _
+		         "(XATM_Data.Substation." & FolderLabel(folderPath) & ") and export again"
 		Exit Sub
+
 	End If
 
 	' --- Drop what the layout does not name ---------------------------
@@ -6206,6 +6757,22 @@ Sub SetLayoutTag(doc, tagName, value)
 End Sub
 
 
+' Whether an income layout asks for any equipment at all. NONE is a
+' valid answer that happens to want nothing.
+Function IncomeWanted(incomeType)
+
+	IncomeWanted = (UBound(IncomeDevices(incomeType)) >= 0)
+
+End Function
+
+
+' Whether the document has a folder at a path.
+Function HasFolder(doc, folderPath)
+
+	HasFolder = Not (doc.selectSingleNode(folderPath) Is Nothing)
+
+End Function
+
 ' Removes an element together with the indentation in front of it, so
 ' pruning leaves no blank lines behind.
 Sub DropNode(node)
@@ -6327,10 +6894,10 @@ End Function
 '  REPORT
 ' ------------------------------------------------------------
 
-Function ApplyReport(transformerType, busbarType, removed, added, failed)
+Function ApplyReport(transformerType, busbarType, incomeType, removed, added, failed)
 
 	Dim text
-	text = "Applied " & transformerType & " + " & busbarType & "."
+	text = "Applied " & transformerType & " + " & busbarType & " + " & incomeType & "."
 
 	If removed <> "" Then
 		text = text & vbCrLf & vbCrLf & "Removed from the document:" & removed
@@ -6425,6 +6992,7 @@ Sub btnSave_Click()
 
 	layoutFolder.Item("Transformer").WriteEx Screen.Item("SelectLayoutTransformer").Index
 	layoutFolder.Item("Busbar").WriteEx Screen.Item("SelectLayoutBusbar").Index
+	layoutFolder.Item("Income").WriteEx Screen.Item("SelectLayoutIncome").Index
 
 	' Save answers True or False and raises nothing. Unchecked, a refused
 	' save reported success and the file went out against a project that
@@ -7021,7 +7589,24 @@ Sub Config_OnPreShow(Arg)
 		
 	Next
 	
-	' ---- BUSBAR ----
+	' ---- INCOME ----
+	Dim incomeType
+	incomeType = Application.GetObject("XATM_Data.Automation.Layout.Income").Value
+
+	imageList = Split(Item("SelectLayoutIncome").ImageList, ",")
+
+	For i = 0 To UBound(imageList)
+
+		If Trim(imageList(i)) = incomeType Then
+
+			Item("SelectLayoutIncome").Index = Trim(imageList(i))
+			Exit For
+
+		End If
+
+	Next
+
+		' ---- BUSBAR ----
 	Dim busbarType
 	busbarType = Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
 	
