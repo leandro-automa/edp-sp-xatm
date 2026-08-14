@@ -49,21 +49,50 @@ o contrato, independente do nome de exibição do dispositivo em `xatm_data`.
 ### Entrada 88 kV — RAE GUL-1 e RAE GUL-2
 
 Duas linhas da LT Norte-Nordeste alimentam as barras de entrada BA-1 e BA-2.
-Os vãos de entrada ficam na pasta **Income**, e ocupam a faixa **0–99**, que
-estava inteiramente livre.
+Os vãos de entrada ficam na pasta **`Substation.Incomer`**, que já existia
+vazia no projeto, e ocupam a faixa **0–99**, que estava inteiramente livre.
+
+> **`Incomer`, e não `Income` nem `Input`.** Em subestação, *incomer* é o vão
+> que traz a alimentação para dentro — é o termo corrente de manobra e de
+> painel. *Income* é receita, dinheiro; e *Input* já está tomado pelos IOTags,
+> onde significa sinal de entrada e não vão.
+>
+> A pasta de equipamentos sempre se chamou `Incomer`, ao lado de
+> `Transformer`, `Busbar` e `Feeder`. O eixo de layout, a tag e o seletor
+> nasceram como `Income` e foram renomeados para casar com ela: hoje é
+> `Incomer` em todos os quatro lugares.
+>
+> O XPath tem de casar com o **nome da pasta**. Apontá-lo para `Income` não
+> encontra nada — e não encontrar nada é silencioso: `SyncFolder` não tem onde
+> escrever, nenhum equipamento é criado e nenhum nó aparece na árvore.
 
 **A dezena é o vão, a unidade é o papel do equipamento:**
 
 | Vão | Equipamento | ID Real | ID Lógico |
 |-----|-------------|---------|-----------|
-| RAE GUL-1 | Seccionadora de linha | 3393 | **12** |
-| RAE GUL-1 | **Disjuntor**         | 1    | **10** |
-| RAE GUL-1 | Seccionadora → BA-1   | 3997 | **14** |
-| RAE GUL-1 | Seccionadora → BA-2   | 3998 | **15** |
-| RAE GUL-2 | Seccionadora de linha | 3394 | **22** |
-| RAE GUL-2 | **Disjuntor**         | 2    | **20** |
-| RAE GUL-2 | Seccionadora → BA-1   | 3995 | **24** |
-| RAE GUL-2 | Seccionadora → BA-2   | 3996 | **25** |
+| RAE GUL-1 | Seccionadora de linha  | 3393 | **12** |
+| RAE GUL-1 | **Disjuntor**          | 1    | **10** |
+| RAE GUL-1 | Seccionadora → barra A | 3997 | **14** |
+| RAE GUL-1 | Seccionadora → barra B | 3998 | **15** |
+| RAE GUL-2 | Seccionadora de linha  | 3394 | **22** |
+| RAE GUL-2 | **Disjuntor**          | 2    | **20** |
+| RAE GUL-2 | Seccionadora → barra A | 3995 | **24** |
+| RAE GUL-2 | Seccionadora → barra B | 3996 | **25** |
+
+### As duas barras de entrada
+
+```
+B  ─────────────────────   (a de cima)
+A  ─────────────────────   (a de baixo)
+```
+
+**`+4` vai na barra A, `+5` na barra B** — nos vãos de entrada e, com os
+offsets maiores, também nas seccionadoras de alta tensão dos transformadores.
+
+> **A barra de cima é a B, não a A.** A ordem dos rótulos no unifilar sugere o
+> contrário, e foi assim que a primeira leitura deste documento errou. Como
+> 3997 é BA-1 e 3997 é o `14`, segue que **barra A = BA-1** (a de baixo) e
+> **barra B = BA-2** (a de cima).
 
 > **0–9 fica reservado, e nenhum equipamento pode ter Id 0.** Em VBScript
 > `Empty = 0` é verdadeiro, e um `.Id` não configurado lê como `Empty`. Um
@@ -90,18 +119,15 @@ justamente para que um passo nunca se pareça com o outro.
 ### Seccionadoras de alta tensão dos transformadores
 
 Ficam na pasta **Transformer**, junto do transformador a que pertencem, e
-seguem a regra `TRn = n×100`: **+30** e **+80** para as duas barras de entrada.
+seguem a regra `TRn = n×100`: **+30** para a barra A, **+80** para a barra B —
+o mesmo par dos vãos de entrada, na mesma ordem.
 
-| Transformador | ID Real | ID Lógico | ID Real | ID Lógico |
-|---------------|---------|-----------|---------|-----------|
-| TR1 (100)     | 3999    | **130**   | 4000    | **180**   |
-| TR2 (200)     | 4001    | **230**   | 4002    | **280**   |
-| TR3 (300)     | 4003    | **330**   | 4004    | **380**   |
-| TR4 (400)     | 3347    | **430**   | 3236    | **480**   |
-
-> **A confirmar:** qual das duas — `+30` ou `+80` — liga em BA-1. No unifilar
-> os transformadores ficam **abaixo** das barras, ao contrário dos vãos de
-> entrada, então a geometria não resolve a dúvida sozinha.
+| Transformador | → barra A | ID Lógico | → barra B | ID Lógico |
+|---------------|-----------|-----------|-----------|-----------|
+| TR1 (100)     | 3999      | **130**   | 4000      | **180**   |
+| TR2 (200)     | 4001      | **230**   | 4002      | **280**   |
+| TR3 (300)     | 4003      | **330**   | 4004      | **380**   |
+| TR4 (400)     | 3347      | **430**   | 3236      | **480**   |
 
 Estas seccionadoras **não são declaradas pelo layout de transformador**.
 Quantas existem depende de quantas barras de entrada há, que é assunto do
@@ -114,10 +140,14 @@ cruzamento dos dois layouts, e é por isso que `4TR4LV` não as menciona no nome
 - **0–9** — reservado, nunca atribuído (ver a nota sobre `Empty = 0`)
 - **10–99** — vãos de entrada 88 kV, dezena = vão (`RAE GUL-1 = 10`,
   `RAE GUL-2 = 20`), unidade = papel: **+0** disjuntor, **+2** seccionadora de
-  linha, **+4** BA-1, **+5** BA-2
+  linha, **+4** barra A, **+5** barra B
 - **100–400** — vãos de transformador (`TRn = n×100`); **+20** = disjuntor
-  secundário (`120 / 220 / 320 / 420`); **+30** e **+80** = seccionadoras de
-  alta tensão para as barras de entrada
+  secundário (`120 / 220 / 320 / 420`); **+30** = seccionadora de alta tensão
+  para a barra A, **+80** = para a barra B
+
+Os dois blocos apontam para as barras na mesma ordem — o offset menor sempre na
+barra A, o maior sempre na barra B — de modo que `14`, `24` e `130…430` são
+todos a mesma barra, e `15`, `25` e `180…480` a outra.
 - **700–740** — os cinco disjuntores de interligação de barra, percorrendo o
   anel na ordem dos barramentos B1A→B4A (`700, 710, 720, 730, 740`)
 - **900** — disjuntor de fechamento do anel (retorno B4A→B1A, normalmente
@@ -134,7 +164,7 @@ tela Config e sua tag em `XATM_Data.Automation.Layout`:
 |------|-----|---------|----------------------|
 | Transformer | `Layout.Transformer` | `4TR4LV`, `2TR2LV` | `Substation.Transformer` |
 | Busbar | `Layout.Busbar` | `6BB6TIERING`, `2BB1TIE` | `Substation.Busbar` |
-| Income | `Layout.Income` | `2BR2BB`, `NONE` | `Substation.Income` |
+| Incomer | `Layout.Incomer` | `2BR2BB`, `NONE` | `Substation.Incomer` |
 
 **ETD Guarulhos = `4TR4LV` + `6BB6TIERING` + `2BR2BB`.**
 
