@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Wed Aug 12 11:18:24 2026
+Fri Aug 14 16:30:22 2026
 -----------------------
 
 <xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
@@ -248,6 +248,1391 @@ Sub XMLBuilderAfterDelay_ThickCountdown()
 	
 	End If
 		
+End Sub
+
+<xatm_config_data.Config.BuildAlarms:BuildAlarms_OnChangedValue()>
+Sub BuildAlarms_OnChangedValue()
+
+	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub
+	If Trim(CStr(Value)) = "" Then Exit Sub
+
+	Dim ts
+	ts = TimeStamp                         ' preserved for the silent clear
+
+	Dim substationPath
+	substationPath = Trim(CStr(Value))
+
+	Dim substation
+	Set substation = Nothing
+	On Error Resume Next
+	Set substation = Application.GetObject(substationPath)
+	On Error Goto 0
+
+	If substation Is Nothing Then
+		Fail "there is nothing at " & substationPath & ".", ts
+		Exit Sub
+	End If
+
+	' Where the alarms bind. Read from the project rather than assumed,
+	' because the interface sits at the root of the data project in some
+	' layouts and inside XATM_Data in others - and an alarm bound to a
+	' path that is merely plausible is an alarm that never raises.
+	Dim interfaceServer
+	Set interfaceServer = InterfaceRoot()
+
+	If interfaceServer Is Nothing Then
+		Fail "the project has no interface data server, so there is " & _
+		     "nothing for the alarms to bind to.", ts
+		Exit Sub
+	End If
+
+	gInterfaceRoot = interfaceServer.PathName
+
+	' The folder the alarms are built in - emptied and made again rather
+	' than brought up to date, the way the interface is. A device can be
+	' renamed on the Config screen, and a folder named after the name it
+	' used to have cannot be told from one nobody wants any more.
+	Dim folder
+	Set folder = ChildFolder(substation, AUTOMATION_FOLDER)
+
+	If folder Is Nothing Then
+		Fail "the substation would not take a " & AUTOMATION_FOLDER & " folder.", ts
+		Exit Sub
+	End If
+
+	ClearFolder folder
+
+	gFolders  = 0
+	gAlarms   = 0
+	gCommands = 0
+
+	Dim problem
+	problem = ""
+
+	AlarmFolder folder, Application.GetObject(DATA_ROOT), "", problem
+
+	' Written here rather than left to the Save that persists XATM_Data:
+	' these objects are in the substation's container, which is not the
+	' container holding the automation.
+	'
+	' Save answers True or False and raises nothing, so the answer is what
+	' decides. An On Error still wraps the call for a container that will
+	' not give one at all, and saved starts False so that a call which
+	' never returns is a failure rather than a silence.
+	Dim saved
+	saved = False
+
+	On Error Resume Next
+	Err.Clear
+
+	saved = folder.Context("Container").Save()
+
+	If Err.Number <> 0 Then Err.Clear
+	On Error Goto 0
+
+	If Not saved Then
+		problem = problem & vbCrLf & "  not saved - E3 would not write the " & _
+		          "substation's project. A licence that will not carry this " & _
+		          "many tags is the usual reason."
+	End If
+
+	' Said out loud even when it all went through, for the same reason
+	' the interface rebuild says it: a routine that mentions only what it
+	' could not build reads the same whether it ran or was never called.
+	If gAlarms = 0 And gCommands = 0 Then
+		WriteLog "Automation - no alarms and no commands are interfaced."
+	Else
+		WriteLog "Automation - " & gAlarms & " alarms and " & gCommands & _
+		         " commands on " & gFolders & " objects, under " & _
+		         substationPath & "." & AUTOMATION_FOLDER & "."
+	End If
+
+	If problem <> "" Then
+		WriteLog "Automation is incomplete:" & problem
+		DocString = EXIT_FAILURE
+		WriteEx Empty, ts
+		Exit Sub
+	End If
+
+	DocString = EXIT_SUCCESS
+	WriteEx Empty, ts                      ' clear without re-firing
+
+End Sub
+
+
+' The folder built under the chosen PowerSubstation. Named for what it
+' holds rather than for the alarms alone: the substation side both reads
+' the alarms in it and writes the commands beside them.
+Const AUTOMATION_FOLDER  = "Automatismos"
+
+' What the folder is made of. The first two carry a reading and a
+' command alike; the last two are the alarm's own, and a command tag
+' gets neither.
+Const AUTOMATION_FOLDER_CLASS = "DataFolder"
+Const AUTOMATION_TAG_CLASS    = "InternalTag"
+Const ALARM_SOURCE_CLASS      = "DigitalAlarmSource"
+Const ALARM_SOURCE_NAME       = "Alarm"
+
+' How a link carries the value - the BindType argument of CreateLink,
+' which is a Simple Link when it is left off.
+'
+'   simple    source -> property   the tag follows the interface
+'   reverse   property -> source   the interface follows the tag
+'
+' Both are one-way, and both live on the substation tag, so which one is
+' asked for is the whole of the difference between a reading and a
+' command. The link is not moved to the other end for a command - it
+' would be wiped by the next interface rebuild if it were.
+Const LINK_SIMPLE  = 0
+Const LINK_REVERSE = 5
+
+Const DATA_ROOT          = "XATM_Data"
+Const CONFIG_DATA        = "xatm_config_data"
+Const HELPER_FOLDER      = "PropertiesHelper"
+
+Const INTERFACE_ROOT     = "XATM_Interface"
+Const INTERFACE_ROOT_ALT = "XATM_Data.XATM_Interface"
+
+Const EXIT_SUCCESS       = "EXIT_SUCCESS"
+Const EXIT_FAILURE       = "EXIT_FAILURE"
+
+' Anything this severe or worse has to be acknowledged. A status the
+' control room is merely told about - a sequence being in progress - is
+' not something to make an operator clear off the list by hand.
+'
+' Tested with <=, because Power's severity scale runs backwards:
+' critical is -2 and low is 2, so "this severe or worse" is the smaller
+' number. Written out as a literal because the SEV_ constants belong to
+' the manifests, and this scope cannot see them.
+Const ACK_FROM_SEVERITY  = 1     ' medium
+
+' Where the interface was found this run, as the head of every path the
+' alarms bind to.
+Dim gInterfaceRoot
+
+' What the last build came out at, for the line it writes to the log.
+Dim gFolders
+Dim gAlarms
+Dim gCommands
+
+
+' One folder of the data project: an alarm for every object in it a
+' manifest speaks for, and then the same for whatever is under it.
+'
+' The walk the interface rebuild does, over the same tree and reading
+' the same manifests - so the folders come out shaped alike and an
+' alarm is found where the tree says its device is.
+Sub AlarmFolder(root, folder, path, problem)
+
+	Dim item, bag
+
+	For Each item In folder
+
+		Set bag = ManifestOf(TypeName(item))
+
+		If Not bag Is Nothing Then
+
+			AlarmObject root, path, item, bag, problem
+
+		Else
+
+			On Error Resume Next
+			AlarmFolder root, item, ChildPath(path, item.Name), problem
+			On Error Goto 0
+
+		End If
+
+	Next
+
+End Sub
+
+
+' One name onto a path, and the first name is the whole of it.
+Function ChildPath(path, objectName)
+
+	If path = "" Then
+		ChildPath = objectName
+	Else
+		ChildPath = path & "." & objectName
+	End If
+
+End Function
+
+
+' The folder at a path under the alarm root, each level made where it is
+' not already there. An object with nothing on the alarm table gets no
+' folder, rather than an empty one to wonder about.
+Function EnsureFolder(root, path, problem)
+
+	Set EnsureFolder = root
+	If path = "" Then Exit Function
+
+	Dim names
+	names = Split(path, ".")
+
+	Dim parent, child, i
+	Set parent = root
+
+	For i = 0 To UBound(names)
+
+		Set child = Nothing
+
+		On Error Resume Next
+		Set child = parent.Item(names(i))
+		On Error Goto 0
+
+		If child Is Nothing Then Set child = NewChild(parent, AUTOMATION_FOLDER_CLASS, names(i))
+
+		If child Is Nothing Then
+			problem = problem & vbCrLf & "  no folder for " & path
+			Set EnsureFolder = Nothing
+			Exit Function
+		End If
+
+		Set parent = child
+
+	Next
+
+	Set EnsureFolder = parent
+
+End Function
+
+
+' One object's folder, and in it a tag for each property worth carrying:
+' an alarm for a reading the manifest puts on the alarm table, and a
+' plain tag for each command the interface holds. An object with neither
+' gets no folder at all.
+Sub AlarmObject(root, path, obj, bag, problem)
+
+	Dim key, p
+
+	Dim wanted
+	wanted = False
+
+	For Each key In bag.Keys
+		If bag(key).IsAlarmed() Then wanted = True
+		If IsCommand(bag(key)) Then wanted = True
+	Next
+
+	If Not wanted Then Exit Sub
+
+	Dim parent
+	Set parent = EnsureFolder(root, path, problem)
+	If parent Is Nothing Then Exit Sub
+
+	Dim folder
+	Set folder = NewChild(parent, AUTOMATION_FOLDER_CLASS, obj.Name)
+
+	If folder Is Nothing Then
+		problem = problem & vbCrLf & "  no folder for " & obj.Name
+		Exit Sub
+	End If
+
+	gFolders = gFolders + 1
+
+	' Where this object's readings are on the interface. The alarms bind
+	' there and never to the XObject: the interface is where the Elipse
+	' application meets the automation, and an alarm is the application
+	' asking to be told about a reading.
+	Dim interfacePath
+	interfacePath = gInterfaceRoot & "." & ChildPath(path, obj.Name)
+
+	For Each key In bag.Keys
+
+		Set p = bag(key)
+
+		If p.IsAlarmed() Then
+			AlarmTag folder, interfacePath, obj, p, problem
+		ElseIf IsCommand(p) Then
+			CommandTag folder, interfacePath, obj, p, problem
+		End If
+
+	Next
+
+End Sub
+
+
+' A command the interface carries: an InternalTag property a manifest
+' interfaces. RebuildInterface leaves these unlinked and points the
+' XObject's property at them, so they are the automation's inputs - the
+' substation side writes them to ask for a maneuver.
+Function IsCommand(p)
+
+	IsCommand = (LCase(p.DataType & "") = "internaltag") And p.IsInterfaced()
+
+End Function
+
+
+' The tag one property gets in the substation's folder, wired to the
+' interface tag standing for it. Nothing when it could not be made.
+'
+' A link carries a value one way, so the direction is the whole of the
+' difference between the two kinds:
+'
+'   reading   automation -> interface -> substation, on a simple link
+'   command   substation -> interface -> automation, on a reverse one
+'
+' A command left on a simple link is a command the automation never
+' sees: the operator writes a tag that is downstream of the thing it was
+' meant to drive, and the write is overwritten by the value it was
+' supposed to change. Nothing errors, and the maneuver never starts.
+Function BoundTag(folder, interfacePath, obj, p, problem, linkType)
+
+	Set BoundTag = Nothing
+
+	Dim source
+	source = interfacePath & "." & p.Name
+
+	' Checked before it is wired. The interface is emptied and rebuilt on
+	' every Save, so tags built before that rebuild would wire to ones on
+	' their way out - and a link to a tag that is not there fails quietly,
+	' leaving an alarm that never raises or a command that goes nowhere.
+	' Better said here than handed over looking like it works.
+	Dim target
+	Set target = Nothing
+	On Error Resume Next
+	Set target = Application.GetObject(source)
+	On Error Goto 0
+
+	If target Is Nothing Then
+		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
+		          " has no interface tag at " & source
+		Exit Function
+	End If
+
+	Dim tag
+	Set tag = NewChild(folder, AUTOMATION_TAG_CLASS, p.Name)
+
+	If tag Is Nothing Then
+		problem = problem & vbCrLf & "  no tag for " & obj.Name & "." & p.Name
+		Exit Function
+	End If
+
+	On Error Resume Next
+	Err.Clear
+
+	tag.Links.CreateLink "Value", source, linkType
+
+	If Err.Number <> 0 Then
+		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
+		          " would not wire to " & source & " - " & Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+	Set BoundTag = tag
+
+End Function
+
+
+' One alarm for one reading: the bound tag, and the source on it that
+' turns a change into an event.
+Sub AlarmTag(folder, interfacePath, obj, p, problem)
+
+	Dim tag
+	Set tag = BoundTag(folder, interfacePath, obj, p, problem, LINK_SIMPLE)
+	If tag Is Nothing Then Exit Sub
+
+	Dim alarm
+	Set alarm = NewChild(tag, ALARM_SOURCE_CLASS, ALARM_SOURCE_NAME)
+
+	If alarm Is Nothing Then
+		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
+		          " would not take a " & ALARM_SOURCE_CLASS
+		Exit Sub
+	End If
+
+	' Each written on its own and reported on its own. What this version
+	' of Power accepts is what decides the shape of an alarm, and a
+	' property it does not know should cost that one setting rather than
+	' the whole alarm.
+	Dim where
+	where = obj.Name & "." & p.Name
+
+	SetMember alarm, "DigitalLimit",             p.AlarmLimit(),      where, problem
+	SetMember alarm, "DigitalMessageText",       p.AlarmActiveText(), where, problem
+	SetMember alarm, "DigitalReturnMessageText", p.AlarmNormalText(), where, problem
+	SetMember alarm, "DigitalSeverity",          p.AlarmSeverity,     where, problem
+	SetMember alarm, "DigitalAckRequired", _
+	          (p.AlarmSeverity <= ACK_FROM_SEVERITY), where, problem
+
+	gAlarms = gAlarms + 1
+
+End Sub
+
+
+' One command for the substation side to write, on a reverse link so
+' that writing it reaches the automation.
+'
+' No alarm source: a command is what the operator's screen asks for, not
+' something the control room is told about, and an event per request
+' would put the asking on the list as though the switchyard had done it.
+Sub CommandTag(folder, interfacePath, obj, p, problem)
+
+	Dim tag
+	Set tag = BoundTag(folder, interfacePath, obj, p, problem, LINK_REVERSE)
+	If tag Is Nothing Then Exit Sub
+
+	gCommands = gCommands + 1
+
+End Sub
+
+' One setting onto the alarm source, late-bound the way the import
+' writes a property, and named in the log when it will not take.
+Sub SetMember(alarm, memberName, newValue, where, problem)
+
+	gMemberValue = newValue
+
+	On Error Resume Next
+	Err.Clear
+
+	Execute "alarm." & memberName & " = gMemberValue"
+
+	If Err.Number <> 0 Then
+		problem = problem & vbCrLf & "  " & where & " would not take " & _
+		          memberName & " - " & Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+End Sub
+
+' Scratch cell for the late-bound write done through Execute, the way
+' the interface rebuild keeps one.
+Dim gMemberValue
+
+
+' A child of a container by name, made where it is not already there.
+Function ChildFolder(parent, folderName)
+
+	Set ChildFolder = Nothing
+
+	On Error Resume Next
+	Set ChildFolder = parent.Item(folderName)
+	On Error Goto 0
+
+	If Not ChildFolder Is Nothing Then Exit Function
+
+	Set ChildFolder = NewChild(parent, AUTOMATION_FOLDER_CLASS, folderName)
+
+End Function
+
+
+' Empties a folder. Taken out in a second pass, because a collection is
+' not walked while what is in it is being removed.
+Sub ClearFolder(folder)
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim item
+	For Each item In folder
+		doomed.Add doomed.Count, item.Name
+	Next
+
+	Dim n
+	For Each n In doomed.Keys
+
+		On Error Resume Next
+		folder.DeleteObject doomed(n)
+		On Error Goto 0
+
+	Next
+
+End Sub
+
+
+' A new child of a container, Nothing when it would not take one -
+' AddObject(ClassName, [Activate], [ObjectName]).
+Function NewChild(parent, className, objectName)
+
+	Set NewChild = Nothing
+
+	On Error Resume Next
+	Set NewChild = parent.AddObject(className, True, objectName)
+	On Error Goto 0
+
+End Function
+
+
+' The data server the interface was built in. Named at the root of the
+' data project, and looked for inside XATM_Data as well, because which
+' of the two it sits under is a matter of how the project was laid out.
+Function InterfaceRoot()
+
+	Set InterfaceRoot = Nothing
+
+	On Error Resume Next
+	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT)
+	On Error Goto 0
+
+	If Not InterfaceRoot Is Nothing Then Exit Function
+
+	On Error Resume Next
+	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT_ALT)
+	On Error Goto 0
+
+End Function
+
+
+' The manifest declared for a class, or Nothing when the class has none -
+' the same lookup the export, the import and the interface do.
+Function ManifestOf(className)
+
+	Set ManifestOf = Nothing
+
+	On Error Resume Next
+	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
+	On Error Goto 0
+
+End Function
+
+
+' Said, logged, and the command cleared, for a build that got nowhere.
+Sub Fail(message, ts)
+
+	DocString = EXIT_FAILURE
+	WriteLog message
+	WriteEx Empty, ts
+
+End Sub
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+	
+End Sub
+
+<xatm_config_data.Config.BuildAlarms:BuildAlarms_OnStartRunning()>
+Sub BuildAlarms_OnStartRunning()
+	
+	DocString = ""
+
+End Sub
+
+<xatm_config_data.Config.BuildDistribution:BuildDistribution_OnChangedValue()>
+Sub BuildDistribution_OnChangedValue()
+
+	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub
+	If Trim(CStr(Value)) = "" Then Exit Sub
+
+	Dim ts
+	ts = TimeStamp                         ' preserved for the silent clear
+
+	' offset|path, split at the first bar. The offset is a number and
+	' carries no bar of its own, so whatever a driver's path contains
+	' travels whole - which a Split on every bar would not manage.
+	Dim payload
+	payload = Trim(CStr(Value))
+
+	Dim bar
+	bar = InStr(payload, "|")
+
+	If bar = 0 Then
+		Fail "the command carries no starting address (expected offset|path).", ts
+		Exit Sub
+	End If
+
+	Dim offsetText, driverPath
+	offsetText = Trim(Left(payload, bar - 1))
+	driverPath = Trim(Mid(payload, bar + 1))
+
+	If Not IsNumeric(offsetText) Then
+		Fail "'" & offsetText & "' is not a starting address.", ts
+		Exit Sub
+	End If
+
+	Dim driver
+	Set driver = Nothing
+	On Error Resume Next
+	Set driver = Application.GetObject(driverPath)
+	On Error Goto 0
+
+	If driver Is Nothing Then
+		Fail "there is nothing at " & driverPath & ".", ts
+		Exit Sub
+	End If
+
+	' Where the signals come from. Read from the project rather than
+	' assumed, because the interface sits at the root of the data project
+	' in some layouts and inside XATM_Data in others.
+	Dim interfaceServer
+	Set interfaceServer = InterfaceRoot()
+
+	If interfaceServer Is Nothing Then
+		Fail "the project has no interface data server, so there is " & _
+		     "nothing for the distribution to carry.", ts
+		Exit Sub
+	End If
+
+	gInterfaceRoot = interfaceServer.PathName
+
+	' Emptied and made again rather than brought up to date, the way the
+	' interface and the substation's alarms are. Addresses are handed out
+	' in walk order, so a half-kept folder would leave the numbering
+	' saying one thing and the operation centre's point list another.
+	Dim folder
+	Set folder = ChildFolder(driver, DISTRIBUTION_FOLDER)
+
+	If folder Is Nothing Then
+		Fail "the driver would not take a " & DISTRIBUTION_FOLDER & " folder.", ts
+		Exit Sub
+	End If
+
+	ClearFolder folder
+
+	gFolders  = 0
+	gMonitors = 0
+	gCommands = 0
+
+	' One run of addresses for both kinds. A monitored point and a
+	' command share an address space in 104, so numbering them from
+	' separate bases would only be two ways to land on one address.
+	gFirstAddress = CLng(offsetText)
+	gNextAddress  = gFirstAddress
+
+	Dim problem
+	problem = ""
+
+	WalkFolder folder, Application.GetObject(DATA_ROOT), "", problem
+
+	Dim built
+	built = gMonitors + gCommands
+
+	' --- and then the one thing most likely to go wrong ----------------
+	'
+	' Saved on its own and reported on its own, because this is where an
+	' unlicensed copy stops: E3 refuses to save past a small number of
+	' tags without a valid licence, and a distribution is easily hundreds.
+	' The tags are made either way, so a Save that fails leaves a project
+	' that looks built and comes back empty - which is worth saying
+	' loudly rather than leaving as one line among the rest.
+	' Save answers True or False and raises nothing, so the answer is what
+	' decides. saved starts False so a call that never returns counts as a
+	' refusal rather than passing for success.
+	Dim saved
+	saved = False
+
+	On Error Resume Next
+	Err.Clear
+
+	saved = folder.Context("Container").Save()
+
+	If Err.Number <> 0 Then Err.Clear
+	On Error Goto 0
+
+	If Not saved Then
+
+		WriteLog "NOT SAVED - " & built & " tags were built and E3 would not " & _
+		         "write them."
+		WriteLog "NOT SAVED - E3 will not save past about " & LICENCE_TAG_HINT & _
+		         " tags without a valid licence. The tags are in the project " & _
+		         "now and will be gone when it is closed. Check the licence " & _
+		         "before building again."
+
+		DocString = EXIT_FAILURE
+		WriteEx Empty, ts
+		Exit Sub
+
+	End If
+
+	If built = 0 Then
+		WriteLog "Distribution - nothing is interfaced to carry."
+	Else
+		WriteLog "Distribution - " & gMonitors & " monitored and " & gCommands & _
+		         " commanded on " & gFolders & " objects, under " & driverPath & _
+		         "." & DISTRIBUTION_FOLDER & ". Addresses " & gFirstAddress & _
+		         ".." & (gNextAddress - 1) & "."
+	End If
+
+	If problem <> "" Then
+		WriteLog "Distribution is incomplete:" & problem
+		DocString = EXIT_FAILURE
+		WriteEx Empty, ts
+		Exit Sub
+	End If
+
+	DocString = EXIT_SUCCESS
+	WriteEx Empty, ts                      ' clear without re-firing
+
+End Sub
+
+
+' The folder built under the chosen IODriver, and what it is made of.
+Const DISTRIBUTION_FOLDER = "Automatismos"
+Const IO_FOLDER_CLASS     = "IOFolder"
+Const IO_TAG_CLASS        = "IOTag"
+
+' What marks a tag as this configuration's to remake - the same mark the
+' interface puts on the tags it builds.
+Const SELF_MARK           = "$XATM$"
+
+' Always in advise: the driver keeps the point up to date of its own
+' accord rather than waiting to be asked, which is what a slave
+' publishing to a control centre has to do.
+Const ADVISE_ALWAYS       = 0
+
+' What the driver is told each tag is - the mnemonic at the head of the
+' configuration string.
+'
+' SP is a single point, which is what a discrete signal is: one bit,
+' going up to the operation centre. SC is a single command coming down,
+' and it is executed rather than selected, there being no
+' select-before-operate between this level and level 3.
+Const TYPE_MONITOR        = "SP"
+Const TYPE_COMMAND        = "SC"
+Const COMMAND_ACTION      = "Execute"
+
+' How a link carries the value - the BindType argument of CreateLink.
+' A discrete signal is copied from the interface into the tag the driver
+' publishes; a command arrives on the tag and has to reach the interface,
+' which is the other way about.
+Const LINK_SIMPLE         = 0
+Const LINK_REVERSE        = 5
+
+' Said in the message when a save is refused. Not read by anything - it
+' is the number an engineer needs to hear to recognise the cause.
+Const LICENCE_TAG_HINT    = 20
+
+Const DATA_ROOT           = "XATM_Data"
+Const CONFIG_DATA         = "xatm_config_data"
+Const HELPER_FOLDER       = "PropertiesHelper"
+
+Const INTERFACE_ROOT      = "XATM_Interface"
+Const INTERFACE_ROOT_ALT  = "XATM_Data.XATM_Interface"
+
+Const EXIT_SUCCESS        = "EXIT_SUCCESS"
+Const EXIT_FAILURE        = "EXIT_FAILURE"
+
+' Where the interface was found this run, as the head of every path the
+' distribution reads from.
+Dim gInterfaceRoot
+
+' Where the numbering started this run, and the next one to hand out.
+Dim gFirstAddress
+Dim gNextAddress
+
+' What the last build came out at, for the line it writes to the log.
+Dim gFolders
+Dim gMonitors
+Dim gCommands
+
+
+' One folder of the data project: a tag for every object in it a
+' manifest speaks for, and then the same for whatever is under it. The
+' walk the interface rebuild does, over the same tree.
+Sub WalkFolder(root, folder, path, problem)
+
+	Dim item, bag
+
+	For Each item In folder
+
+		Set bag = ManifestOf(TypeName(item))
+
+		If Not bag Is Nothing Then
+
+			WalkObject root, path, item, bag, problem
+
+		Else
+
+			On Error Resume Next
+			WalkFolder root, item, ChildPath(path, item.Name), problem
+			On Error Goto 0
+
+		End If
+
+	Next
+
+End Sub
+
+
+' One name onto a path, and the first name is the whole of it.
+Function ChildPath(path, objectName)
+
+	If path = "" Then
+		ChildPath = objectName
+	Else
+		ChildPath = path & "." & objectName
+	End If
+
+End Function
+
+
+' The folder at a path under the distribution root, each level made
+' where it is not already there.
+Function EnsureFolder(root, path, problem)
+
+	Set EnsureFolder = root
+	If path = "" Then Exit Function
+
+	Dim names
+	names = Split(path, ".")
+
+	Dim parent, child, i
+	Set parent = root
+
+	For i = 0 To UBound(names)
+
+		Set child = Nothing
+
+		On Error Resume Next
+		Set child = parent.Item(names(i))
+		On Error Goto 0
+
+		If child Is Nothing Then Set child = NewChild(parent, IO_FOLDER_CLASS, names(i))
+
+		If child Is Nothing Then
+			problem = problem & vbCrLf & "  no folder for " & path
+			Set EnsureFolder = Nothing
+			Exit Function
+		End If
+
+		Set parent = child
+
+	Next
+
+	Set EnsureFolder = parent
+
+End Function
+
+
+' One object's folder, and in it a tag for each signal worth carrying up
+' to the operation centre: a discrete reading, or a command coming back
+' down. An object with neither gets no folder at all.
+Sub WalkObject(root, path, obj, bag, problem)
+
+	Dim key, p
+
+	Dim wanted
+	wanted = False
+
+	For Each key In bag.Keys
+		If IsDiscrete(bag(key)) Then wanted = True
+		If IsCommand(bag(key))  Then wanted = True
+	Next
+
+	If Not wanted Then Exit Sub
+
+	Dim parent
+	Set parent = EnsureFolder(root, path, problem)
+	If parent Is Nothing Then Exit Sub
+
+	Dim folder
+	Set folder = NewChild(parent, IO_FOLDER_CLASS, obj.Name)
+
+	If folder Is Nothing Then
+		problem = problem & vbCrLf & "  no folder for " & obj.Name
+		Exit Sub
+	End If
+
+	gFolders = gFolders + 1
+
+	' Where this object's signals are on the interface. The distribution
+	' reads there and never from the XObject: the interface is where the
+	' Elipse application meets the automation, and carrying a signal to
+	' level 3 is the application's work.
+	Dim interfacePath
+	interfacePath = gInterfaceRoot & "." & ChildPath(path, obj.Name)
+
+	For Each key In bag.Keys
+
+		Set p = bag(key)
+
+		If IsDiscrete(p) Then
+			MonitorTag folder, interfacePath, obj, p, problem
+		ElseIf IsCommand(p) Then
+			CommandTag folder, interfacePath, obj, p, problem
+		End If
+
+	Next
+
+End Sub
+
+
+' A discrete signal: an interfaced Boolean the automation reads and the
+' operation centre is shown. Not a command - those are InternalTag
+' properties and go the other way - and not an IOTag, which is the
+' engineer's own wiring to the IED.
+Function IsDiscrete(p)
+
+	IsDiscrete = (LCase(p.DataType & "") = "boolean") And p.IsInterfaced()
+
+End Function
+
+
+' A command the interface carries: an InternalTag property a manifest
+' interfaces. RebuildInterface leaves these unlinked and points the
+' XObject's property at them, so writing one is how a maneuver is asked
+' for - and level 3 asks through the driver.
+Function IsCommand(p)
+
+	IsCommand = (LCase(p.DataType & "") = "internaltag") And p.IsInterfaced()
+
+End Function
+
+
+' The next address, and the one after it kept for the next caller.
+Function NextAddress()
+
+	NextAddress = gNextAddress
+	gNextAddress = gNextAddress + 1
+
+End Function
+
+
+' The tag one signal gets under the driver, wired to the interface tag
+' standing for it. Nothing when it could not be made.
+'
+' A link carries a value one way, so the direction is the whole of the
+' difference between the two kinds:
+'
+'   discrete  interface -> tag -> operation centre, on a simple link,
+'             and the driver is allowed to write it out
+'   command   operation centre -> tag -> interface, on a reverse one,
+'             and the driver is allowed to read it in
+Function BoundIOTag(folder, interfacePath, obj, p, problem, linkType, configString)
+
+	Set BoundIOTag = Nothing
+
+	Dim source
+	source = interfacePath & "." & p.Name
+
+	' Checked before it is wired. The interface is emptied and rebuilt on
+	' every Save, so tags built before that rebuild would wire to ones on
+	' their way out - and a link to a tag that is not there fails quietly,
+	' leaving a point the operation centre sees and nothing ever moves.
+	Dim target
+	Set target = Nothing
+	On Error Resume Next
+	Set target = Application.GetObject(source)
+	On Error Goto 0
+
+	If target Is Nothing Then
+		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
+		          " has no interface tag at " & source
+		Exit Function
+	End If
+
+	Dim tag
+	Set tag = NewChild(folder, IO_TAG_CLASS, p.Name)
+
+	If tag Is Nothing Then
+		problem = problem & vbCrLf & "  no tag for " & obj.Name & "." & p.Name
+		Exit Function
+	End If
+
+	Dim where
+	where = obj.Name & "." & p.Name
+
+	' What the driver is told this point is. Written on its own and
+	' reported on its own, the way an alarm's settings are: a driver that
+	' will not take one string should cost that point rather than the
+	' whole distribution.
+	SetMember tag, "ParamItem",      configString,  where, problem
+	SetMember tag, "DocString",      SELF_MARK,     where, problem
+	SetMember tag, "AdviseType",     ADVISE_ALWAYS, where, problem
+	SetMember tag, "EnableDeadBand", False,         where, problem
+
+	On Error Resume Next
+	Err.Clear
+
+	tag.Links.CreateLink "Value", source, linkType
+
+	If Err.Number <> 0 Then
+		problem = problem & vbCrLf & "  " & where & " would not wire to " & _
+		          source & " - " & Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+	Set BoundIOTag = tag
+
+End Function
+
+
+' One discrete signal on its way up: read off the interface, published
+' by the driver. The driver writes it out and never reads it back.
+Sub MonitorTag(folder, interfacePath, obj, p, problem)
+
+	Dim configString
+	configString = TYPE_MONITOR & ":" & NextAddress()
+
+	Dim tag
+	Set tag = BoundIOTag(folder, interfacePath, obj, p, problem, LINK_SIMPLE, configString)
+	If tag Is Nothing Then Exit Sub
+
+	Dim where
+	where = obj.Name & "." & p.Name
+
+	SetMember tag, "AllowRead",  False, where, problem
+	SetMember tag, "AllowWrite", True,  where, problem
+
+	gMonitors = gMonitors + 1
+
+End Sub
+
+
+' One command on its way down: taken off the driver, written through to
+' the interface. The driver reads it in and never writes it out.
+Sub CommandTag(folder, interfacePath, obj, p, problem)
+
+	Dim configString
+	configString = TYPE_COMMAND & ":" & NextAddress() & "." & COMMAND_ACTION
+
+	Dim tag
+	Set tag = BoundIOTag(folder, interfacePath, obj, p, problem, LINK_REVERSE, configString)
+	If tag Is Nothing Then Exit Sub
+
+	Dim where
+	where = obj.Name & "." & p.Name
+
+	SetMember tag, "AllowRead",  True,  where, problem
+	SetMember tag, "AllowWrite", False, where, problem
+
+	' The driver raises an event when the centre sends this, rather than
+	' the value simply appearing on the tag. The same command asked for
+	' twice running is the same value twice, and without this the second
+	' one would look like nothing had happened at all.
+	SetMember tag, "EnableDriverEvent", True, where, problem
+
+	gCommands = gCommands + 1
+
+End Sub
+
+
+' One setting onto a tag, late-bound the way the import writes a
+' property, and named in the log when it will not take.
+Sub SetMember(tag, memberName, newValue, where, problem)
+
+	gMemberValue = newValue
+
+	On Error Resume Next
+	Err.Clear
+
+	Execute "tag." & memberName & " = gMemberValue"
+
+	If Err.Number <> 0 Then
+		problem = problem & vbCrLf & "  " & where & " would not take " & _
+		          memberName & " - " & Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+End Sub
+
+' Scratch cell for the late-bound write done through Execute, the way
+' the interface rebuild keeps one.
+Dim gMemberValue
+
+
+' A child of a container by name, made where it is not already there.
+Function ChildFolder(parent, folderName)
+
+	Set ChildFolder = Nothing
+
+	On Error Resume Next
+	Set ChildFolder = parent.Item(folderName)
+	On Error Goto 0
+
+	If Not ChildFolder Is Nothing Then Exit Function
+
+	Set ChildFolder = NewChild(parent, IO_FOLDER_CLASS, folderName)
+
+End Function
+
+
+' Empties a folder. Taken out in a second pass, because a collection is
+' not walked while what is in it is being removed.
+Sub ClearFolder(folder)
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim item
+	For Each item In folder
+		doomed.Add doomed.Count, item.Name
+	Next
+
+	Dim n
+	For Each n In doomed.Keys
+
+		On Error Resume Next
+		folder.DeleteObject doomed(n)
+		On Error Goto 0
+
+	Next
+
+End Sub
+
+
+' A new child of a container, Nothing when it would not take one -
+' AddObject(ClassName, [Activate], [ObjectName]).
+Function NewChild(parent, className, objectName)
+
+	Set NewChild = Nothing
+
+	On Error Resume Next
+	Set NewChild = parent.AddObject(className, True, objectName)
+	On Error Goto 0
+
+End Function
+
+
+' The data server the interface was built in.
+Function InterfaceRoot()
+
+	Set InterfaceRoot = Nothing
+
+	On Error Resume Next
+	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT)
+	On Error Goto 0
+
+	If Not InterfaceRoot Is Nothing Then Exit Function
+
+	On Error Resume Next
+	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT_ALT)
+	On Error Goto 0
+
+End Function
+
+
+' The manifest declared for a class, or Nothing when the class has none.
+Function ManifestOf(className)
+
+	Set ManifestOf = Nothing
+
+	On Error Resume Next
+	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
+	On Error Goto 0
+
+End Function
+
+
+' Said, logged, and the command cleared, for a build that got nowhere.
+Sub Fail(message, ts)
+
+	DocString = EXIT_FAILURE
+	WriteLog message
+	WriteEx Empty, ts
+
+End Sub
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+	
+End Sub
+
+<xatm_config_data.Config.BuildDistribution:BuildDistribution_OnStartRunning()>
+Sub BuildDistribution_OnStartRunning()
+
+	DocString = ""
+	
+End Sub
+
+<xatm_config_data.Config.FindObjects:FindObjects_OnChangedValue()>
+Sub FindObjects_OnChangedValue()
+
+	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub   ' self-cleared write, ignore
+	If Trim(CStr(Value)) = "" Then Exit Sub
+
+	Dim ts
+	ts = TimeStamp                         ' preserved for the silent clear
+
+	' What to look for, as a class name. One scanner rather than one per
+	' class: the walk is the whole domain either way, and two of them
+	' would be two things to keep in step for no gain.
+	gWanted = UCase(Trim(CStr(Value)))
+
+	' Where the answer is left. A DocString says how it went and nothing
+	' more, so what was found travels on a tag of its own - the way
+	' SetProperty takes its payload off PropertyValue rather than out of
+	' the command.
+	Dim answerTag
+	Set answerTag = Nothing
+	On Error Resume Next
+	Set answerTag = Parent.Item(ANSWER_TAG)
+	On Error Goto 0
+
+	If answerTag Is Nothing Then
+		DocString = EXIT_FAILURE
+		WriteLog "There is no " & ANSWER_TAG & " tag to answer on."
+		WriteEx Empty, ts
+		Exit Sub
+	End If
+
+	Set gFound = CreateObject("Scripting.Dictionary")
+	Set gSeen  = CreateObject("Scripting.Dictionary")
+
+	ScanForClass Application, 0
+
+	' One path per line. A path holds no newline, so the caller gets its
+	' list back by splitting and needs no escaping either way.
+	Dim answer
+	answer = Join(gFound.Keys, vbCrLf)
+
+	answerTag.WriteEx answer
+
+	DocString = EXIT_SUCCESS
+	WriteLog "Found " & gFound.Count & " of class " & gWanted & "."
+
+	Set gFound = Nothing
+	Set gSeen  = Nothing
+
+	WriteEx Empty, ts                      ' clear without re-firing
+
+End Sub
+
+
+' The tag the answer is left on.
+Const ANSWER_TAG   = "FoundObjects"
+
+Const EXIT_SUCCESS = "EXIT_SUCCESS"
+Const EXIT_FAILURE = "EXIT_FAILURE"
+
+' How deep the walk goes. A substation or a driver sits a few levels
+' into a data server, well inside this. The cap is what stops a
+' container that answers For Each with something holding itself from
+' scanning forever.
+Const MAX_DEPTH    = 12
+
+' What is being looked for this run, upper-cased once so the comparison
+' in the walk is a comparison and not two conversions.
+Dim gWanted
+
+' What the scan has found, and what it has already been through. Held
+' here because the walk recurses and threading two dictionaries through
+' every call buys nothing - the same reason the tree keeps its images.
+Dim gFound
+Dim gSeen
+
+
+' Everything under a container, to the depth the cap allows.
+'
+' The whole domain is walked from Application rather than from a known
+' data server: which project an object was put in is the engineer's
+' choice, and a scan that only looks where this one expects would answer
+' "none" for a project that is laid out differently.
+Sub ScanForClass(container, depth)
+
+	If depth > MAX_DEPTH Then Exit Sub
+
+	' A tag, a property, anything that is not a container refuses For
+	' Each - which is how the walk finds the leaves, so the error is
+	' the answer here and not a fault to report.
+	On Error Resume Next
+
+	Dim item
+	For Each item In container
+
+		If Err.Number <> 0 Then
+			Err.Clear
+			Exit For
+		End If
+
+		Consider item, depth
+
+		If Err.Number <> 0 Then Err.Clear
+
+	Next
+
+	If Err.Number <> 0 Then Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' One object: kept when it is what was asked for, walked into when not.
+Sub Consider(item, depth)
+
+	Dim className, path
+	className = ""
+	path      = ""
+
+	On Error Resume Next
+	className = TypeName(item)
+	path      = item.PathName
+	On Error Goto 0
+
+	If UCase(className) = gWanted Then
+
+		' An object that will not say where it is cannot be handed to
+		' the caller, which has only a path to find it by again.
+		If path <> "" Then
+			If Not gFound.Exists(path) Then gFound.Add path, True
+		End If
+
+		' Nothing of the kind being looked for is nested in another of
+		' its kind - not a substation in a substation, nor a driver in
+		' a driver - so a match is not walked into.
+		Exit Sub
+
+	End If
+
+	' Walked once however many places it is reachable from. A domain is
+	' a graph rather than a tree - a server is under Application and
+	' under the objects that link to it - and without this the scan
+	' does the same subtree again for each way in.
+	If path <> "" Then
+		If gSeen.Exists(path) Then Exit Sub
+		gSeen.Add path, True
+	End If
+
+	ScanForClass item, depth + 1
+
+End Sub
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_config_data.Config.FindObjects:FindObjects_OnStartRunning()>
+Sub FindObjects_OnStartRunning()
+
+	DocString = ""
+
 End Sub
 
 <xatm_config_data.Config.ImportXml:ImportXml_OnChangedValue()>
@@ -1015,263 +2400,6 @@ Sub SaveXML_OnStartRunning()
 		
 End Sub
 
-<xatm_config_data.Config.XMLFilePath:XMLFilePath_OnStartRunning()>
-Sub XMLFilePath_OnStartRunning()
-
-	Dim filePath
-	filePath = ConfigFilePath()
-
-	' Somewhere writable rather than nowhere. This tag holds no
-	' configured path to fall back on - it is worked out fresh at every
-	' start - so a start that works nothing out leaves the export with
-	' nowhere at all to go.
-	If filePath = "" Then filePath = FallbackFilePath()
-
-	If filePath = "" Then
-		WriteLog "Neither the data project nor a temporary folder could be " & _
-		         "had, so " & Name & " is empty and the export has nowhere " & _
-		         "to be written."
-		Exit Sub
-	End If
-
-	WriteEx filePath
-
-	WriteLog Name & " is " & filePath
-
-End Sub
-
-
-' What is looked for, and what is written beside it.
-'
-' The data project is found rather than configured because it is not the
-' same folder twice: xatm_data.prj sits in a folder of its own per
-' substation - se_gul for Guarulhos - and a path typed in by hand is
-' right until this configuration is copied to the next site.
-Const DATA_PROJECT_FILE = "xatm_data.prj"
-Const XML_FILE_NAME     = "AutomationConfig.xml"
-
-' Where the export goes when the data project was not found -
-' GetSpecialFolder's TemporaryFolder.
-Const TEMPORARY_FOLDER  = 2
-
-' How far under the starting folder to look. The domain file sits at the
-' top and each substation is a folder under it, so the project is one
-' level down - and a couple more costs nothing and allows for a project
-' laid out with a little more nesting.
-Const MAX_SEARCH_DEPTH  = 3
-
-' Every folder holding a data project, in the order they were come
-' across. A dictionary rather than a single answer so that a domain
-' carrying two of them is something that can be said out loud rather
-' than silently resolved to whichever was met first.
-Dim gFound
-
-
-' The full path to write the export to, "" when the data project was not
-' found.
-'
-' Asked of the file system rather than of E3. A container knows where it
-' was loaded from, but not under a property name written down anywhere
-' that could be found - so this goes the plain way instead.
-Function ConfigFilePath()
-
-	ConfigFilePath = ""
-
-	Dim base
-	base = StartFolder()
-
-	If base = "" Then
-		WriteLog "The current directory could not be read, so " & _
-		         DATA_PROJECT_FILE & " was not looked for."
-		Exit Function
-	End If
-
-	Dim fso
-	Set fso = Nothing
-	On Error Resume Next
-	Set fso = CreateObject("Scripting.FileSystemObject")
-	On Error Goto 0
-
-	If fso Is Nothing Then
-		WriteLog "There is no file system object to look with."
-		Exit Function
-	End If
-
-	If Not fso.FolderExists(base) Then
-		WriteLog "The current directory, " & base & ", is not a folder."
-		Exit Function
-	End If
-
-	Set gFound = CreateObject("Scripting.Dictionary")
-
-	SearchFolder fso.GetFolder(base), 0
-
-	If gFound.Count = 0 Then
-		WriteLog DATA_PROJECT_FILE & " was not found under " & base & _
-		         " within " & MAX_SEARCH_DEPTH & " folders."
-		Set gFound = Nothing
-		Exit Function
-	End If
-
-	Dim folders
-	folders = gFound.Keys
-
-	' Said out loud and not resolved quietly. Two data projects under one
-	' domain is a domain this configuration cannot speak for, and writing
-	' the export into whichever folder was met first would be a choice
-	' nobody made.
-	If gFound.Count > 1 Then
-		WriteLog "More than one " & DATA_PROJECT_FILE & " is under " & base & _
-		         " - " & Join(folders, ", ") & ". The first is being used, " & _
-		         "which may not be the one meant."
-	End If
-
-	ConfigFilePath = fso.BuildPath(folders(0), XML_FILE_NAME)
-
-	Set gFound = Nothing
-
-End Function
-
-
-' Somewhere the export can always be written, for when the data project
-' was not found. "" only when there is no temporary folder either, which
-' is a machine with larger problems than this one.
-'
-' The file turning up in TEMP is itself the sign that something went
-' wrong - nobody would put it there on purpose - and the line logged
-' just above it says which of the ways it got there.
-Function FallbackFilePath()
-
-	FallbackFilePath = ""
-
-	Dim fso
-	Set fso = Nothing
-	On Error Resume Next
-	Set fso = CreateObject("Scripting.FileSystemObject")
-	On Error Goto 0
-
-	If fso Is Nothing Then Exit Function
-
-	Dim tempFolder
-	tempFolder = ""
-
-	On Error Resume Next
-	tempFolder = fso.GetSpecialFolder(TEMPORARY_FOLDER).Path
-	On Error Goto 0
-
-	If Trim(tempFolder & "") = "" Then Exit Function
-
-	FallbackFilePath = fso.BuildPath(tempFolder, XML_FILE_NAME)
-
-	WriteLog "Falling back to the temporary folder - " & FallbackFilePath
-
-End Function
-
-
-' Where E3 was started from, which is the folder the domain file sits in.
-Function StartFolder()
-
-	StartFolder = ""
-
-	Dim shell
-	Set shell = Nothing
-
-	On Error Resume Next
-	Err.Clear
-
-	Set shell = CreateObject("WScript.Shell")
-	If Not shell Is Nothing Then StartFolder = Trim(shell.CurrentDirectory & "")
-
-	If Err.Number <> 0 Then
-		StartFolder = ""
-		Err.Clear
-	End If
-
-	On Error Goto 0
-
-End Function
-
-
-' One folder and what is under it, to the depth the cap allows. A folder
-' that will not be read is stepped over rather than reported: a domain
-' folder holds all sorts, and one of them being unreadable says nothing
-' about where the data project is.
-Sub SearchFolder(folder, depth)
-
-	If depth > MAX_SEARCH_DEPTH Then Exit Sub
-
-	On Error Resume Next
-
-	Dim theFile
-	For Each theFile In folder.Files
-		If LCase(theFile.Name) = LCase(DATA_PROJECT_FILE) Then
-			If Not gFound.Exists(folder.Path) Then gFound.Add folder.Path, True
-		End If
-	Next
-
-	If Err.Number <> 0 Then Err.Clear
-
-	Dim child
-	For Each child In folder.SubFolders
-		If Not Skipped(child) Then SearchFolder child, depth + 1
-	Next
-
-	If Err.Number <> 0 Then Err.Clear
-
-	On Error Goto 0
-
-End Sub
-
-
-' Folders not worth walking into. A working copy carries .git, which
-' holds thousands of files and no data project, and E3 puts nothing of
-' ours anywhere hidden.
-Function Skipped(folder)
-
-	Skipped = True
-
-	Dim folderName
-	folderName = ""
-
-	On Error Resume Next
-	folderName = folder.Name
-	On Error Goto 0
-
-	If folderName = "" Then Exit Function
-	If Left(folderName, 1) = "." Then Exit Function
-
-	Dim attributes
-	attributes = 0
-
-	On Error Resume Next
-	attributes = folder.Attributes
-	On Error Goto 0
-
-	If (attributes And 2) <> 0 Then Exit Function     ' hidden
-	If (attributes And 4) <> 0 Then Exit Function     ' system
-
-	Skipped = False
-
-End Function
-
-
-' The console the automation logs to, and the E3 trace either way.
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
-	End If
-
-End Sub
-
 <xatm_config_data.Config.SetProperty:SetProperty_OnChangedValue()>
 Sub SetProperty_OnChangedValue()
 	
@@ -1674,1391 +2802,6 @@ Sub SetProperty_OnStartRunning()
 
 End Sub
 
-<xatm_config_data.Config.FindObjects:FindObjects_OnChangedValue()>
-Sub FindObjects_OnChangedValue()
-
-	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub   ' self-cleared write, ignore
-	If Trim(CStr(Value)) = "" Then Exit Sub
-
-	Dim ts
-	ts = TimeStamp                         ' preserved for the silent clear
-
-	' What to look for, as a class name. One scanner rather than one per
-	' class: the walk is the whole domain either way, and two of them
-	' would be two things to keep in step for no gain.
-	gWanted = UCase(Trim(CStr(Value)))
-
-	' Where the answer is left. A DocString says how it went and nothing
-	' more, so what was found travels on a tag of its own - the way
-	' SetProperty takes its payload off PropertyValue rather than out of
-	' the command.
-	Dim answerTag
-	Set answerTag = Nothing
-	On Error Resume Next
-	Set answerTag = Parent.Item(ANSWER_TAG)
-	On Error Goto 0
-
-	If answerTag Is Nothing Then
-		DocString = EXIT_FAILURE
-		WriteLog "There is no " & ANSWER_TAG & " tag to answer on."
-		WriteEx Empty, ts
-		Exit Sub
-	End If
-
-	Set gFound = CreateObject("Scripting.Dictionary")
-	Set gSeen  = CreateObject("Scripting.Dictionary")
-
-	ScanForClass Application, 0
-
-	' One path per line. A path holds no newline, so the caller gets its
-	' list back by splitting and needs no escaping either way.
-	Dim answer
-	answer = Join(gFound.Keys, vbCrLf)
-
-	answerTag.WriteEx answer
-
-	DocString = EXIT_SUCCESS
-	WriteLog "Found " & gFound.Count & " of class " & gWanted & "."
-
-	Set gFound = Nothing
-	Set gSeen  = Nothing
-
-	WriteEx Empty, ts                      ' clear without re-firing
-
-End Sub
-
-
-' The tag the answer is left on.
-Const ANSWER_TAG   = "FoundObjects"
-
-Const EXIT_SUCCESS = "EXIT_SUCCESS"
-Const EXIT_FAILURE = "EXIT_FAILURE"
-
-' How deep the walk goes. A substation or a driver sits a few levels
-' into a data server, well inside this. The cap is what stops a
-' container that answers For Each with something holding itself from
-' scanning forever.
-Const MAX_DEPTH    = 12
-
-' What is being looked for this run, upper-cased once so the comparison
-' in the walk is a comparison and not two conversions.
-Dim gWanted
-
-' What the scan has found, and what it has already been through. Held
-' here because the walk recurses and threading two dictionaries through
-' every call buys nothing - the same reason the tree keeps its images.
-Dim gFound
-Dim gSeen
-
-
-' Everything under a container, to the depth the cap allows.
-'
-' The whole domain is walked from Application rather than from a known
-' data server: which project an object was put in is the engineer's
-' choice, and a scan that only looks where this one expects would answer
-' "none" for a project that is laid out differently.
-Sub ScanForClass(container, depth)
-
-	If depth > MAX_DEPTH Then Exit Sub
-
-	' A tag, a property, anything that is not a container refuses For
-	' Each - which is how the walk finds the leaves, so the error is
-	' the answer here and not a fault to report.
-	On Error Resume Next
-
-	Dim item
-	For Each item In container
-
-		If Err.Number <> 0 Then
-			Err.Clear
-			Exit For
-		End If
-
-		Consider item, depth
-
-		If Err.Number <> 0 Then Err.Clear
-
-	Next
-
-	If Err.Number <> 0 Then Err.Clear
-	On Error Goto 0
-
-End Sub
-
-
-' One object: kept when it is what was asked for, walked into when not.
-Sub Consider(item, depth)
-
-	Dim className, path
-	className = ""
-	path      = ""
-
-	On Error Resume Next
-	className = TypeName(item)
-	path      = item.PathName
-	On Error Goto 0
-
-	If UCase(className) = gWanted Then
-
-		' An object that will not say where it is cannot be handed to
-		' the caller, which has only a path to find it by again.
-		If path <> "" Then
-			If Not gFound.Exists(path) Then gFound.Add path, True
-		End If
-
-		' Nothing of the kind being looked for is nested in another of
-		' its kind - not a substation in a substation, nor a driver in
-		' a driver - so a match is not walked into.
-		Exit Sub
-
-	End If
-
-	' Walked once however many places it is reachable from. A domain is
-	' a graph rather than a tree - a server is under Application and
-	' under the objects that link to it - and without this the scan
-	' does the same subtree again for each way in.
-	If path <> "" Then
-		If gSeen.Exists(path) Then Exit Sub
-		gSeen.Add path, True
-	End If
-
-	ScanForClass item, depth + 1
-
-End Sub
-
-
-' The console the automation logs to, and the E3 trace either way.
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
-	End If
-
-End Sub
-
-<xatm_config_data.Config.FindObjects:FindObjects_OnStartRunning()>
-Sub FindObjects_OnStartRunning()
-
-	DocString = ""
-
-End Sub
-
-<xatm_config_data.Config.BuildAlarms:BuildAlarms_OnChangedValue()>
-Sub BuildAlarms_OnChangedValue()
-
-	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub
-	If Trim(CStr(Value)) = "" Then Exit Sub
-
-	Dim ts
-	ts = TimeStamp                         ' preserved for the silent clear
-
-	Dim substationPath
-	substationPath = Trim(CStr(Value))
-
-	Dim substation
-	Set substation = Nothing
-	On Error Resume Next
-	Set substation = Application.GetObject(substationPath)
-	On Error Goto 0
-
-	If substation Is Nothing Then
-		Fail "there is nothing at " & substationPath & ".", ts
-		Exit Sub
-	End If
-
-	' Where the alarms bind. Read from the project rather than assumed,
-	' because the interface sits at the root of the data project in some
-	' layouts and inside XATM_Data in others - and an alarm bound to a
-	' path that is merely plausible is an alarm that never raises.
-	Dim interfaceServer
-	Set interfaceServer = InterfaceRoot()
-
-	If interfaceServer Is Nothing Then
-		Fail "the project has no interface data server, so there is " & _
-		     "nothing for the alarms to bind to.", ts
-		Exit Sub
-	End If
-
-	gInterfaceRoot = interfaceServer.PathName
-
-	' The folder the alarms are built in - emptied and made again rather
-	' than brought up to date, the way the interface is. A device can be
-	' renamed on the Config screen, and a folder named after the name it
-	' used to have cannot be told from one nobody wants any more.
-	Dim folder
-	Set folder = ChildFolder(substation, AUTOMATION_FOLDER)
-
-	If folder Is Nothing Then
-		Fail "the substation would not take a " & AUTOMATION_FOLDER & " folder.", ts
-		Exit Sub
-	End If
-
-	ClearFolder folder
-
-	gFolders  = 0
-	gAlarms   = 0
-	gCommands = 0
-
-	Dim problem
-	problem = ""
-
-	AlarmFolder folder, Application.GetObject(DATA_ROOT), "", problem
-
-	' Written here rather than left to the Save that persists XATM_Data:
-	' these objects are in the substation's container, which is not the
-	' container holding the automation.
-	'
-	' Save answers True or False and raises nothing, so the answer is what
-	' decides. An On Error still wraps the call for a container that will
-	' not give one at all, and saved starts False so that a call which
-	' never returns is a failure rather than a silence.
-	Dim saved
-	saved = False
-
-	On Error Resume Next
-	Err.Clear
-
-	saved = folder.Context("Container").Save()
-
-	If Err.Number <> 0 Then Err.Clear
-	On Error Goto 0
-
-	If Not saved Then
-		problem = problem & vbCrLf & "  not saved - E3 would not write the " & _
-		          "substation's project. A licence that will not carry this " & _
-		          "many tags is the usual reason."
-	End If
-
-	' Said out loud even when it all went through, for the same reason
-	' the interface rebuild says it: a routine that mentions only what it
-	' could not build reads the same whether it ran or was never called.
-	If gAlarms = 0 And gCommands = 0 Then
-		WriteLog "Automation - no alarms and no commands are interfaced."
-	Else
-		WriteLog "Automation - " & gAlarms & " alarms and " & gCommands & _
-		         " commands on " & gFolders & " objects, under " & _
-		         substationPath & "." & AUTOMATION_FOLDER & "."
-	End If
-
-	If problem <> "" Then
-		WriteLog "Automation is incomplete:" & problem
-		DocString = EXIT_FAILURE
-		WriteEx Empty, ts
-		Exit Sub
-	End If
-
-	DocString = EXIT_SUCCESS
-	WriteEx Empty, ts                      ' clear without re-firing
-
-End Sub
-
-
-' The folder built under the chosen PowerSubstation. Named for what it
-' holds rather than for the alarms alone: the substation side both reads
-' the alarms in it and writes the commands beside them.
-Const AUTOMATION_FOLDER  = "Automatismos"
-
-' What the folder is made of. The first two carry a reading and a
-' command alike; the last two are the alarm's own, and a command tag
-' gets neither.
-Const AUTOMATION_FOLDER_CLASS = "DataFolder"
-Const AUTOMATION_TAG_CLASS    = "InternalTag"
-Const ALARM_SOURCE_CLASS      = "DigitalAlarmSource"
-Const ALARM_SOURCE_NAME       = "Alarm"
-
-' How a link carries the value - the BindType argument of CreateLink,
-' which is a Simple Link when it is left off.
-'
-'   simple    source -> property   the tag follows the interface
-'   reverse   property -> source   the interface follows the tag
-'
-' Both are one-way, and both live on the substation tag, so which one is
-' asked for is the whole of the difference between a reading and a
-' command. The link is not moved to the other end for a command - it
-' would be wiped by the next interface rebuild if it were.
-Const LINK_SIMPLE  = 0
-Const LINK_REVERSE = 5
-
-Const DATA_ROOT          = "XATM_Data"
-Const CONFIG_DATA        = "xatm_config_data"
-Const HELPER_FOLDER      = "PropertiesHelper"
-
-Const INTERFACE_ROOT     = "XATM_Interface"
-Const INTERFACE_ROOT_ALT = "XATM_Data.XATM_Interface"
-
-Const EXIT_SUCCESS       = "EXIT_SUCCESS"
-Const EXIT_FAILURE       = "EXIT_FAILURE"
-
-' Anything this severe or worse has to be acknowledged. A status the
-' control room is merely told about - a sequence being in progress - is
-' not something to make an operator clear off the list by hand.
-'
-' Tested with <=, because Power's severity scale runs backwards:
-' critical is -2 and low is 2, so "this severe or worse" is the smaller
-' number. Written out as a literal because the SEV_ constants belong to
-' the manifests, and this scope cannot see them.
-Const ACK_FROM_SEVERITY  = 1     ' medium
-
-' Where the interface was found this run, as the head of every path the
-' alarms bind to.
-Dim gInterfaceRoot
-
-' What the last build came out at, for the line it writes to the log.
-Dim gFolders
-Dim gAlarms
-Dim gCommands
-
-
-' One folder of the data project: an alarm for every object in it a
-' manifest speaks for, and then the same for whatever is under it.
-'
-' The walk the interface rebuild does, over the same tree and reading
-' the same manifests - so the folders come out shaped alike and an
-' alarm is found where the tree says its device is.
-Sub AlarmFolder(root, folder, path, problem)
-
-	Dim item, bag
-
-	For Each item In folder
-
-		Set bag = ManifestOf(TypeName(item))
-
-		If Not bag Is Nothing Then
-
-			AlarmObject root, path, item, bag, problem
-
-		Else
-
-			On Error Resume Next
-			AlarmFolder root, item, ChildPath(path, item.Name), problem
-			On Error Goto 0
-
-		End If
-
-	Next
-
-End Sub
-
-
-' One name onto a path, and the first name is the whole of it.
-Function ChildPath(path, objectName)
-
-	If path = "" Then
-		ChildPath = objectName
-	Else
-		ChildPath = path & "." & objectName
-	End If
-
-End Function
-
-
-' The folder at a path under the alarm root, each level made where it is
-' not already there. An object with nothing on the alarm table gets no
-' folder, rather than an empty one to wonder about.
-Function EnsureFolder(root, path, problem)
-
-	Set EnsureFolder = root
-	If path = "" Then Exit Function
-
-	Dim names
-	names = Split(path, ".")
-
-	Dim parent, child, i
-	Set parent = root
-
-	For i = 0 To UBound(names)
-
-		Set child = Nothing
-
-		On Error Resume Next
-		Set child = parent.Item(names(i))
-		On Error Goto 0
-
-		If child Is Nothing Then Set child = NewChild(parent, AUTOMATION_FOLDER_CLASS, names(i))
-
-		If child Is Nothing Then
-			problem = problem & vbCrLf & "  no folder for " & path
-			Set EnsureFolder = Nothing
-			Exit Function
-		End If
-
-		Set parent = child
-
-	Next
-
-	Set EnsureFolder = parent
-
-End Function
-
-
-' One object's folder, and in it a tag for each property worth carrying:
-' an alarm for a reading the manifest puts on the alarm table, and a
-' plain tag for each command the interface holds. An object with neither
-' gets no folder at all.
-Sub AlarmObject(root, path, obj, bag, problem)
-
-	Dim key, p
-
-	Dim wanted
-	wanted = False
-
-	For Each key In bag.Keys
-		If bag(key).IsAlarmed() Then wanted = True
-		If IsCommand(bag(key)) Then wanted = True
-	Next
-
-	If Not wanted Then Exit Sub
-
-	Dim parent
-	Set parent = EnsureFolder(root, path, problem)
-	If parent Is Nothing Then Exit Sub
-
-	Dim folder
-	Set folder = NewChild(parent, AUTOMATION_FOLDER_CLASS, obj.Name)
-
-	If folder Is Nothing Then
-		problem = problem & vbCrLf & "  no folder for " & obj.Name
-		Exit Sub
-	End If
-
-	gFolders = gFolders + 1
-
-	' Where this object's readings are on the interface. The alarms bind
-	' there and never to the XObject: the interface is where the Elipse
-	' application meets the automation, and an alarm is the application
-	' asking to be told about a reading.
-	Dim interfacePath
-	interfacePath = gInterfaceRoot & "." & ChildPath(path, obj.Name)
-
-	For Each key In bag.Keys
-
-		Set p = bag(key)
-
-		If p.IsAlarmed() Then
-			AlarmTag folder, interfacePath, obj, p, problem
-		ElseIf IsCommand(p) Then
-			CommandTag folder, interfacePath, obj, p, problem
-		End If
-
-	Next
-
-End Sub
-
-
-' A command the interface carries: an InternalTag property a manifest
-' interfaces. RebuildInterface leaves these unlinked and points the
-' XObject's property at them, so they are the automation's inputs - the
-' substation side writes them to ask for a maneuver.
-Function IsCommand(p)
-
-	IsCommand = (LCase(p.DataType & "") = "internaltag") And p.IsInterfaced()
-
-End Function
-
-
-' The tag one property gets in the substation's folder, wired to the
-' interface tag standing for it. Nothing when it could not be made.
-'
-' A link carries a value one way, so the direction is the whole of the
-' difference between the two kinds:
-'
-'   reading   automation -> interface -> substation, on a simple link
-'   command   substation -> interface -> automation, on a reverse one
-'
-' A command left on a simple link is a command the automation never
-' sees: the operator writes a tag that is downstream of the thing it was
-' meant to drive, and the write is overwritten by the value it was
-' supposed to change. Nothing errors, and the maneuver never starts.
-Function BoundTag(folder, interfacePath, obj, p, problem, linkType)
-
-	Set BoundTag = Nothing
-
-	Dim source
-	source = interfacePath & "." & p.Name
-
-	' Checked before it is wired. The interface is emptied and rebuilt on
-	' every Save, so tags built before that rebuild would wire to ones on
-	' their way out - and a link to a tag that is not there fails quietly,
-	' leaving an alarm that never raises or a command that goes nowhere.
-	' Better said here than handed over looking like it works.
-	Dim target
-	Set target = Nothing
-	On Error Resume Next
-	Set target = Application.GetObject(source)
-	On Error Goto 0
-
-	If target Is Nothing Then
-		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
-		          " has no interface tag at " & source
-		Exit Function
-	End If
-
-	Dim tag
-	Set tag = NewChild(folder, AUTOMATION_TAG_CLASS, p.Name)
-
-	If tag Is Nothing Then
-		problem = problem & vbCrLf & "  no tag for " & obj.Name & "." & p.Name
-		Exit Function
-	End If
-
-	On Error Resume Next
-	Err.Clear
-
-	tag.Links.CreateLink "Value", source, linkType
-
-	If Err.Number <> 0 Then
-		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
-		          " would not wire to " & source & " - " & Err.Description
-		Err.Clear
-	End If
-
-	On Error Goto 0
-
-	Set BoundTag = tag
-
-End Function
-
-
-' One alarm for one reading: the bound tag, and the source on it that
-' turns a change into an event.
-Sub AlarmTag(folder, interfacePath, obj, p, problem)
-
-	Dim tag
-	Set tag = BoundTag(folder, interfacePath, obj, p, problem, LINK_SIMPLE)
-	If tag Is Nothing Then Exit Sub
-
-	Dim alarm
-	Set alarm = NewChild(tag, ALARM_SOURCE_CLASS, ALARM_SOURCE_NAME)
-
-	If alarm Is Nothing Then
-		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
-		          " would not take a " & ALARM_SOURCE_CLASS
-		Exit Sub
-	End If
-
-	' Each written on its own and reported on its own. What this version
-	' of Power accepts is what decides the shape of an alarm, and a
-	' property it does not know should cost that one setting rather than
-	' the whole alarm.
-	Dim where
-	where = obj.Name & "." & p.Name
-
-	SetMember alarm, "DigitalLimit",             p.AlarmLimit(),      where, problem
-	SetMember alarm, "DigitalMessageText",       p.AlarmActiveText(), where, problem
-	SetMember alarm, "DigitalReturnMessageText", p.AlarmNormalText(), where, problem
-	SetMember alarm, "DigitalSeverity",          p.AlarmSeverity,     where, problem
-	SetMember alarm, "DigitalAckRequired", _
-	          (p.AlarmSeverity <= ACK_FROM_SEVERITY), where, problem
-
-	gAlarms = gAlarms + 1
-
-End Sub
-
-
-' One command for the substation side to write, on a reverse link so
-' that writing it reaches the automation.
-'
-' No alarm source: a command is what the operator's screen asks for, not
-' something the control room is told about, and an event per request
-' would put the asking on the list as though the switchyard had done it.
-Sub CommandTag(folder, interfacePath, obj, p, problem)
-
-	Dim tag
-	Set tag = BoundTag(folder, interfacePath, obj, p, problem, LINK_REVERSE)
-	If tag Is Nothing Then Exit Sub
-
-	gCommands = gCommands + 1
-
-End Sub
-
-' One setting onto the alarm source, late-bound the way the import
-' writes a property, and named in the log when it will not take.
-Sub SetMember(alarm, memberName, newValue, where, problem)
-
-	gMemberValue = newValue
-
-	On Error Resume Next
-	Err.Clear
-
-	Execute "alarm." & memberName & " = gMemberValue"
-
-	If Err.Number <> 0 Then
-		problem = problem & vbCrLf & "  " & where & " would not take " & _
-		          memberName & " - " & Err.Description
-		Err.Clear
-	End If
-
-	On Error Goto 0
-
-End Sub
-
-' Scratch cell for the late-bound write done through Execute, the way
-' the interface rebuild keeps one.
-Dim gMemberValue
-
-
-' A child of a container by name, made where it is not already there.
-Function ChildFolder(parent, folderName)
-
-	Set ChildFolder = Nothing
-
-	On Error Resume Next
-	Set ChildFolder = parent.Item(folderName)
-	On Error Goto 0
-
-	If Not ChildFolder Is Nothing Then Exit Function
-
-	Set ChildFolder = NewChild(parent, AUTOMATION_FOLDER_CLASS, folderName)
-
-End Function
-
-
-' Empties a folder. Taken out in a second pass, because a collection is
-' not walked while what is in it is being removed.
-Sub ClearFolder(folder)
-
-	Dim doomed
-	Set doomed = CreateObject("Scripting.Dictionary")
-
-	Dim item
-	For Each item In folder
-		doomed.Add doomed.Count, item.Name
-	Next
-
-	Dim n
-	For Each n In doomed.Keys
-
-		On Error Resume Next
-		folder.DeleteObject doomed(n)
-		On Error Goto 0
-
-	Next
-
-End Sub
-
-
-' A new child of a container, Nothing when it would not take one -
-' AddObject(ClassName, [Activate], [ObjectName]).
-Function NewChild(parent, className, objectName)
-
-	Set NewChild = Nothing
-
-	On Error Resume Next
-	Set NewChild = parent.AddObject(className, True, objectName)
-	On Error Goto 0
-
-End Function
-
-
-' The data server the interface was built in. Named at the root of the
-' data project, and looked for inside XATM_Data as well, because which
-' of the two it sits under is a matter of how the project was laid out.
-Function InterfaceRoot()
-
-	Set InterfaceRoot = Nothing
-
-	On Error Resume Next
-	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT)
-	On Error Goto 0
-
-	If Not InterfaceRoot Is Nothing Then Exit Function
-
-	On Error Resume Next
-	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT_ALT)
-	On Error Goto 0
-
-End Function
-
-
-' The manifest declared for a class, or Nothing when the class has none -
-' the same lookup the export, the import and the interface do.
-Function ManifestOf(className)
-
-	Set ManifestOf = Nothing
-
-	On Error Resume Next
-	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
-	On Error Goto 0
-
-End Function
-
-
-' Said, logged, and the command cleared, for a build that got nowhere.
-Sub Fail(message, ts)
-
-	DocString = EXIT_FAILURE
-	WriteLog message
-	WriteEx Empty, ts
-
-End Sub
-
-
-' The console the automation logs to, and the E3 trace either way.
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
-	End If
-
-End Sub
-
-<xatm_config_data.Config.BuildAlarms:BuildAlarms_OnStartRunning()>
-Sub BuildAlarms_OnStartRunning()
-
-	DocString = ""
-
-End Sub
-
-<xatm_config_data.Config.BuildDistribution:BuildDistribution_OnChangedValue()>
-Sub BuildDistribution_OnChangedValue()
-
-	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub
-	If Trim(CStr(Value)) = "" Then Exit Sub
-
-	Dim ts
-	ts = TimeStamp                         ' preserved for the silent clear
-
-	' offset|path, split at the first bar. The offset is a number and
-	' carries no bar of its own, so whatever a driver's path contains
-	' travels whole - which a Split on every bar would not manage.
-	Dim payload
-	payload = Trim(CStr(Value))
-
-	Dim bar
-	bar = InStr(payload, "|")
-
-	If bar = 0 Then
-		Fail "the command carries no starting address (expected offset|path).", ts
-		Exit Sub
-	End If
-
-	Dim offsetText, driverPath
-	offsetText = Trim(Left(payload, bar - 1))
-	driverPath = Trim(Mid(payload, bar + 1))
-
-	If Not IsNumeric(offsetText) Then
-		Fail "'" & offsetText & "' is not a starting address.", ts
-		Exit Sub
-	End If
-
-	Dim driver
-	Set driver = Nothing
-	On Error Resume Next
-	Set driver = Application.GetObject(driverPath)
-	On Error Goto 0
-
-	If driver Is Nothing Then
-		Fail "there is nothing at " & driverPath & ".", ts
-		Exit Sub
-	End If
-
-	' Where the signals come from. Read from the project rather than
-	' assumed, because the interface sits at the root of the data project
-	' in some layouts and inside XATM_Data in others.
-	Dim interfaceServer
-	Set interfaceServer = InterfaceRoot()
-
-	If interfaceServer Is Nothing Then
-		Fail "the project has no interface data server, so there is " & _
-		     "nothing for the distribution to carry.", ts
-		Exit Sub
-	End If
-
-	gInterfaceRoot = interfaceServer.PathName
-
-	' Emptied and made again rather than brought up to date, the way the
-	' interface and the substation's alarms are. Addresses are handed out
-	' in walk order, so a half-kept folder would leave the numbering
-	' saying one thing and the operation centre's point list another.
-	Dim folder
-	Set folder = ChildFolder(driver, DISTRIBUTION_FOLDER)
-
-	If folder Is Nothing Then
-		Fail "the driver would not take a " & DISTRIBUTION_FOLDER & " folder.", ts
-		Exit Sub
-	End If
-
-	ClearFolder folder
-
-	gFolders  = 0
-	gMonitors = 0
-	gCommands = 0
-
-	' One run of addresses for both kinds. A monitored point and a
-	' command share an address space in 104, so numbering them from
-	' separate bases would only be two ways to land on one address.
-	gFirstAddress = CLng(offsetText)
-	gNextAddress  = gFirstAddress
-
-	Dim problem
-	problem = ""
-
-	WalkFolder folder, Application.GetObject(DATA_ROOT), "", problem
-
-	Dim built
-	built = gMonitors + gCommands
-
-	' --- and then the one thing most likely to go wrong ----------------
-	'
-	' Saved on its own and reported on its own, because this is where an
-	' unlicensed copy stops: E3 refuses to save past a small number of
-	' tags without a valid licence, and a distribution is easily hundreds.
-	' The tags are made either way, so a Save that fails leaves a project
-	' that looks built and comes back empty - which is worth saying
-	' loudly rather than leaving as one line among the rest.
-	' Save answers True or False and raises nothing, so the answer is what
-	' decides. saved starts False so a call that never returns counts as a
-	' refusal rather than passing for success.
-	Dim saved
-	saved = False
-
-	On Error Resume Next
-	Err.Clear
-
-	saved = folder.Context("Container").Save()
-
-	If Err.Number <> 0 Then Err.Clear
-	On Error Goto 0
-
-	If Not saved Then
-
-		WriteLog "NOT SAVED - " & built & " tags were built and E3 would not " & _
-		         "write them."
-		WriteLog "NOT SAVED - E3 will not save past about " & LICENCE_TAG_HINT & _
-		         " tags without a valid licence. The tags are in the project " & _
-		         "now and will be gone when it is closed. Check the licence " & _
-		         "before building again."
-
-		DocString = EXIT_FAILURE
-		WriteEx Empty, ts
-		Exit Sub
-
-	End If
-
-	If built = 0 Then
-		WriteLog "Distribution - nothing is interfaced to carry."
-	Else
-		WriteLog "Distribution - " & gMonitors & " monitored and " & gCommands & _
-		         " commanded on " & gFolders & " objects, under " & driverPath & _
-		         "." & DISTRIBUTION_FOLDER & ". Addresses " & gFirstAddress & _
-		         ".." & (gNextAddress - 1) & "."
-	End If
-
-	If problem <> "" Then
-		WriteLog "Distribution is incomplete:" & problem
-		DocString = EXIT_FAILURE
-		WriteEx Empty, ts
-		Exit Sub
-	End If
-
-	DocString = EXIT_SUCCESS
-	WriteEx Empty, ts                      ' clear without re-firing
-
-End Sub
-
-
-' The folder built under the chosen IODriver, and what it is made of.
-Const DISTRIBUTION_FOLDER = "Automatismos"
-Const IO_FOLDER_CLASS     = "IOFolder"
-Const IO_TAG_CLASS        = "IOTag"
-
-' What marks a tag as this configuration's to remake - the same mark the
-' interface puts on the tags it builds.
-Const SELF_MARK           = "$XATM$"
-
-' Always in advise: the driver keeps the point up to date of its own
-' accord rather than waiting to be asked, which is what a slave
-' publishing to a control centre has to do.
-Const ADVISE_ALWAYS       = 0
-
-' What the driver is told each tag is - the mnemonic at the head of the
-' configuration string.
-'
-' SP is a single point, which is what a discrete signal is: one bit,
-' going up to the operation centre. SC is a single command coming down,
-' and it is executed rather than selected, there being no
-' select-before-operate between this level and level 3.
-Const TYPE_MONITOR        = "SP"
-Const TYPE_COMMAND        = "SC"
-Const COMMAND_ACTION      = "Execute"
-
-' How a link carries the value - the BindType argument of CreateLink.
-' A discrete signal is copied from the interface into the tag the driver
-' publishes; a command arrives on the tag and has to reach the interface,
-' which is the other way about.
-Const LINK_SIMPLE         = 0
-Const LINK_REVERSE        = 5
-
-' Said in the message when a save is refused. Not read by anything - it
-' is the number an engineer needs to hear to recognise the cause.
-Const LICENCE_TAG_HINT    = 20
-
-Const DATA_ROOT           = "XATM_Data"
-Const CONFIG_DATA         = "xatm_config_data"
-Const HELPER_FOLDER       = "PropertiesHelper"
-
-Const INTERFACE_ROOT      = "XATM_Interface"
-Const INTERFACE_ROOT_ALT  = "XATM_Data.XATM_Interface"
-
-Const EXIT_SUCCESS        = "EXIT_SUCCESS"
-Const EXIT_FAILURE        = "EXIT_FAILURE"
-
-' Where the interface was found this run, as the head of every path the
-' distribution reads from.
-Dim gInterfaceRoot
-
-' Where the numbering started this run, and the next one to hand out.
-Dim gFirstAddress
-Dim gNextAddress
-
-' What the last build came out at, for the line it writes to the log.
-Dim gFolders
-Dim gMonitors
-Dim gCommands
-
-
-' One folder of the data project: a tag for every object in it a
-' manifest speaks for, and then the same for whatever is under it. The
-' walk the interface rebuild does, over the same tree.
-Sub WalkFolder(root, folder, path, problem)
-
-	Dim item, bag
-
-	For Each item In folder
-
-		Set bag = ManifestOf(TypeName(item))
-
-		If Not bag Is Nothing Then
-
-			WalkObject root, path, item, bag, problem
-
-		Else
-
-			On Error Resume Next
-			WalkFolder root, item, ChildPath(path, item.Name), problem
-			On Error Goto 0
-
-		End If
-
-	Next
-
-End Sub
-
-
-' One name onto a path, and the first name is the whole of it.
-Function ChildPath(path, objectName)
-
-	If path = "" Then
-		ChildPath = objectName
-	Else
-		ChildPath = path & "." & objectName
-	End If
-
-End Function
-
-
-' The folder at a path under the distribution root, each level made
-' where it is not already there.
-Function EnsureFolder(root, path, problem)
-
-	Set EnsureFolder = root
-	If path = "" Then Exit Function
-
-	Dim names
-	names = Split(path, ".")
-
-	Dim parent, child, i
-	Set parent = root
-
-	For i = 0 To UBound(names)
-
-		Set child = Nothing
-
-		On Error Resume Next
-		Set child = parent.Item(names(i))
-		On Error Goto 0
-
-		If child Is Nothing Then Set child = NewChild(parent, IO_FOLDER_CLASS, names(i))
-
-		If child Is Nothing Then
-			problem = problem & vbCrLf & "  no folder for " & path
-			Set EnsureFolder = Nothing
-			Exit Function
-		End If
-
-		Set parent = child
-
-	Next
-
-	Set EnsureFolder = parent
-
-End Function
-
-
-' One object's folder, and in it a tag for each signal worth carrying up
-' to the operation centre: a discrete reading, or a command coming back
-' down. An object with neither gets no folder at all.
-Sub WalkObject(root, path, obj, bag, problem)
-
-	Dim key, p
-
-	Dim wanted
-	wanted = False
-
-	For Each key In bag.Keys
-		If IsDiscrete(bag(key)) Then wanted = True
-		If IsCommand(bag(key))  Then wanted = True
-	Next
-
-	If Not wanted Then Exit Sub
-
-	Dim parent
-	Set parent = EnsureFolder(root, path, problem)
-	If parent Is Nothing Then Exit Sub
-
-	Dim folder
-	Set folder = NewChild(parent, IO_FOLDER_CLASS, obj.Name)
-
-	If folder Is Nothing Then
-		problem = problem & vbCrLf & "  no folder for " & obj.Name
-		Exit Sub
-	End If
-
-	gFolders = gFolders + 1
-
-	' Where this object's signals are on the interface. The distribution
-	' reads there and never from the XObject: the interface is where the
-	' Elipse application meets the automation, and carrying a signal to
-	' level 3 is the application's work.
-	Dim interfacePath
-	interfacePath = gInterfaceRoot & "." & ChildPath(path, obj.Name)
-
-	For Each key In bag.Keys
-
-		Set p = bag(key)
-
-		If IsDiscrete(p) Then
-			MonitorTag folder, interfacePath, obj, p, problem
-		ElseIf IsCommand(p) Then
-			CommandTag folder, interfacePath, obj, p, problem
-		End If
-
-	Next
-
-End Sub
-
-
-' A discrete signal: an interfaced Boolean the automation reads and the
-' operation centre is shown. Not a command - those are InternalTag
-' properties and go the other way - and not an IOTag, which is the
-' engineer's own wiring to the IED.
-Function IsDiscrete(p)
-
-	IsDiscrete = (LCase(p.DataType & "") = "boolean") And p.IsInterfaced()
-
-End Function
-
-
-' A command the interface carries: an InternalTag property a manifest
-' interfaces. RebuildInterface leaves these unlinked and points the
-' XObject's property at them, so writing one is how a maneuver is asked
-' for - and level 3 asks through the driver.
-Function IsCommand(p)
-
-	IsCommand = (LCase(p.DataType & "") = "internaltag") And p.IsInterfaced()
-
-End Function
-
-
-' The next address, and the one after it kept for the next caller.
-Function NextAddress()
-
-	NextAddress = gNextAddress
-	gNextAddress = gNextAddress + 1
-
-End Function
-
-
-' The tag one signal gets under the driver, wired to the interface tag
-' standing for it. Nothing when it could not be made.
-'
-' A link carries a value one way, so the direction is the whole of the
-' difference between the two kinds:
-'
-'   discrete  interface -> tag -> operation centre, on a simple link,
-'             and the driver is allowed to write it out
-'   command   operation centre -> tag -> interface, on a reverse one,
-'             and the driver is allowed to read it in
-Function BoundIOTag(folder, interfacePath, obj, p, problem, linkType, configString)
-
-	Set BoundIOTag = Nothing
-
-	Dim source
-	source = interfacePath & "." & p.Name
-
-	' Checked before it is wired. The interface is emptied and rebuilt on
-	' every Save, so tags built before that rebuild would wire to ones on
-	' their way out - and a link to a tag that is not there fails quietly,
-	' leaving a point the operation centre sees and nothing ever moves.
-	Dim target
-	Set target = Nothing
-	On Error Resume Next
-	Set target = Application.GetObject(source)
-	On Error Goto 0
-
-	If target Is Nothing Then
-		problem = problem & vbCrLf & "  " & obj.Name & "." & p.Name & _
-		          " has no interface tag at " & source
-		Exit Function
-	End If
-
-	Dim tag
-	Set tag = NewChild(folder, IO_TAG_CLASS, p.Name)
-
-	If tag Is Nothing Then
-		problem = problem & vbCrLf & "  no tag for " & obj.Name & "." & p.Name
-		Exit Function
-	End If
-
-	Dim where
-	where = obj.Name & "." & p.Name
-
-	' What the driver is told this point is. Written on its own and
-	' reported on its own, the way an alarm's settings are: a driver that
-	' will not take one string should cost that point rather than the
-	' whole distribution.
-	SetMember tag, "ParamItem",      configString,  where, problem
-	SetMember tag, "DocString",      SELF_MARK,     where, problem
-	SetMember tag, "AdviseType",     ADVISE_ALWAYS, where, problem
-	SetMember tag, "EnableDeadBand", False,         where, problem
-
-	On Error Resume Next
-	Err.Clear
-
-	tag.Links.CreateLink "Value", source, linkType
-
-	If Err.Number <> 0 Then
-		problem = problem & vbCrLf & "  " & where & " would not wire to " & _
-		          source & " - " & Err.Description
-		Err.Clear
-	End If
-
-	On Error Goto 0
-
-	Set BoundIOTag = tag
-
-End Function
-
-
-' One discrete signal on its way up: read off the interface, published
-' by the driver. The driver writes it out and never reads it back.
-Sub MonitorTag(folder, interfacePath, obj, p, problem)
-
-	Dim configString
-	configString = TYPE_MONITOR & ":" & NextAddress()
-
-	Dim tag
-	Set tag = BoundIOTag(folder, interfacePath, obj, p, problem, LINK_SIMPLE, configString)
-	If tag Is Nothing Then Exit Sub
-
-	Dim where
-	where = obj.Name & "." & p.Name
-
-	SetMember tag, "AllowRead",  False, where, problem
-	SetMember tag, "AllowWrite", True,  where, problem
-
-	gMonitors = gMonitors + 1
-
-End Sub
-
-
-' One command on its way down: taken off the driver, written through to
-' the interface. The driver reads it in and never writes it out.
-Sub CommandTag(folder, interfacePath, obj, p, problem)
-
-	Dim configString
-	configString = TYPE_COMMAND & ":" & NextAddress() & "." & COMMAND_ACTION
-
-	Dim tag
-	Set tag = BoundIOTag(folder, interfacePath, obj, p, problem, LINK_REVERSE, configString)
-	If tag Is Nothing Then Exit Sub
-
-	Dim where
-	where = obj.Name & "." & p.Name
-
-	SetMember tag, "AllowRead",  True,  where, problem
-	SetMember tag, "AllowWrite", False, where, problem
-
-	' The driver raises an event when the centre sends this, rather than
-	' the value simply appearing on the tag. The same command asked for
-	' twice running is the same value twice, and without this the second
-	' one would look like nothing had happened at all.
-	SetMember tag, "EnableDriverEvent", True, where, problem
-
-	gCommands = gCommands + 1
-
-End Sub
-
-
-' One setting onto a tag, late-bound the way the import writes a
-' property, and named in the log when it will not take.
-Sub SetMember(tag, memberName, newValue, where, problem)
-
-	gMemberValue = newValue
-
-	On Error Resume Next
-	Err.Clear
-
-	Execute "tag." & memberName & " = gMemberValue"
-
-	If Err.Number <> 0 Then
-		problem = problem & vbCrLf & "  " & where & " would not take " & _
-		          memberName & " - " & Err.Description
-		Err.Clear
-	End If
-
-	On Error Goto 0
-
-End Sub
-
-' Scratch cell for the late-bound write done through Execute, the way
-' the interface rebuild keeps one.
-Dim gMemberValue
-
-
-' A child of a container by name, made where it is not already there.
-Function ChildFolder(parent, folderName)
-
-	Set ChildFolder = Nothing
-
-	On Error Resume Next
-	Set ChildFolder = parent.Item(folderName)
-	On Error Goto 0
-
-	If Not ChildFolder Is Nothing Then Exit Function
-
-	Set ChildFolder = NewChild(parent, IO_FOLDER_CLASS, folderName)
-
-End Function
-
-
-' Empties a folder. Taken out in a second pass, because a collection is
-' not walked while what is in it is being removed.
-Sub ClearFolder(folder)
-
-	Dim doomed
-	Set doomed = CreateObject("Scripting.Dictionary")
-
-	Dim item
-	For Each item In folder
-		doomed.Add doomed.Count, item.Name
-	Next
-
-	Dim n
-	For Each n In doomed.Keys
-
-		On Error Resume Next
-		folder.DeleteObject doomed(n)
-		On Error Goto 0
-
-	Next
-
-End Sub
-
-
-' A new child of a container, Nothing when it would not take one -
-' AddObject(ClassName, [Activate], [ObjectName]).
-Function NewChild(parent, className, objectName)
-
-	Set NewChild = Nothing
-
-	On Error Resume Next
-	Set NewChild = parent.AddObject(className, True, objectName)
-	On Error Goto 0
-
-End Function
-
-
-' The data server the interface was built in.
-Function InterfaceRoot()
-
-	Set InterfaceRoot = Nothing
-
-	On Error Resume Next
-	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT)
-	On Error Goto 0
-
-	If Not InterfaceRoot Is Nothing Then Exit Function
-
-	On Error Resume Next
-	Set InterfaceRoot = Application.GetObject(INTERFACE_ROOT_ALT)
-	On Error Goto 0
-
-End Function
-
-
-' The manifest declared for a class, or Nothing when the class has none.
-Function ManifestOf(className)
-
-	Set ManifestOf = Nothing
-
-	On Error Resume Next
-	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
-	On Error Goto 0
-
-End Function
-
-
-' Said, logged, and the command cleared, for a build that got nowhere.
-Sub Fail(message, ts)
-
-	DocString = EXIT_FAILURE
-	WriteLog message
-	WriteEx Empty, ts
-
-End Sub
-
-
-' The console the automation logs to, and the E3 trace either way.
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
-	End If
-
-End Sub
-
-<xatm_config_data.Config.BuildDistribution:BuildDistribution_OnStartRunning()>
-Sub BuildDistribution_OnStartRunning()
-
-	DocString = ""
-
-End Sub
-
 <xatm_config_data.Config.UpdateTreeviewSignal:UpdateTreeviewSignal_OnStartRunning()>
 Sub UpdateTreeviewSignal_OnStartRunning()
 	
@@ -3411,6 +3154,263 @@ Sub XMLBuilderAfterDelay_TickCountdown()
 	
 End Sub
 
+<xatm_config_data.Config.XMLFilePath:XMLFilePath_OnStartRunning()>
+Sub XMLFilePath_OnStartRunning()
+
+	Dim filePath
+	filePath = ConfigFilePath()
+
+	' Somewhere writable rather than nowhere. This tag holds no
+	' configured path to fall back on - it is worked out fresh at every
+	' start - so a start that works nothing out leaves the export with
+	' nowhere at all to go.
+	If filePath = "" Then filePath = FallbackFilePath()
+
+	If filePath = "" Then
+		WriteLog "Neither the data project nor a temporary folder could be " & _
+		         "had, so " & Name & " is empty and the export has nowhere " & _
+		         "to be written."
+		Exit Sub
+	End If
+
+	WriteEx filePath
+
+	WriteLog Name & " is " & filePath
+
+End Sub
+
+
+' What is looked for, and what is written beside it.
+'
+' The data project is found rather than configured because it is not the
+' same folder twice: xatm_data.prj sits in a folder of its own per
+' substation - se_gul for Guarulhos - and a path typed in by hand is
+' right until this configuration is copied to the next site.
+Const DATA_PROJECT_FILE = "xatm_data.prj"
+Const XML_FILE_NAME     = "AutomationConfig.xml"
+
+' Where the export goes when the data project was not found -
+' GetSpecialFolder's TemporaryFolder.
+Const TEMPORARY_FOLDER  = 2
+
+' How far under the starting folder to look. The domain file sits at the
+' top and each substation is a folder under it, so the project is one
+' level down - and a couple more costs nothing and allows for a project
+' laid out with a little more nesting.
+Const MAX_SEARCH_DEPTH  = 3
+
+' Every folder holding a data project, in the order they were come
+' across. A dictionary rather than a single answer so that a domain
+' carrying two of them is something that can be said out loud rather
+' than silently resolved to whichever was met first.
+Dim gFound
+
+
+' The full path to write the export to, "" when the data project was not
+' found.
+'
+' Asked of the file system rather than of E3. A container knows where it
+' was loaded from, but not under a property name written down anywhere
+' that could be found - so this goes the plain way instead.
+Function ConfigFilePath()
+
+	ConfigFilePath = ""
+
+	Dim base
+	base = StartFolder()
+
+	If base = "" Then
+		WriteLog "The current directory could not be read, so " & _
+		         DATA_PROJECT_FILE & " was not looked for."
+		Exit Function
+	End If
+
+	Dim fso
+	Set fso = Nothing
+	On Error Resume Next
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	On Error Goto 0
+
+	If fso Is Nothing Then
+		WriteLog "There is no file system object to look with."
+		Exit Function
+	End If
+
+	If Not fso.FolderExists(base) Then
+		WriteLog "The current directory, " & base & ", is not a folder."
+		Exit Function
+	End If
+
+	Set gFound = CreateObject("Scripting.Dictionary")
+
+	SearchFolder fso.GetFolder(base), 0
+
+	If gFound.Count = 0 Then
+		WriteLog DATA_PROJECT_FILE & " was not found under " & base & _
+		         " within " & MAX_SEARCH_DEPTH & " folders."
+		Set gFound = Nothing
+		Exit Function
+	End If
+
+	Dim folders
+	folders = gFound.Keys
+
+	' Said out loud and not resolved quietly. Two data projects under one
+	' domain is a domain this configuration cannot speak for, and writing
+	' the export into whichever folder was met first would be a choice
+	' nobody made.
+	If gFound.Count > 1 Then
+		WriteLog "More than one " & DATA_PROJECT_FILE & " is under " & base & _
+		         " - " & Join(folders, ", ") & ". The first is being used, " & _
+		         "which may not be the one meant."
+	End If
+
+	ConfigFilePath = fso.BuildPath(folders(0), XML_FILE_NAME)
+
+	Set gFound = Nothing
+
+End Function
+
+
+' Somewhere the export can always be written, for when the data project
+' was not found. "" only when there is no temporary folder either, which
+' is a machine with larger problems than this one.
+'
+' The file turning up in TEMP is itself the sign that something went
+' wrong - nobody would put it there on purpose - and the line logged
+' just above it says which of the ways it got there.
+Function FallbackFilePath()
+
+	FallbackFilePath = ""
+
+	Dim fso
+	Set fso = Nothing
+	On Error Resume Next
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	On Error Goto 0
+
+	If fso Is Nothing Then Exit Function
+
+	Dim tempFolder
+	tempFolder = ""
+
+	On Error Resume Next
+	tempFolder = fso.GetSpecialFolder(TEMPORARY_FOLDER).Path
+	On Error Goto 0
+
+	If Trim(tempFolder & "") = "" Then Exit Function
+
+	FallbackFilePath = fso.BuildPath(tempFolder, XML_FILE_NAME)
+
+	WriteLog "Falling back to the temporary folder - " & FallbackFilePath
+
+End Function
+
+
+' Where E3 was started from, which is the folder the domain file sits in.
+Function StartFolder()
+
+	StartFolder = ""
+
+	Dim shell
+	Set shell = Nothing
+
+	On Error Resume Next
+	Err.Clear
+
+	Set shell = CreateObject("WScript.Shell")
+	If Not shell Is Nothing Then StartFolder = Trim(shell.CurrentDirectory & "")
+
+	If Err.Number <> 0 Then
+		StartFolder = ""
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+End Function
+
+
+' One folder and what is under it, to the depth the cap allows. A folder
+' that will not be read is stepped over rather than reported: a domain
+' folder holds all sorts, and one of them being unreadable says nothing
+' about where the data project is.
+Sub SearchFolder(folder, depth)
+
+	If depth > MAX_SEARCH_DEPTH Then Exit Sub
+
+	On Error Resume Next
+
+	Dim theFile
+	For Each theFile In folder.Files
+		If LCase(theFile.Name) = LCase(DATA_PROJECT_FILE) Then
+			If Not gFound.Exists(folder.Path) Then gFound.Add folder.Path, True
+		End If
+	Next
+
+	If Err.Number <> 0 Then Err.Clear
+
+	Dim child
+	For Each child In folder.SubFolders
+		If Not Skipped(child) Then SearchFolder child, depth + 1
+	Next
+
+	If Err.Number <> 0 Then Err.Clear
+
+	On Error Goto 0
+
+End Sub
+
+
+' Folders not worth walking into. A working copy carries .git, which
+' holds thousands of files and no data project, and E3 puts nothing of
+' ours anywhere hidden.
+Function Skipped(folder)
+
+	Skipped = True
+
+	Dim folderName
+	folderName = ""
+
+	On Error Resume Next
+	folderName = folder.Name
+	On Error Goto 0
+
+	If folderName = "" Then Exit Function
+	If Left(folderName, 1) = "." Then Exit Function
+
+	Dim attributes
+	attributes = 0
+
+	On Error Resume Next
+	attributes = folder.Attributes
+	On Error Goto 0
+
+	If (attributes And 2) <> 0 Then Exit Function     ' hidden
+	If (attributes And 4) <> 0 Then Exit Function     ' system
+
+	Skipped = False
+
+End Function
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+	
+End Sub
+
 <xatm_config_data.PropertiesHelper.xatm_BTC:xatm_BTC_OnStartRunning()>
 Sub xatm_BTC_OnStartRunning()
 
@@ -3735,7 +3735,7 @@ Sub SetExposure(bag, name, exposure)
 	If Not bag.Exists(k) Then Exit Sub
 
 	bag(k).Exposure = exposure
-
+	
 End Sub
 
 <xatm_config_data.PropertiesHelper.xatm_Breaker:xatm_Breaker_OnStartRunning()>
@@ -3864,6 +3864,387 @@ Sub xatm_Breaker_OnStartRunning()
 	SetExposure bag, "RawValueOpen",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "RawValueClosed",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "NormalState",          EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "CommandTimeout",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueCommandOpen",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueCommandClose", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+
+	SetExposure bag, "CommandOpen",          EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpen",       EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandOpenAlt",       EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpenAlt",    EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandClose",         EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOClose",      EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandCloseAlt",      EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOCloseAlt",   EXPOSE_VIEW + EXPOSE_SAVED
+	
+	
+	' Defective is configured the way a transformer's relays are: an
+	' expression is written for it on the panel, it can be forced for a
+	' test, and it is never saved - the expression is the configuration
+	' and the reading is whatever the switchyard was doing at the time.
+	SetExposure bag, "Defective", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
+
+	' Position is shown and never touched. Reading it back on the panel is
+	' how an engineer sees that the raw values above were configured the
+	' right way round, which is worth a row of its own; forcing it would
+	' only make the panel lie about the switchyard.
+	SetExposure bag, "Position", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE
+
+	' The two command failures are latches the automation sets and Reset
+	' clears - the breaker's own StepExecutionFailed. Nothing about them
+	' is configuration, so they are interfaced and nothing else.
+	SetExposure bag, "CommandOpenFailed",  EXPOSE_INTERFACE
+	SetExposure bag, "CommandCloseFailed", EXPOSE_INTERFACE
+	
+	
+	' --- what the operator is alarmed on --------------------------------
+	'
+	' The two command failures and nothing else.
+	'
+	' Defective is deliberately off the list: the PowerSubstation alarms
+	' that condition already, and a second source on it puts one event on
+	' the operator's list twice. Position is a state rather than an event
+	' - the panel draws it, and an alarm per position change would be
+	' noise the control room learns to ignore.
+	SetAlarm bag, "CommandOpenFailed",  "FALHA ABERTURA",   PAIR_ACTUATED, SEV_HIGH
+	SetAlarm bag, "CommandCloseFailed", "FALHA FECHAMENTO", PAIR_ACTUATED, SEV_HIGH
+		
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
+
+
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "PARADO|EM OPERAÇÃO|1"
+
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
+
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
+	
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+	
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
+	End Function
+
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	' The digital state that raises the alarm - DigitalLimit. It travels
+	' inside the pair rather than beside it, so the words and the state
+	' they describe cannot be changed independently of one another.
+	Public Function AlarmLimit()
+		AlarmLimit = CLng("0" & PairPart(2))
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
+	
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+	
+End Sub
+
+<xatm_config_data.PropertiesHelper.xatm_Disconnector:xatm_Disconnector_OnStartRunning()>
+Sub xatm_Disconnector_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	AddProperty bag, "Id", "Integer", Empty, _
+		"Unique numeric identifier used by the automation to locate this breaker.", _
+		"Identificador numérico único usado pelo automatismo para localizar este disjuntor."
+
+	AddProperty bag, "PositionOpen", "IOTag", Empty, _
+		"Open-position input of relay 1. Double-point word, or the 52b contact when UseDoublePoints is False.", _
+		"Entrada de posição aberto do relé 1. Palavra de duplo ponto, ou contato 52b quando UseDoublePoints for False."
+
+	AddProperty bag, "PositionClosed", "IOTag", Empty, _
+		"Closed-position input of relay 1. Double-point word, or the 52a contact when UseDoublePoints is False.", _
+		"Entrada de posição fechado do relé 1. Palavra de duplo ponto, ou contato 52a quando UseDoublePoints for False."
+
+	AddProperty bag, "PositionOpenAlt", "IOTag", Empty, _
+		"Open-position input of relay 2. Leave empty when there is no redundant relay.", _
+		"Entrada de posição aberto do relé 2. Deixe vazio quando não houver relé redundante."
+
+	AddProperty bag, "PositionClosedAlt", "IOTag", Empty, _
+		"Closed-position input of relay 2. Leave empty when there is no redundant relay.", _
+		"Entrada de posição fechado do relé 2. Deixe vazio quando não houver relé redundante."
+
+	AddProperty bag, "UseDoublePoints", "Boolean", True, _
+		"True - position comes from a double-point word. False - position comes from the 52a/52b contact pair.", _
+		"True - a posição vem de uma palavra de duplo ponto. False - a posição vem do par de contatos 52a/52b."
+
+	AddProperty bag, "RawValueOpen", "Integer", 2, _
+		"Raw value from the driver that means OPEN.", _
+		"Valor bruto do driver que significa ABERTO."
+
+	AddProperty bag, "RawValueClosed", "Integer", 1, _
+		"Raw value from the driver that means CLOSED.", _
+		"Valor bruto do driver que significa FECHADO."
+
+	AddProperty bag, "NormalState", "EdbSwitchState", 1, _
+		"Normal state of the equipment. Reference for normalisation and for Simulation Mode.", _
+		"Estado normal do equipamento. Referência para a normalização e para o Modo Simulação."
+
+	' --- whether it can be operated at all ------------------------------
+	'
+	' A disconnector is not always motorised. One switched by hand is read
+	' and never commanded, and the automation has to know the difference
+	' before it puts a step on one: a sequence that waits for a hand-
+	' operated disconnector to travel waits until CommandTimeout expires
+	' and then reports a step failure that never had a chance of not
+	' happening.
+
+	AddProperty bag, "Motorized", "Boolean", True, _
+		"True when the disconnector has a motor drive the automation can command. False for a hand-operated one, which is read and never commanded.", _
+		"True quando a seccionadora tem comando motorizado que o automatismo pode acionar. False para manobra manual, que é apenas lida e nunca comandada."
+
+	AddProperty bag, "CommandTimeout", "Integer", 40, _
+		"Command supervision window in seconds. The command is re-sent once at half the window and fails when it expires.", _
+		"Janela de supervisão do comando em segundos. O comando é reenviado uma vez na metade da janela e falha ao expirar."
+
+	AddProperty bag, "RawValueCommandOpen", "Integer", 0, _
+		"Raw value written to the open (trip) output.", _
+		"Valor bruto escrito na saída de abertura (trip)."
+
+	AddProperty bag, "RawValueCommandClose", "Integer", 1, _
+		"Raw value written to the close output.", _
+		"Valor bruto escrito na saída de fechamento."
+
+	AddProperty bag, "CommandOpen", "IOTag", Empty, _
+		"Open (trip) output of relay 1. Falls back to relay 2 when empty.", _
+		"Saída de abertura (trip) do relé 1. Recorre ao relé 2 quando vazio."
+
+	AddProperty bag, "CommandSBOOpen", "IOTag", Empty, _
+		"Select tag for the open command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
+		"Tag de seleção do comando de abertura no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
+
+	AddProperty bag, "CommandOpenAlt", "IOTag", Empty, _
+		"Open (trip) output of relay 2. Used when relay 1 is unavailable.", _
+		"Saída de abertura (trip) do relé 2. Usada quando o relé 1 está indisponível."
+
+	AddProperty bag, "CommandSBOOpenAlt", "IOTag", Empty, _
+		"Select tag for the open command on relay 2. Optional.", _
+		"Tag de seleção do comando de abertura no relé 2. Opcional."
+
+	AddProperty bag, "CommandClose", "IOTag", Empty, _
+		"Close output of relay 1. Falls back to relay 2 when empty.", _
+		"Saída de fechamento do relé 1. Recorre ao relé 2 quando vazio."
+
+	AddProperty bag, "CommandSBOClose", "IOTag", Empty, _
+		"Select tag for the close command on relay 1. Optional - Select-Before-Operate only runs when filled.", _
+		"Tag de seleção do comando de fechamento no relé 1. Opcional - o Select-Before-Operate só ocorre quando preenchido."
+
+	AddProperty bag, "CommandCloseAlt", "IOTag", Empty, _
+		"Close output of relay 2. Used when relay 1 is unavailable.", _
+		"Saída de fechamento do relé 2. Usada quando o relé 1 está indisponível."
+
+	AddProperty bag, "CommandSBOCloseAlt", "IOTag", Empty, _
+		"Select tag for the close command on relay 2. Optional.", _
+		"Tag de seleção do comando de fechamento no relé 2. Opcional."
+	
+	' --- what the plant and the automation say back ---------------------
+	'
+	' None of the four is configured with a value. Defective is configured
+	' with an expression, and the other three are written by the breaker
+	' and by the automation as they go.
+
+	AddProperty bag, "Defective", "Boolean", False, _
+		"Equipment is defective and must not be operated. Bound to an expression - not in remote, spring discharged, whatever the panel reports.", _
+		"Equipamento com defeito e que não deve ser operado. Vinculada a uma expressão - fora de remoto, mola descarregada, o que o painel indicar."
+
+	AddProperty bag, "Position", "Integer", 0, _
+		"Position as the automation reads it: 1 open, 2 closed, 0 neither. Always these three, whatever raw values the protocol carries - the raw ones are configured above and translated into this.", _
+		"Posição como o automatismo a lê: 1 aberto, 2 fechado, 0 indefinido. Sempre estes três, quaisquer que sejam os valores brutos do protocolo - os brutos são configurados acima e traduzidos para esta."
+
+	AddProperty bag, "CommandOpenFailed", "Boolean", False, _
+		"Latched failure of an open command sent by the automation. Set when the breaker does not reach the open position inside CommandTimeout, cleared by Reset.", _
+		"Falha selada de um comando de abertura enviado pelo automatismo. Marcada quando o disjuntor não atinge a posição aberta dentro de CommandTimeout, apagada pelo Reset."
+
+	AddProperty bag, "CommandCloseFailed", "Boolean", False, _
+		"Latched failure of a close command sent by the automation. Set when the breaker does not reach the closed position inside CommandTimeout, cleared by Reset.", _
+		"Falha selada de um comando de fechamento enviado pelo automatismo. Marcada quando o disjuntor não atinge a posição fechada dentro de CommandTimeout, apagada pelo Reset."
+
+	' The command outputs are write-only, so they get no EXPOSE_VALUE -
+	' there is nothing to read back. Forcing one sends the raw value
+	' configured for it rather than flipping a boolean, because a protocol
+	' may want 65 to close.
+	'
+	' Id is shown and never edited: it is what the automation locates this
+	' breaker by, and what the panel and the import address it by.
+	SetExposure bag, "Id",                   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+
+	SetExposure bag, "PositionOpen",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionClosed",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionOpenAlt",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "PositionClosedAlt",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+
+	SetExposure bag, "UseDoublePoints",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueOpen",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "RawValueClosed",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "NormalState",          EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "Motorized",            EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "CommandTimeout",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "RawValueCommandOpen",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "RawValueCommandClose", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
@@ -4103,7 +4484,7 @@ Sub SetExposure(bag, name, exposure)
 	If Not bag.Exists(k) Then Exit Sub
 
 	bag(k).Exposure = exposure
-	
+		
 End Sub
 
 <xatm_config_data.PropertiesHelper.xatm_Transformer:xatm_Transformer_OnStartRunning()>
@@ -4185,7 +4566,6 @@ Const SEV_CRITICAL = -2
 Const SEV_HIGH     =  0
 Const SEV_MEDIUM   =  1
 Const SEV_LOW      =  2
-
 Class PropertyInfo
 
 	Public Name
@@ -4279,6 +4659,7 @@ Class PropertyInfo
 		If i <= UBound(parts) Then PairPart = parts(i)
 
 	End Function
+	
 	
 	' Empty And anything is 0, so a property nobody classified answers no
 	' to all of these.
@@ -4444,7 +4825,7 @@ Const ROW_CLASS = "xatm_PropertyRow"
 
 ' The corner the rows stack from, in pixels - Himetric converts. A row
 ' keeps the size it was drawn at, so there is no width or height here.
-Const ROW_LEFT_PX = 1024
+Const ROW_LEFT_PX = 960
 Const ROW_TOP_PX  = 32
 Const ROW_GAP_PX  = 0
 
@@ -5511,13 +5892,172 @@ Sub Foo()
 			
 End Sub
 
+<xatm_config_screens.Config.btnAlarms:btnAlarms_Click()>
+Sub btnAlarms_Click()
+
+	Dim substation
+	substation = ChosenSubstation()
+
+	If substation = "" Then Exit Sub
+
+	' The build runs on the server, for the reason the search did: a
+	' screen cannot make objects in a data server. The substation it
+	' chose travels as the payload.
+	Dim builder
+	Set builder = Nothing
+	On Error Resume Next
+	Set builder = Application.GetObject(BUILD_ALARMS)
+	On Error Goto 0
+
+	If builder Is Nothing Then
+		MsgBox "This project has no " & BUILD_ALARMS & " tag, so the alarms " & _
+		       "cannot be built.", vbCritical, ALARMS_TITLE
+		Exit Sub
+	End If
+
+	builder.WriteEx substation
+
+	If builder.DocString <> EXIT_SUCCESS Then
+		MsgBox "The alarms were not built, or were built only in part - the " & _
+		       "console says which.", vbExclamation, ALARMS_TITLE
+		Exit Sub
+	End If
+
+	MsgBox "The alarms were built on:" & vbCrLf & vbCrLf & substation, _
+	       vbInformation, ALARMS_TITLE
+
+End Sub
+
+
+' The tag that does the looking, and the one it answers on.
+'
+' A screen is a viewer resource: it holds no server objects and cannot
+' walk them, so it cannot find a PowerSubstation itself. It writes to
+' the command tag instead and reads the answer back off the other - the
+' way the Save button gets its work done on the server.
+Const FIND_OBJECTS     = "xatm_config_data.Config.FindObjects"
+Const FOUND_OBJECTS    = "xatm_config_data.Config.FoundObjects"
+Const SUBSTATION_CLASS = "PowerSubstation"
+Const BUILD_ALARMS     = "xatm_config_data.Config.BuildAlarms"
+
+Const EXIT_SUCCESS     = "EXIT_SUCCESS"
+Const ALARMS_TITLE     = "Alarms"
+
+
+' The substation to build the alarms on, or "" when there is none to
+' build on or the operator backed out of choosing.
+Function ChosenSubstation()
+
+	ChosenSubstation = ""
+
+	Dim finder
+	Set finder = Nothing
+	On Error Resume Next
+	Set finder = Application.GetObject(FIND_OBJECTS)
+	On Error Goto 0
+
+	If finder Is Nothing Then
+		MsgBox "This project has no " & FIND_OBJECTS & " tag, so the " & _
+		       "substations cannot be looked for.", vbCritical, ALARMS_TITLE
+		Exit Function
+	End If
+
+	finder.WriteEx SUBSTATION_CLASS
+
+	If finder.DocString <> EXIT_SUCCESS Then
+		MsgBox "The substations could not be looked for - the console says why.", _
+		       vbCritical, ALARMS_TITLE
+		Exit Function
+	End If
+
+	Dim answer
+	answer = ""
+	On Error Resume Next
+	answer = CStr(Application.GetObject(FOUND_OBJECTS).Value)
+	On Error Goto 0
+
+	If Trim(answer) = "" Then
+		MsgBox "No PowerSubstation was found in this domain.", _
+		       vbExclamation, ALARMS_TITLE
+		Exit Function
+	End If
+
+	Dim found
+	found = Split(answer, vbCrLf)
+
+	If UBound(found) = 0 Then
+		ChosenSubstation = found(0)
+		Exit Function
+	End If
+
+	ChosenSubstation = PickSubstation(found)
+
+End Function
+
+
+' Which of several, asked as a number against a numbered list.
+'
+' An InputBox is what a viewer has to ask with, so the list goes into
+' the prompt and the answer comes back as free text - checked here,
+' because anything at all can be typed into one.
+Function PickSubstation(found)
+
+	PickSubstation = ""
+
+	Dim prompt, i
+	prompt = "More than one PowerSubstation was found." & vbCrLf & _
+	         "Type the number of the one to build the alarms on:" & vbCrLf & vbCrLf
+
+	For i = 0 To UBound(found)
+		prompt = prompt & "  " & (i + 1) & " - " & found(i) & vbCrLf
+	Next
+
+	Dim reply
+	reply = InputBox(prompt, ALARMS_TITLE, "1")
+
+	' Cancel and an empty box both come back "", and neither is a choice.
+	If Trim(reply) = "" Then Exit Function
+
+	If Not IsNumeric(reply) Then
+		MsgBox "'" & reply & "' is not one of the numbers on the list.", _
+		       vbExclamation, ALARMS_TITLE
+		Exit Function
+	End If
+
+	Dim choice
+	choice = CLng(reply)
+
+	If choice < 1 Or choice > UBound(found) + 1 Then
+		MsgBox "There is no " & choice & " on the list.", _
+		       vbExclamation, ALARMS_TITLE
+		Exit Function
+	End If
+
+	PickSubstation = found(choice - 1)
+
+End Function
+
+Sub Foo()
+	
+End Sub
+
 <xatm_config_screens.Config.btnApply:btnApply_Click()>
 Sub btnApply_Click()
 
-	Dim transformerType, busbarType
+	Dim transformerType, busbarType, incomerType
 	transformerType = SelectedLayout("SelectLayoutTransformer")
 	busbarType      = SelectedLayout("SelectLayoutBusbar")
+	incomerType      = SelectedLayout("SelectLayoutIncomer")
 
+	' Asked apart from the pairing below. No TM or TA step operates income
+	' equipment, so the incomer layout cannot make a combination
+	' unsupported - but a name this screen does not know would quietly
+	' build nothing at all, which is worth saying out loud.
+	If Not IsIncomerLayout(incomerType) Then
+		MsgBox "'" & incomerType & "' is not an incomer layout this screen can " & _
+		       "apply. Nothing was changed.", vbExclamation, "Apply"
+		Exit Sub
+	End If
 	If Not IsSupportedCombination(transformerType, busbarType) Then
 
 		If MsgBox(UnsupportedCombinationText(transformerType, busbarType) & vbCrLf & vbCrLf & _
@@ -5561,18 +6101,36 @@ Sub btnApply_Click()
 	added   = ""
 	failed  = ""
 
-	SyncFolder doc, TRANSFORMER_PATH, TransformerDevices(transformerType), removed, added, failed
+	' The Transformer folder is fed by both axes: what the transformer
+	' layout declares, plus the high-voltage disconnectors that exist
+	' only because there is an incomerto connect to.
+	SyncFolder doc, TRANSFORMER_PATH, _
+	           BothLists(TransformerDevices(transformerType), _
+	                     TransformerHVDevices(transformerType, incomerType)), _
+	           removed, added, failed
+
 	SyncFolder doc, BUSBAR_PATH, BusbarDevices(busbarType), removed, added, failed
+
+	' Skipped rather than reported when there is nothing to put there and
+	' no folder to put it in. A substation that never had an incomerhas no
+	' Incomerfolder either, and saying so at every Apply would be noise.
+	If Not (IncomerWanted(incomerType) Or HasFolder(doc, INCOMER_PATH)) Then
+		' nothing to do
+	Else
+		SyncFolder doc, INCOMER_PATH, IncomerDevices(incomerType), removed, added, failed
+	End If
+
 	SyncAutomation doc, AutomationCount(transformerType), removed, added, failed
 
 	SetLayoutTag doc, "Transformer", transformerType
 	SetLayoutTag doc, "Busbar", busbarType
+	SetLayoutTag doc, "Incomer", incomerType
 
 	contentTag.WriteEx DocumentText(doc)
 	
 	Application.GetObject("xatm_config_data.Config.UpdateTreeviewSignal").WriteEx True
 	
-	MsgBox ApplyReport(transformerType, busbarType, removed, added, failed), vbInformation, "Apply"
+	MsgBox ApplyReport(transformerType, busbarType, incomerType, removed, added, failed), vbInformation, "Apply"
 
 End Sub
 
@@ -5582,6 +6140,7 @@ Const AUTOMATION_PATH  = "/xatm-config/folder[@name='Automation']"
 Const LAYOUT_PATH      = "/xatm-config/folder[@name='Automation']/folder[@name='Layout']"
 Const TRANSFORMER_PATH = "/xatm-config/folder[@name='Substation']/folder[@name='Transformer']"
 Const BUSBAR_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Busbar']"
+Const INCOMER_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Incomer']"
 
 Const BTC_CLASS         = "xatm_BTC"
 Const TRANSFORMER_CLASS = "xatm_Transformer"
@@ -5624,6 +6183,125 @@ Function TransformerDevices(layoutType)
 End Function
 
 
+' Every device the incomerlayout expects to find in the Incomerfolder,
+' as "class:Id" - the two line bays, each a breaker with its line
+' disconnector and one disconnector per incomerbusbar.
+'
+' The tens digit is the bay and the units digit the role. Nothing is
+' numbered 0: an unconfigured Id reads as Empty, and VBScript makes
+' Empty equal to 0 - so a device with Id 0 collides with every device
+' nobody has configured yet, both in FindInFolder's comparison and as a
+' Dictionary key in BuildDeviceDictionary.
+Function IncomerDevices(layoutType)
+
+	Select Case UCase(layoutType)
+
+		Case "2BR2BB"
+			IncomerDevices = Array("xatm_Breaker:10", "xatm_Disconnector:12", _
+			                      "xatm_Disconnector:14", "xatm_Disconnector:15", _
+			                      "xatm_Breaker:20", "xatm_Disconnector:22", _
+			                      "xatm_Disconnector:24", "xatm_Disconnector:25")
+
+		' No incomersupervised by this automation - and with it, no
+		' high-voltage disconnectors on the transformers either.
+		Case "NONE"
+			IncomerDevices = Array()
+
+		Case Else
+			IncomerDevices = Array()
+
+	End Select
+
+End Function
+
+
+' The transformers' high-voltage disconnectors, which belong to neither
+' layout on its own.
+'
+' They sit in the Transformer folder, but how many there are is
+' transformers x incomerbusbars - so the transformer layout cannot name
+' them and neither can the incomerlayout. They are the devices that
+' exist only where the two axes cross, which is why 4TR4LV does not
+' mention them in its name.
+Function TransformerHVDevices(transformerType, incomerType)
+
+	TransformerHVDevices = Array()
+
+	If UCase(incomerType) <> "2BR2BB" Then Exit Function
+
+	Dim count
+	count = TransformerCount(transformerType)
+	If count < 1 Then Exit Function
+
+	Dim list()
+	ReDim list(count * 2 - 1)
+
+	Dim i, base
+	For i = 1 To count
+
+		base = i * 100
+		list((i - 1) * 2)     = "xatm_Disconnector:" & (base + HV_TO_BAR_A)
+		list((i - 1) * 2 + 1) = "xatm_Disconnector:" & (base + HV_TO_BAR_B)
+
+	Next
+
+	TransformerHVDevices = list
+
+End Function
+
+' The two offsets a transformer's high-voltage disconnectors are
+' numbered at, one per incomerbusbar - the lower offset to bar A, the
+' higher to bar B.
+'
+' The incomerbays pair the same way round: +30 and +4 land on bar A,
+' +80 and +5 on bar B. Bar B is the upper of the two on the drawing,
+' which is the opposite of what the label order suggests.
+Const HV_TO_BAR_A = 30
+Const HV_TO_BAR_B = 80
+
+
+' How many transformers a layout has. The same count as the automations
+' - one BTC per transformer - but asked as its own question, because the
+' high-voltage disconnectors are per transformer and not per automation.
+Function TransformerCount(layoutType)
+
+	Select Case UCase(layoutType)
+		Case "4TR4LV" : TransformerCount = 4
+		Case "2TR2LV" : TransformerCount = 2
+		Case Else     : TransformerCount = 0
+	End Select
+
+End Function
+
+
+' Two device lists as one, for a folder fed by more than one layout.
+Function BothLists(first, second)
+
+	If UBound(first) < 0 Then
+		BothLists = second
+		Exit Function
+	End If
+
+	If UBound(second) < 0 Then
+		BothLists = first
+		Exit Function
+	End If
+
+	Dim list()
+	ReDim list(UBound(first) + UBound(second) + 1)
+
+	Dim i
+	For i = 0 To UBound(first)
+		list(i) = first(i)
+	Next
+	For i = 0 To UBound(second)
+		list(UBound(first) + 1 + i) = second(i)
+	Next
+
+	BothLists = list
+
+End Function
+
 ' Every device the busbar layout expects to find in the Busbar folder,
 ' as "class:Id" - the bus-tie and bus-section breakers.
 Function BusbarDevices(layoutType)
@@ -5654,6 +6332,7 @@ Function TypePrefix(className)
 
 		Case "xatm_breaker"      : TypePrefix = "DJ"
 		Case "xatm_transformer"  : TypePrefix = "TR"
+		Case "xatm_disconnector" : TypePrefix = "SC"    ' seccionadora
 
 		' A class with no tag of its own falls back to the first two
 		' letters of its name - XATM_Feeder is FE.
@@ -5706,6 +6385,17 @@ Function IsBusbarLayout(layoutType)
 End Function
 
 
+' NONE is a layout like any other here - it is the answer for a
+' substation whose incomerthis automation does not supervise, and is
+' not the same thing as a name nobody recognises.
+Function IsIncomerLayout(layoutType)
+
+	Select Case UCase(layoutType)
+		Case "2BR2BB", "NONE" : IsIncomerLayout = True
+		Case Else             : IsIncomerLayout = False
+	End Select
+
+End Function
 
 
 ' The two pairings the automation logic in xatm_lib has step sequences
@@ -5796,9 +6486,16 @@ Sub SyncFolder(doc, folderPath, devices, removed, added, failed)
 	Set folder = doc.selectSingleNode(folderPath)
 
 	If folder Is Nothing Then
+
+		' The document is an export of the project, so a folder missing
+		' here is a folder missing in E3 - and the import creates objects
+		' but never folders. Saying which one and where it belongs turns
+		' this from a puzzle into a one-line job.
 		failed = failed & vbCrLf & "  the " & FolderLabel(folderPath) & _
-		         " folder is not in the document"
+		         " folder is not in the document - create it in the project " & _
+		         "(XATM_Data.Substation." & FolderLabel(folderPath) & ") and export again"
 		Exit Sub
+
 	End If
 
 	' --- Drop what the layout does not name ---------------------------
@@ -6206,6 +6903,22 @@ Sub SetLayoutTag(doc, tagName, value)
 End Sub
 
 
+' Whether an incomerlayout asks for any equipment at all. NONE is a
+' valid answer that happens to want nothing.
+Function IncomerWanted(incomerType)
+
+	IncomerWanted = (UBound(IncomerDevices(incomerType)) >= 0)
+
+End Function
+
+
+' Whether the document has a folder at a path.
+Function HasFolder(doc, folderPath)
+
+	HasFolder = Not (doc.selectSingleNode(folderPath) Is Nothing)
+
+End Function
+
 ' Removes an element together with the indentation in front of it, so
 ' pruning leaves no blank lines behind.
 Sub DropNode(node)
@@ -6327,10 +7040,10 @@ End Function
 '  REPORT
 ' ------------------------------------------------------------
 
-Function ApplyReport(transformerType, busbarType, removed, added, failed)
+Function ApplyReport(transformerType, busbarType, incomerType, removed, added, failed)
 
 	Dim text
-	text = "Applied " & transformerType & " + " & busbarType & "."
+	text = "Applied " & transformerType & " + " & busbarType & " + " & incomerType & "."
 
 	If removed <> "" Then
 		text = text & vbCrLf & vbCrLf & "Removed from the document:" & removed
@@ -6388,6 +7101,213 @@ Function TrailingNumber(name)
 End Function
 
 Sub Foo()	
+	
+End Sub
+
+<xatm_config_screens.Config.btnDistribution:btnDistribution_Click()>
+Sub btnDistribution_Click()
+
+	Dim driver
+	driver = ChosenObject(DRIVER_CLASS)
+
+	If driver = "" Then Exit Sub
+
+	Dim offset
+	offset = ChosenOffset()
+
+	If offset = "" Then Exit Sub
+
+	' The build runs on the server, for the reason the search did: a
+	' screen cannot make objects in a driver. The driver it chose
+	' travels as the payload.
+	Dim builder
+	Set builder = Nothing
+	On Error Resume Next
+	Set builder = Application.GetObject(BUILD_DISTRIBUTION)
+	On Error Goto 0
+
+	If builder Is Nothing Then
+		MsgBox "This project has no " & BUILD_DISTRIBUTION & " tag, so the " & _
+		       "signals cannot be distributed.", vbCritical, DISTRIBUTION_TITLE
+		Exit Sub
+	End If
+
+	builder.WriteEx offset & "|" & driver
+
+	If builder.DocString <> EXIT_SUCCESS Then
+		MsgBox "The signals were not distributed, or only in part - the " & _
+		       "console says which." & vbCrLf & vbCrLf & _
+		       "If the tags were built but not saved, this copy of E3 is " & _
+		       "refusing to save that many without a licence.", _
+		       vbExclamation, DISTRIBUTION_TITLE
+		Exit Sub
+	End If
+
+	MsgBox "The signals were distributed through:" & vbCrLf & vbCrLf & driver, _
+	       vbInformation, DISTRIBUTION_TITLE
+
+End Sub
+
+
+' The tag that does the looking, and the one it answers on.
+'
+' A screen is a viewer resource: it holds no server objects and cannot
+' walk them, so it cannot find an IODriver itself. It writes the class
+' it wants to the command tag and reads the answer back off the other -
+' the way the Alarms button finds its substation.
+Const FIND_OBJECTS       = "xatm_config_data.Config.FindObjects"
+Const FOUND_OBJECTS      = "xatm_config_data.Config.FoundObjects"
+
+' What carries the signals out to the operation centre. The level 3
+' centre is spoken to through a driver in slave mode, and which driver
+' that is, is the engineer's to choose.
+Const DRIVER_CLASS       = "IODriver"
+
+Const BUILD_DISTRIBUTION = "xatm_config_data.Config.BuildDistribution"
+
+Const EXIT_SUCCESS       = "EXIT_SUCCESS"
+Const DISTRIBUTION_TITLE = "Distribution"
+
+' What the address box offers before anything is typed. The operation
+' centre's point list decides the real one, and every substation
+' answering to that centre needs a range of its own.
+Const DEFAULT_OFFSET     = "3000"
+
+
+' One object of a class, chosen by the operator where there is more than
+' one. "" when there is none to choose from or the choosing was backed
+' out of.
+Function ChosenObject(className)
+
+	ChosenObject = ""
+
+	Dim finder
+	Set finder = Nothing
+	On Error Resume Next
+	Set finder = Application.GetObject(FIND_OBJECTS)
+	On Error Goto 0
+
+	If finder Is Nothing Then
+		MsgBox "This project has no " & FIND_OBJECTS & " tag, so nothing " & _
+		       "can be looked for.", vbCritical, DISTRIBUTION_TITLE
+		Exit Function
+	End If
+
+	finder.WriteEx className
+
+	If finder.DocString <> EXIT_SUCCESS Then
+		MsgBox "The " & className & " objects could not be looked for - the " & _
+		       "console says why.", vbCritical, DISTRIBUTION_TITLE
+		Exit Function
+	End If
+
+	Dim answer
+	answer = ""
+	On Error Resume Next
+	answer = CStr(Application.GetObject(FOUND_OBJECTS).Value)
+	On Error Goto 0
+
+	If Trim(answer) = "" Then
+		MsgBox "No " & className & " was found in this domain.", _
+		       vbExclamation, DISTRIBUTION_TITLE
+		Exit Function
+	End If
+
+	Dim found
+	found = Split(answer, vbCrLf)
+
+	If UBound(found) = 0 Then
+		ChosenObject = found(0)
+		Exit Function
+	End If
+
+	ChosenObject = PickObject(found, className)
+
+End Function
+
+
+' Which of several, asked as a number against a numbered list.
+'
+' An InputBox is what a viewer has to ask with, so the list goes into
+' the prompt and the answer comes back as free text - checked here,
+' because anything at all can be typed into one.
+Function PickObject(found, className)
+
+	PickObject = ""
+
+	Dim prompt, i
+	prompt = "More than one " & className & " was found." & vbCrLf & _
+	         "Type the number of the one to distribute through:" & vbCrLf & vbCrLf
+
+	For i = 0 To UBound(found)
+		prompt = prompt & "  " & (i + 1) & " - " & found(i) & vbCrLf
+	Next
+
+	Dim reply
+	reply = InputBox(prompt, DISTRIBUTION_TITLE, "1")
+
+	' Cancel and an empty box both come back "", and neither is a choice.
+	If Trim(reply) = "" Then Exit Function
+
+	If Not IsNumeric(reply) Then
+		MsgBox "'" & reply & "' is not one of the numbers on the list.", _
+		       vbExclamation, DISTRIBUTION_TITLE
+		Exit Function
+	End If
+
+	Dim choice
+	choice = CLng(reply)
+
+	If choice < 1 Or choice > UBound(found) + 1 Then
+		MsgBox "There is no " & choice & " on the list.", _
+		       vbExclamation, DISTRIBUTION_TITLE
+		Exit Function
+	End If
+
+	PickObject = found(choice - 1)
+
+End Function
+
+
+' Where the point numbering starts, asked rather than fixed.
+'
+' An InputBox is what a viewer has to ask with, so the answer comes back
+' as free text and is checked here - anything at all can be typed in.
+Function ChosenOffset()
+
+	ChosenOffset = ""
+
+	Dim reply
+	reply = InputBox("Address to start the point numbering from:" & vbCrLf & vbCrLf & _
+	                 "Every signal is numbered upwards from here, monitored " & _
+	                 "points and commands alike.", DISTRIBUTION_TITLE, DEFAULT_OFFSET)
+
+	' Cancel and an empty box both come back "", and neither is an answer.
+	If Trim(reply) = "" Then Exit Function
+
+	If Not IsNumeric(reply) Then
+		MsgBox "'" & reply & "' is not a number.", vbExclamation, DISTRIBUTION_TITLE
+		Exit Function
+	End If
+
+	Dim offset
+	offset = CLng(reply)
+
+	If offset < 0 Then
+		MsgBox "An address cannot be negative.", vbExclamation, DISTRIBUTION_TITLE
+		Exit Function
+	End If
+
+	ChosenOffset = CStr(offset)
+
+End Function
+
+' E3 will not take a Function as the last thing in a scope. The script
+' is refused with nothing useful said about why, so an empty Sub goes
+' on the end to keep a Function from being last. The other scopes in
+' this dump carry one for the same reason - they are not leftovers.
+Sub EndOfScope()
+	
 End Sub
 
 <xatm_config_screens.Config.btnSave:btnSave_Click()>
@@ -6555,24 +7475,6 @@ Sub RebuildInterface()
 	If problem <> "" Then
 		WriteLog "Interface is incomplete:" & problem
 		MsgBox "The interface is incomplete:" & vbCrLf & problem, vbExclamation, "Save"
-	End If
-
-End Sub
-
-
-' The console the automation logs to, and the E3 trace either way.
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[Interface] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[Interface] - " & message
 	End If
 
 End Sub
@@ -6836,162 +7738,22 @@ Function ManifestOf(className)
 
 End Function
 
-Sub Foo()
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[Interface] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[Interface] - " & message
+	End If
 	
-	
-End Sub
-
-<xatm_config_screens.Config.btnAlarms:btnAlarms_Click()>
-Sub btnAlarms_Click()
-
-	Dim substation
-	substation = ChosenSubstation()
-
-	If substation = "" Then Exit Sub
-
-	' The build runs on the server, for the reason the search did: a
-	' screen cannot make objects in a data server. The substation it
-	' chose travels as the payload.
-	Dim builder
-	Set builder = Nothing
-	On Error Resume Next
-	Set builder = Application.GetObject(BUILD_ALARMS)
-	On Error Goto 0
-
-	If builder Is Nothing Then
-		MsgBox "This project has no " & BUILD_ALARMS & " tag, so the alarms " & _
-		       "cannot be built.", vbCritical, ALARMS_TITLE
-		Exit Sub
-	End If
-
-	builder.WriteEx substation
-
-	If builder.DocString <> EXIT_SUCCESS Then
-		MsgBox "The alarms were not built, or were built only in part - the " & _
-		       "console says which.", vbExclamation, ALARMS_TITLE
-		Exit Sub
-	End If
-
-	MsgBox "The alarms were built on:" & vbCrLf & vbCrLf & substation, _
-	       vbInformation, ALARMS_TITLE
-
-End Sub
-
-
-' The tag that does the looking, and the one it answers on.
-'
-' A screen is a viewer resource: it holds no server objects and cannot
-' walk them, so it cannot find a PowerSubstation itself. It writes to
-' the command tag instead and reads the answer back off the other - the
-' way the Save button gets its work done on the server.
-Const FIND_OBJECTS     = "xatm_config_data.Config.FindObjects"
-Const FOUND_OBJECTS    = "xatm_config_data.Config.FoundObjects"
-Const SUBSTATION_CLASS = "PowerSubstation"
-Const BUILD_ALARMS     = "xatm_config_data.Config.BuildAlarms"
-
-Const EXIT_SUCCESS     = "EXIT_SUCCESS"
-Const ALARMS_TITLE     = "Alarms"
-
-
-' The substation to build the alarms on, or "" when there is none to
-' build on or the operator backed out of choosing.
-Function ChosenSubstation()
-
-	ChosenSubstation = ""
-
-	Dim finder
-	Set finder = Nothing
-	On Error Resume Next
-	Set finder = Application.GetObject(FIND_OBJECTS)
-	On Error Goto 0
-
-	If finder Is Nothing Then
-		MsgBox "This project has no " & FIND_OBJECTS & " tag, so the " & _
-		       "substations cannot be looked for.", vbCritical, ALARMS_TITLE
-		Exit Function
-	End If
-
-	finder.WriteEx SUBSTATION_CLASS
-
-	If finder.DocString <> EXIT_SUCCESS Then
-		MsgBox "The substations could not be looked for - the console says why.", _
-		       vbCritical, ALARMS_TITLE
-		Exit Function
-	End If
-
-	Dim answer
-	answer = ""
-	On Error Resume Next
-	answer = CStr(Application.GetObject(FOUND_OBJECTS).Value)
-	On Error Goto 0
-
-	If Trim(answer) = "" Then
-		MsgBox "No PowerSubstation was found in this domain.", _
-		       vbExclamation, ALARMS_TITLE
-		Exit Function
-	End If
-
-	Dim found
-	found = Split(answer, vbCrLf)
-
-	If UBound(found) = 0 Then
-		ChosenSubstation = found(0)
-		Exit Function
-	End If
-
-	ChosenSubstation = PickSubstation(found)
-
-End Function
-
-
-' Which of several, asked as a number against a numbered list.
-'
-' An InputBox is what a viewer has to ask with, so the list goes into
-' the prompt and the answer comes back as free text - checked here,
-' because anything at all can be typed into one.
-Function PickSubstation(found)
-
-	PickSubstation = ""
-
-	Dim prompt, i
-	prompt = "More than one PowerSubstation was found." & vbCrLf & _
-	         "Type the number of the one to build the alarms on:" & vbCrLf & vbCrLf
-
-	For i = 0 To UBound(found)
-		prompt = prompt & "  " & (i + 1) & " - " & found(i) & vbCrLf
-	Next
-
-	Dim reply
-	reply = InputBox(prompt, ALARMS_TITLE, "1")
-
-	' Cancel and an empty box both come back "", and neither is a choice.
-	If Trim(reply) = "" Then Exit Function
-
-	If Not IsNumeric(reply) Then
-		MsgBox "'" & reply & "' is not one of the numbers on the list.", _
-		       vbExclamation, ALARMS_TITLE
-		Exit Function
-	End If
-
-	Dim choice
-	choice = CLng(reply)
-
-	If choice < 1 Or choice > UBound(found) + 1 Then
-		MsgBox "There is no " & choice & " on the list.", _
-		       vbExclamation, ALARMS_TITLE
-		Exit Function
-	End If
-
-	PickSubstation = found(choice - 1)
-
-End Function
-
-
-' E3 will not take a Function as the last thing in a scope. The script
-' is refused with nothing useful said about why, so an empty Sub goes
-' on the end to keep a Function from being last. The other scopes in
-' this dump carry one for the same reason - they are not leftovers.
-Sub EndOfScope()
 End Sub
 
 <xatm_config_screens.Config:Config_OnPreShow(Arg)>
@@ -7002,6 +7764,24 @@ Sub Config_OnPreShow(Arg)
 	' ================================
 	
 	Dim imageList, i
+	
+	' ---- INCOMER ----
+	Dim incomerType
+	incomerType = Application.GetObject("XATM_Data.Automation.Layout.Incomer").Value
+	
+	
+	imageList = Split(Item("SelectLayoutIncomer").ImageList, ",")
+	
+	For i = 0 To UBound(imageList)
+		
+		If Trim(imageList(i)) = incomerType Then
+			
+			Item("SelectLayoutIncomer").Index = Trim(imageList(i))
+			Exit For
+			
+		End If
+		
+	Next
 	
 	' ---- TRANSFORMER ----
 	Dim transformerType
@@ -7038,211 +7818,6 @@ Sub Config_OnPreShow(Arg)
 		
 	Next
 		
-End Sub
-
-<xatm_config_screens.Config.btnDistribution:btnDistribution_Click()>
-Sub btnDistribution_Click()
-
-	Dim driver
-	driver = ChosenObject(DRIVER_CLASS)
-
-	If driver = "" Then Exit Sub
-
-	Dim offset
-	offset = ChosenOffset()
-
-	If offset = "" Then Exit Sub
-
-	' The build runs on the server, for the reason the search did: a
-	' screen cannot make objects in a driver. The driver it chose
-	' travels as the payload.
-	Dim builder
-	Set builder = Nothing
-	On Error Resume Next
-	Set builder = Application.GetObject(BUILD_DISTRIBUTION)
-	On Error Goto 0
-
-	If builder Is Nothing Then
-		MsgBox "This project has no " & BUILD_DISTRIBUTION & " tag, so the " & _
-		       "signals cannot be distributed.", vbCritical, DISTRIBUTION_TITLE
-		Exit Sub
-	End If
-
-	builder.WriteEx offset & "|" & driver
-
-	If builder.DocString <> EXIT_SUCCESS Then
-		MsgBox "The signals were not distributed, or only in part - the " & _
-		       "console says which." & vbCrLf & vbCrLf & _
-		       "If the tags were built but not saved, this copy of E3 is " & _
-		       "refusing to save that many without a licence.", _
-		       vbExclamation, DISTRIBUTION_TITLE
-		Exit Sub
-	End If
-
-	MsgBox "The signals were distributed through:" & vbCrLf & vbCrLf & driver, _
-	       vbInformation, DISTRIBUTION_TITLE
-
-End Sub
-
-
-' The tag that does the looking, and the one it answers on.
-'
-' A screen is a viewer resource: it holds no server objects and cannot
-' walk them, so it cannot find an IODriver itself. It writes the class
-' it wants to the command tag and reads the answer back off the other -
-' the way the Alarms button finds its substation.
-Const FIND_OBJECTS       = "xatm_config_data.Config.FindObjects"
-Const FOUND_OBJECTS      = "xatm_config_data.Config.FoundObjects"
-
-' What carries the signals out to the operation centre. The level 3
-' centre is spoken to through a driver in slave mode, and which driver
-' that is, is the engineer's to choose.
-Const DRIVER_CLASS       = "IODriver"
-
-Const BUILD_DISTRIBUTION = "xatm_config_data.Config.BuildDistribution"
-
-Const EXIT_SUCCESS       = "EXIT_SUCCESS"
-Const DISTRIBUTION_TITLE = "Distribution"
-
-' What the address box offers before anything is typed. The operation
-' centre's point list decides the real one, and every substation
-' answering to that centre needs a range of its own.
-Const DEFAULT_OFFSET     = "3000"
-
-
-' One object of a class, chosen by the operator where there is more than
-' one. "" when there is none to choose from or the choosing was backed
-' out of.
-Function ChosenObject(className)
-
-	ChosenObject = ""
-
-	Dim finder
-	Set finder = Nothing
-	On Error Resume Next
-	Set finder = Application.GetObject(FIND_OBJECTS)
-	On Error Goto 0
-
-	If finder Is Nothing Then
-		MsgBox "This project has no " & FIND_OBJECTS & " tag, so nothing " & _
-		       "can be looked for.", vbCritical, DISTRIBUTION_TITLE
-		Exit Function
-	End If
-
-	finder.WriteEx className
-
-	If finder.DocString <> EXIT_SUCCESS Then
-		MsgBox "The " & className & " objects could not be looked for - the " & _
-		       "console says why.", vbCritical, DISTRIBUTION_TITLE
-		Exit Function
-	End If
-
-	Dim answer
-	answer = ""
-	On Error Resume Next
-	answer = CStr(Application.GetObject(FOUND_OBJECTS).Value)
-	On Error Goto 0
-
-	If Trim(answer) = "" Then
-		MsgBox "No " & className & " was found in this domain.", _
-		       vbExclamation, DISTRIBUTION_TITLE
-		Exit Function
-	End If
-
-	Dim found
-	found = Split(answer, vbCrLf)
-
-	If UBound(found) = 0 Then
-		ChosenObject = found(0)
-		Exit Function
-	End If
-
-	ChosenObject = PickObject(found, className)
-
-End Function
-
-
-' Which of several, asked as a number against a numbered list.
-'
-' An InputBox is what a viewer has to ask with, so the list goes into
-' the prompt and the answer comes back as free text - checked here,
-' because anything at all can be typed into one.
-Function PickObject(found, className)
-
-	PickObject = ""
-
-	Dim prompt, i
-	prompt = "More than one " & className & " was found." & vbCrLf & _
-	         "Type the number of the one to distribute through:" & vbCrLf & vbCrLf
-
-	For i = 0 To UBound(found)
-		prompt = prompt & "  " & (i + 1) & " - " & found(i) & vbCrLf
-	Next
-
-	Dim reply
-	reply = InputBox(prompt, DISTRIBUTION_TITLE, "1")
-
-	' Cancel and an empty box both come back "", and neither is a choice.
-	If Trim(reply) = "" Then Exit Function
-
-	If Not IsNumeric(reply) Then
-		MsgBox "'" & reply & "' is not one of the numbers on the list.", _
-		       vbExclamation, DISTRIBUTION_TITLE
-		Exit Function
-	End If
-
-	Dim choice
-	choice = CLng(reply)
-
-	If choice < 1 Or choice > UBound(found) + 1 Then
-		MsgBox "There is no " & choice & " on the list.", _
-		       vbExclamation, DISTRIBUTION_TITLE
-		Exit Function
-	End If
-
-	PickObject = found(choice - 1)
-
-End Function
-
-
-' Where the point numbering starts, asked rather than fixed.
-'
-' An InputBox is what a viewer has to ask with, so the answer comes back
-' as free text and is checked here - anything at all can be typed in.
-Function ChosenOffset()
-
-	ChosenOffset = ""
-
-	Dim reply
-	reply = InputBox("Address to start the point numbering from:" & vbCrLf & vbCrLf & _
-	                 "Every signal is numbered upwards from here, monitored " & _
-	                 "points and commands alike.", DISTRIBUTION_TITLE, DEFAULT_OFFSET)
-
-	' Cancel and an empty box both come back "", and neither is an answer.
-	If Trim(reply) = "" Then Exit Function
-
-	If Not IsNumeric(reply) Then
-		MsgBox "'" & reply & "' is not a number.", vbExclamation, DISTRIBUTION_TITLE
-		Exit Function
-	End If
-
-	Dim offset
-	offset = CLng(reply)
-
-	If offset < 0 Then
-		MsgBox "An address cannot be negative.", vbExclamation, DISTRIBUTION_TITLE
-		Exit Function
-	End If
-
-	ChosenOffset = CStr(offset)
-
-End Function
-
-' E3 will not take a Function as the last thing in a scope. The script
-' is refused with nothing useful said about why, so an empty Sub goes
-' on the end to keep a Function from being last. The other scopes in
-' this dump carry one for the same reason - they are not leftovers.
-Sub EndOfScope()
 End Sub
 
 <xatm_config_screens.DomainBrowser.TreeView:TreeView_NodeClick(Node)>

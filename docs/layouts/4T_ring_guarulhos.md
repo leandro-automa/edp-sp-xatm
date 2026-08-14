@@ -46,14 +46,155 @@ o contrato, independente do nome de exibição do dispositivo em `xatm_data`.
 | `TIE[4A,3A]`       | DJ60                    | 740       | B4A ↔ B3A |
 | `TIE[1A,4A]`       | DJ10                    | 900       | B1A ↔ B4A (fecha o anel, NA) |
 
+### Entrada 88 kV — RAE GUL-1 e RAE GUL-2
+
+Duas linhas da LT Norte-Nordeste alimentam as barras de entrada BA-1 e BA-2.
+Os vãos de entrada ficam na pasta **`Substation.Incomer`**, que já existia
+vazia no projeto, e ocupam a faixa **0–99**, que estava inteiramente livre.
+
+> **`Incomer`, e não `Income` nem `Input`.** Em subestação, *incomer* é o vão
+> que traz a alimentação para dentro — é o termo corrente de manobra e de
+> painel. *Income* é receita, dinheiro; e *Input* já está tomado pelos IOTags,
+> onde significa sinal de entrada e não vão.
+>
+> A pasta de equipamentos sempre se chamou `Incomer`, ao lado de
+> `Transformer`, `Busbar` e `Feeder`. O eixo de layout, a tag e o seletor
+> nasceram como `Income` e foram renomeados para casar com ela: hoje é
+> `Incomer` em todos os quatro lugares.
+>
+> O XPath tem de casar com o **nome da pasta**. Apontá-lo para `Income` não
+> encontra nada — e não encontrar nada é silencioso: `SyncFolder` não tem onde
+> escrever, nenhum equipamento é criado e nenhum nó aparece na árvore.
+
+**A dezena é o vão, a unidade é o papel do equipamento:**
+
+| Vão | Equipamento | ID Real | ID Lógico |
+|-----|-------------|---------|-----------|
+| RAE GUL-1 | Seccionadora de linha  | 3393 | **12** |
+| RAE GUL-1 | **Disjuntor**          | 1    | **10** |
+| RAE GUL-1 | Seccionadora → barra A | 3997 | **14** |
+| RAE GUL-1 | Seccionadora → barra B | 3998 | **15** |
+| RAE GUL-2 | Seccionadora de linha  | 3394 | **22** |
+| RAE GUL-2 | **Disjuntor**          | 2    | **20** |
+| RAE GUL-2 | Seccionadora → barra A | 3995 | **24** |
+| RAE GUL-2 | Seccionadora → barra B | 3996 | **25** |
+
+### As duas barras de entrada
+
+```
+B  ─────────────────────   (a de cima)
+A  ─────────────────────   (a de baixo)
+```
+
+**`+4` vai na barra A, `+5` na barra B** — nos vãos de entrada e, com os
+offsets maiores, também nas seccionadoras de alta tensão dos transformadores.
+
+> **A barra de cima é a B, não a A.** A ordem dos rótulos no unifilar sugere o
+> contrário, e foi assim que a primeira leitura deste documento errou. Como
+> 3997 é BA-1 e 3997 é o `14`, segue que **barra A = BA-1** (a de baixo) e
+> **barra B = BA-2** (a de cima).
+
+> **0–9 fica reservado, e nenhum equipamento pode ter Id 0.** Em VBScript
+> `Empty = 0` é verdadeiro, e um `.Id` não configurado lê como `Empty`. Um
+> `Id` igual a 0 colide com todo equipamento ainda não configurado: a busca
+> `If obj.Id = id` em `FindInFolder` devolveria o equipamento errado, e o
+> `dict.Add item.Id` de `BuildDeviceDictionary` trata `Empty` e `0` como a
+> **mesma chave** — o segundo é descartado em silêncio. Por isso o primeiro
+> vão começa em 10 e não em 0.
+
+**Atenção à numeração real:** as seccionadoras de barra do vão GUL-2
+(3995/3996) têm número **menor** que as do vão GUL-1 (3997/3998) — a ordem
+real corre ao contrário da ordem dos vãos. Não é engano do mapeamento.
+
+**A confirmar no unifilar:** `3393`, `3394` e `3347` foram lidos como `3993`,
+`3994` e `3447` na leitura do PDF (REV24). Os quatro números já acordados
+(3995–3998) formam uma sequência contínua com 3993/3994, o que sugere que a
+leitura do PDF esteja certa — confirmar antes de criar os objetos.
+
+**Cuidado com os nomes:** `BA-1`/`BA-2` (barras de entrada 88 kV) e
+`B1A`/`B1B` (barras do anel 13,8 kV) diferem por uma transposição de
+caracteres. Na notação abstrata as barras de entrada são `IN[1]`/`IN[2]`,
+justamente para que um passo nunca se pareça com o outro.
+
+### Seccionadoras de alta tensão dos transformadores
+
+Ficam na pasta **Transformer**, junto do transformador a que pertencem, e
+seguem a regra `TRn = n×100`: **+30** para a barra A, **+80** para a barra B —
+o mesmo par dos vãos de entrada, na mesma ordem.
+
+| Transformador | → barra A | ID Lógico | → barra B | ID Lógico |
+|---------------|-----------|-----------|-----------|-----------|
+| TR1 (100)     | 3999      | **130**   | 4000      | **180**   |
+| TR2 (200)     | 4001      | **230**   | 4002      | **280**   |
+| TR3 (300)     | 4003      | **330**   | 4004      | **380**   |
+| TR4 (400)     | 3347      | **430**   | 3236      | **480**   |
+
+Estas seccionadoras **não são declaradas pelo layout de transformador**.
+Quantas existem depende de quantas barras de entrada há, que é assunto do
+layout de entrada: são `transformadores × barras de entrada` — 4 × 2 = 8 aqui,
+e nenhuma quando a entrada é `NONE`. São os equipamentos que só existem no
+cruzamento dos dois layouts, e é por isso que `4TR4LV` não as menciona no nome.
+
 ### Esquema de numeração dos IDs Lógicos
 
+- **0–9** — reservado, nunca atribuído (ver a nota sobre `Empty = 0`)
+- **10–99** — vãos de entrada 88 kV, dezena = vão (`RAE GUL-1 = 10`,
+  `RAE GUL-2 = 20`), unidade = papel: **+0** disjuntor, **+2** seccionadora de
+  linha, **+4** barra A, **+5** barra B
 - **100–400** — vãos de transformador (`TRn = n×100`); **+20** = disjuntor
-  secundário do transformador (`120 / 220 / 320 / 420`)
+  secundário (`120 / 220 / 320 / 420`); **+30** = seccionadora de alta tensão
+  para a barra A, **+80** = para a barra B
+
+Os dois blocos apontam para as barras na mesma ordem — o offset menor sempre na
+barra A, o maior sempre na barra B — de modo que `14`, `24` e `130…430` são
+todos a mesma barra, e `15`, `25` e `180…480` a outra.
 - **700–740** — os cinco disjuntores de interligação de barra, percorrendo o
   anel na ordem dos barramentos B1A→B4A (`700, 710, 720, 730, 740`)
 - **900** — disjuntor de fechamento do anel (retorno B4A→B1A, normalmente
   aberto — sobre o qual todas as sequências TM/TA se apoiam)
+
+---
+
+## Layouts
+
+A configuração tem **três eixos independentes**, cada um com seu seletor na
+tela Config e sua tag em `XATM_Data.Automation.Layout`:
+
+| Eixo | Tag | Valores | Pasta que sincroniza |
+|------|-----|---------|----------------------|
+| Transformer | `Layout.Transformer` | `4TR4LV`, `2TR2LV` | `Substation.Transformer` |
+| Busbar | `Layout.Busbar` | `6BB6TIERING`, `2BB1TIE` | `Substation.Busbar` |
+| Incomer | `Layout.Incomer` | `2BR2BB`, `NONE` | `Substation.Incomer` |
+
+**ETD Guarulhos = `4TR4LV` + `6BB6TIERING` + `2BR2BB`.**
+
+### Como se lê o nome de um layout
+
+Uma contagem por tipo de equipamento, mais uma palavra de topologia quando ela
+distingue alguma coisa — `6BB6TIERING` são seis barras e seis disjuntores em
+**anel**.
+
+`2BR2BB` são **2 disjuntores de entrada** e **2 barras de entrada**. As
+seccionadoras não entram no nome porque não são informação nova: são
+`vãos × (1 linha + 1 por barra)` = 2 × 3 = **6**. Nomear uma quantidade
+derivada só cria dois fatos que podem passar a discordar.
+
+Pela mesma razão `4TR4LV` continua sem mencionar as seccionadoras de alta
+tensão: elas são `transformadores × barras de entrada`, e essa conta só existe
+quando os dois eixos se encontram.
+
+### `NONE`
+
+Uma entrada `NONE` não cria equipamento nenhum: nem os vãos de entrada, nem as
+seccionadoras de alta tensão dos transformadores. É o valor para uma
+subestação cuja entrada não é supervisionada por este automatismo.
+
+### Combinações com sequência de manobra
+
+`IsSupportedCombination` continua olhando apenas **Transformer + Busbar** —
+`4TR4LV + 6BB6TIERING` e `2TR2LV + 2BB1TIE`. O eixo de entrada não entra nessa
+conta porque nenhum passo de TM/TA opera equipamento de entrada; ele é validado
+à parte, apenas quanto a ser um layout conhecido.
 
 ## Estado Normal
 
