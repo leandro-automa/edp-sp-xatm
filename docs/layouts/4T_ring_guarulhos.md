@@ -46,14 +46,125 @@ o contrato, independente do nome de exibição do dispositivo em `xatm_data`.
 | `TIE[4A,3A]`       | DJ60                    | 740       | B4A ↔ B3A |
 | `TIE[1A,4A]`       | DJ10                    | 900       | B1A ↔ B4A (fecha o anel, NA) |
 
+### Entrada 88 kV — RAE GUL-1 e RAE GUL-2
+
+Duas linhas da LT Norte-Nordeste alimentam as barras de entrada BA-1 e BA-2.
+Os vãos de entrada ficam na pasta **Income**, e ocupam a faixa **0–99**, que
+estava inteiramente livre.
+
+**A dezena é o vão, a unidade é o papel do equipamento:**
+
+| Vão | Equipamento | ID Real | ID Lógico |
+|-----|-------------|---------|-----------|
+| RAE GUL-1 | Seccionadora de linha | 3393 | **12** |
+| RAE GUL-1 | **Disjuntor**         | 1    | **10** |
+| RAE GUL-1 | Seccionadora → BA-1   | 3997 | **14** |
+| RAE GUL-1 | Seccionadora → BA-2   | 3998 | **15** |
+| RAE GUL-2 | Seccionadora de linha | 3394 | **22** |
+| RAE GUL-2 | **Disjuntor**         | 2    | **20** |
+| RAE GUL-2 | Seccionadora → BA-1   | 3995 | **24** |
+| RAE GUL-2 | Seccionadora → BA-2   | 3996 | **25** |
+
+> **0–9 fica reservado, e nenhum equipamento pode ter Id 0.** Em VBScript
+> `Empty = 0` é verdadeiro, e um `.Id` não configurado lê como `Empty`. Um
+> `Id` igual a 0 colide com todo equipamento ainda não configurado: a busca
+> `If obj.Id = id` em `FindInFolder` devolveria o equipamento errado, e o
+> `dict.Add item.Id` de `BuildDeviceDictionary` trata `Empty` e `0` como a
+> **mesma chave** — o segundo é descartado em silêncio. Por isso o primeiro
+> vão começa em 10 e não em 0.
+
+**Atenção à numeração real:** as seccionadoras de barra do vão GUL-2
+(3995/3996) têm número **menor** que as do vão GUL-1 (3997/3998) — a ordem
+real corre ao contrário da ordem dos vãos. Não é engano do mapeamento.
+
+**A confirmar no unifilar:** `3393`, `3394` e `3347` foram lidos como `3993`,
+`3994` e `3447` na leitura do PDF (REV24). Os quatro números já acordados
+(3995–3998) formam uma sequência contínua com 3993/3994, o que sugere que a
+leitura do PDF esteja certa — confirmar antes de criar os objetos.
+
+**Cuidado com os nomes:** `BA-1`/`BA-2` (barras de entrada 88 kV) e
+`B1A`/`B1B` (barras do anel 13,8 kV) diferem por uma transposição de
+caracteres. Na notação abstrata as barras de entrada são `IN[1]`/`IN[2]`,
+justamente para que um passo nunca se pareça com o outro.
+
+### Seccionadoras de alta tensão dos transformadores
+
+Ficam na pasta **Transformer**, junto do transformador a que pertencem, e
+seguem a regra `TRn = n×100`: **+30** e **+80** para as duas barras de entrada.
+
+| Transformador | ID Real | ID Lógico | ID Real | ID Lógico |
+|---------------|---------|-----------|---------|-----------|
+| TR1 (100)     | 3999    | **130**   | 4000    | **180**   |
+| TR2 (200)     | 4001    | **230**   | 4002    | **280**   |
+| TR3 (300)     | 4003    | **330**   | 4004    | **380**   |
+| TR4 (400)     | 3347    | **430**   | 3236    | **480**   |
+
+> **A confirmar:** qual das duas — `+30` ou `+80` — liga em BA-1. No unifilar
+> os transformadores ficam **abaixo** das barras, ao contrário dos vãos de
+> entrada, então a geometria não resolve a dúvida sozinha.
+
+Estas seccionadoras **não são declaradas pelo layout de transformador**.
+Quantas existem depende de quantas barras de entrada há, que é assunto do
+layout de entrada: são `transformadores × barras de entrada` — 4 × 2 = 8 aqui,
+e nenhuma quando a entrada é `NONE`. São os equipamentos que só existem no
+cruzamento dos dois layouts, e é por isso que `4TR4LV` não as menciona no nome.
+
 ### Esquema de numeração dos IDs Lógicos
 
+- **0–9** — reservado, nunca atribuído (ver a nota sobre `Empty = 0`)
+- **10–99** — vãos de entrada 88 kV, dezena = vão (`RAE GUL-1 = 10`,
+  `RAE GUL-2 = 20`), unidade = papel: **+0** disjuntor, **+2** seccionadora de
+  linha, **+4** BA-1, **+5** BA-2
 - **100–400** — vãos de transformador (`TRn = n×100`); **+20** = disjuntor
-  secundário do transformador (`120 / 220 / 320 / 420`)
+  secundário (`120 / 220 / 320 / 420`); **+30** e **+80** = seccionadoras de
+  alta tensão para as barras de entrada
 - **700–740** — os cinco disjuntores de interligação de barra, percorrendo o
   anel na ordem dos barramentos B1A→B4A (`700, 710, 720, 730, 740`)
 - **900** — disjuntor de fechamento do anel (retorno B4A→B1A, normalmente
   aberto — sobre o qual todas as sequências TM/TA se apoiam)
+
+---
+
+## Layouts
+
+A configuração tem **três eixos independentes**, cada um com seu seletor na
+tela Config e sua tag em `XATM_Data.Automation.Layout`:
+
+| Eixo | Tag | Valores | Pasta que sincroniza |
+|------|-----|---------|----------------------|
+| Transformer | `Layout.Transformer` | `4TR4LV`, `2TR2LV` | `Substation.Transformer` |
+| Busbar | `Layout.Busbar` | `6BB6TIERING`, `2BB1TIE` | `Substation.Busbar` |
+| Income | `Layout.Income` | `2BR2BB`, `NONE` | `Substation.Income` |
+
+**ETD Guarulhos = `4TR4LV` + `6BB6TIERING` + `2BR2BB`.**
+
+### Como se lê o nome de um layout
+
+Uma contagem por tipo de equipamento, mais uma palavra de topologia quando ela
+distingue alguma coisa — `6BB6TIERING` são seis barras e seis disjuntores em
+**anel**.
+
+`2BR2BB` são **2 disjuntores de entrada** e **2 barras de entrada**. As
+seccionadoras não entram no nome porque não são informação nova: são
+`vãos × (1 linha + 1 por barra)` = 2 × 3 = **6**. Nomear uma quantidade
+derivada só cria dois fatos que podem passar a discordar.
+
+Pela mesma razão `4TR4LV` continua sem mencionar as seccionadoras de alta
+tensão: elas são `transformadores × barras de entrada`, e essa conta só existe
+quando os dois eixos se encontram.
+
+### `NONE`
+
+Uma entrada `NONE` não cria equipamento nenhum: nem os vãos de entrada, nem as
+seccionadoras de alta tensão dos transformadores. É o valor para uma
+subestação cuja entrada não é supervisionada por este automatismo.
+
+### Combinações com sequência de manobra
+
+`IsSupportedCombination` continua olhando apenas **Transformer + Busbar** —
+`4TR4LV + 6BB6TIERING` e `2TR2LV + 2BB1TIE`. O eixo de entrada não entra nessa
+conta porque nenhum passo de TM/TA opera equipamento de entrada; ele é validado
+à parte, apenas quanto a ser um layout conhecido.
 
 ## Estado Normal
 
