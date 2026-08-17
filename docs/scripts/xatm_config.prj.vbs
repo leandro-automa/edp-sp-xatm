@@ -3453,13 +3453,44 @@ Sub xatm_BTC_OnStartRunning()
 		"Reset command. Clears the latched step failures and the general block, so that a sequence can be started again.", _
 		"Comando de reset. Apaga as falhas seladas de passo e o bloqueio geral, para que uma sequência possa partir novamente."
 
+	' One command per maneuver, rather than one command saying which.
+	'
+	' Level 3 reaches these over IEC 60870-5-104, where a command is a point
+	' address carrying no argument: the address has to mean one maneuver by
+	' itself. The E3 operation screen works the same way round - a button
+	' writes a tag, it does not compose an argument. So the variant lives in
+	' the tag, and the tag name says which transformer the maneuver assumes
+	' is out of service.
+	'
+	' CommandStartTM is the maneuver with nothing out; CommandStartTM<n00>
+	' is the same trigger with transformer n00 out, which is what the spec
+	' calls "TM TR<trigger>-TR<n>" - so the point list and the spec sections
+	' name the same thing.
+	'
+	' The one whose Id is the bound transformer's own is declared with the
+	' rest and never used: Start rejects a maneuver that is its own
+	' impediment. Declaring it keeps the set identical on every instance,
+	' so no point list has to reason about which member is missing.
 	AddProperty bag, "CommandStartTM", "InternalTag", Empty, _
-		"Start command for a manual transfer. Written by the operator's screen to ask for the maneuver.", _
-		"Comando de partida da transferência manual. Escrito pela tela do operador para pedir a manobra."
+		"Start command for a manual transfer with no transformer out of service.", _
+		"Comando de partida da transferência manual sem transformador impedido."
 
 	AddProperty bag, "CommandStartNM", "InternalTag", Empty, _
-		"Start command for a manual normalisation. Written by the operator's screen to ask for the maneuver.", _
-		"Comando de partida da normalização manual. Escrito pela tela do operador para pedir a manobra."
+		"Start command for a manual normalisation with no transformer out of service.", _
+		"Comando de partida da normalização manual sem transformador impedido."
+
+	Dim trn
+	For trn = 1 To 4
+
+		AddProperty bag, "CommandStartTM" & (trn * 100), "InternalTag", Empty, _
+			"Start command for a manual transfer with transformer " & (trn * 100) & " out of service.", _
+			"Comando de partida da transferência manual com o transformador " & (trn * 100) & " impedido."
+
+		AddProperty bag, "CommandStartNM" & (trn * 100), "InternalTag", Empty, _
+			"Start command for a manual normalisation with transformer " & (trn * 100) & " out of service.", _
+			"Comando de partida da normalização manual com o transformador " & (trn * 100) & " impedido."
+
+	Next
 
 	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
 		"Operator lock command. Written by the operator's screen to set or release OperatorBlock.", _
@@ -3515,6 +3546,11 @@ Sub xatm_BTC_OnStartRunning()
 	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
 	SetExposure bag, "CommandStartTM",       EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
 	SetExposure bag, "CommandStartNM",       EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
+
+	For trn = 1 To 4
+		SetExposure bag, "CommandStartTM" & (trn * 100), EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
+		SetExposure bag, "CommandStartNM" & (trn * 100), EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
+	Next
 	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE
 
 
@@ -8653,6 +8689,36 @@ Sub ListBox_Timer()
 	
 End Sub
 
+' The longest item the list box is asked to take.
+Const MAX_ITEM_LENGTH = 512
+
+
+' What the list box will accept: one line, and a bounded one.
+'
+' The engine writes one physical line per entry now, so this is a belt on
+' top of braces. It stays because AddItem refuses an item carrying a line
+' break outright, and the loop below stops at the first refusal - so one
+' bad entry would not cost one row, it would hide every row after it.
+Function SafeItem(v)
+
+    Dim s
+    s = ""
+
+    On Error Resume Next
+    s = CStr(v)
+    On Error Goto 0
+
+    s = Replace(s, vbCrLf, " ")
+    s = Replace(s, vbCr, " ")
+    s = Replace(s, vbLf, " ")
+
+    If Len(s) > MAX_ITEM_LENGTH Then s = Left(s, MAX_ITEM_LENGTH - 3) & "..."
+
+    SafeItem = s
+
+End Function
+
+
 Sub AddArrayContentToList()
 
     Dim contentTag
@@ -8688,7 +8754,7 @@ Sub AddArrayContentToList()
 
     Dim i
     For i = ListCount To UBound(contentArr)
-        AddItem contentArr(i), 0
+        AddItem SafeItem(contentArr(i)), 0
         'If Application.GetObject("xatm_config_data.ConsoleLogEngine").AutoScrolling Then
             ListIndex = 0
         'End If
@@ -8701,13 +8767,6 @@ Sub btnBTC_Click()
 
 	Dim autos
 	Set autos = Application.GetObject("XATM_Data.Automation")
-
-	Dim modes
-	modes = Array("TM", "NM", "TA")
-
-	Dim nModes, nActions
-	nModes   = UBound(modes) + 1     ' trigger actions
-	nActions = nModes + 2            ' + Operator Block + Reset
 
 	' --- Collect every BTC instance -----------------------------------
 	Dim obj, total
@@ -8744,14 +8803,38 @@ Sub btnBTC_Click()
 		Next
 	Next
 
+	' --- How many options each transformer contributes ----------------
+	'
+	' A manual maneuver is one option per contingency now, not one option
+	' that reads the field and decides for itself: the plain maneuver,
+	' then the same one with each OTHER transformer out of service. That
+	' is "total" options for TM and "total" again for NM - the same count
+	' on every instance, which is what keeps the mapping below a division.
+	'
+	' TA gets one. It takes no contingency argument from anybody: Start
+	' reads the field for it, exactly as it does for the protection.
+	'
+	' Separators cost nothing here - the empty entry in the original menu
+	' was already not counted - so they are used freely to keep the three
+	' blocks apart.
+	Dim nActions
+	nActions = 2 * total + 3     ' TM* + NM* + TA + Operator Block + Reset
+
 	' --- Build the menu -----------------------------------------------
 	Dim menu, tr
 	menu = ""
+
 	For i = 0 To total - 1
+
 		Set tr = btc(i).Transformer
 		If i > 0 Then menu = menu & "|"
-		menu = menu & tr.Name & "{" & Join(modes, "|") & "||" & _
+
+		menu = menu & tr.Name & "{" & _
+		       ModeEntries("TM", btc, total, i) & "||" & _
+		       ModeEntries("NM", btc, total, i) & "||" & _
+		       "TA||" & _
 		       IIf(btc(i).OperatorBlock, "*", "") & "Operator Block|Reset}"
+
 	Next
 
 	Dim lOption
@@ -8767,30 +8850,137 @@ Sub btnBTC_Click()
 	Set target = btc(idx)
 	Set tr = target.Transformer
 
-	If action <= nModes Then                       
-		
-		' TM / NM / TA
-		Dim mode
-		mode = modes(action - 1)
-		If MsgBox("Force " & mode & " on " & tr.Name & "?", _
-		          vbYesNo + vbQuestion, "Confirm") = vbYes Then
-			target.Item("Commands").Item("Start").WriteEx mode & ":" & tr.Id
+	If action <= 2 * total Then
+
+		' A manual maneuver. The first block of "total" is TM and the
+		' second is NM; within each, the first entry is the plain one and
+		' the rest follow the order OtherTransformer walks them in - the
+		' same order the labels were built from, so a label cannot come to
+		' name a different transformer than the option it maps to.
+		Dim mode, slot
+		If action <= total Then
+			mode = "TM"
+			slot = action
+		Else
+			mode = "NM"
+			slot = action - total
 		End If
 
-	ElseIf action = nModes + 1 Then
-		
+		Dim impedeId, impedeName, impeded
+		impedeId   = 0
+		impedeName = ""
+
+		If slot > 1 Then
+
+			Set impeded = OtherTransformer(btc, total, idx, slot - 1)
+
+			If impeded Is Nothing Then
+				MsgBox "The menu and the automation list disagree - nothing sent.", _
+				       vbExclamation, "Error"
+				Exit Sub
+			End If
+
+			impedeId   = impeded.Id
+			impedeName = impeded.Name
+
+		End If
+
+		Dim question
+		If impedeId = 0 Then
+			question = "Force " & mode & " on " & tr.Name & "?"
+		Else
+			question = "Force " & mode & " on " & tr.Name & _
+			           " with " & impedeName & " out of service?"
+		End If
+
+		If MsgBox(question, vbYesNo + vbQuestion, "Confirm") = vbYes Then
+			target.Item("Commands").Item("Start").WriteEx _
+				mode & ":" & tr.Id & ":" & impedeId
+		End If
+
+	ElseIf action = 2 * total + 1 Then
+
+		' TA - written with two fields on purpose. Start reads the field
+		' for the contingency, the way it does for a protection trip.
+		If MsgBox("Force TA on " & tr.Name & "?", _
+		          vbYesNo + vbQuestion, "Confirm") = vbYes Then
+			target.Item("Commands").Item("Start").WriteEx "TA:" & tr.Id
+		End If
+
+	ElseIf action = 2 * total + 2 Then
+
 		' Operator Block toggle
 		target.OperatorBlock = Not target.OperatorBlock
 
 	Else
-		
+
 		' Reset
 		target.Item("Commands").Item("Reset").WriteEx True
 
 	End If
-		
+
 End Sub
 
+
+' What one mode contributes to one transformer's submenu: the plain
+' maneuver, then the same maneuver with each other transformer out.
+'
+' Labelled the way the spec labels them - "TM-TR3" on TR4's submenu is
+' section 1.4.2.23's "TM TR4-TR3" - so the menu, the CommandStartTM<n00>
+' tags and the spec all name the same maneuver.
+Function ModeEntries(mode, btc, total, idx)
+
+	Dim out, n, other
+	out = mode
+
+	For n = 1 To total - 1
+
+		Set other = OtherTransformer(btc, total, idx, n)
+
+		If Not other Is Nothing Then
+			out = out & "|" & mode & "-" & other.Name
+		End If
+
+	Next
+
+	ModeEntries = out
+
+End Function
+
+
+' The nth transformer that is not this instance's own, counting from 1 in
+' the ascending order the list was sorted into.
+'
+' One walk shared by the menu builder and the option mapper. Two walks
+' that agreed today would be two things to keep in step, and the failure
+' would be silent: a label naming one transformer and the command naming
+' another.
+Function OtherTransformer(btc, total, idx, n)
+
+	Set OtherTransformer = Nothing
+
+	Dim i, seen
+	seen = 0
+
+	For i = 0 To total - 1
+
+		If i <> idx Then
+
+			seen = seen + 1
+
+			If seen = n Then
+				Set OtherTransformer = btc(i).Transformer
+				Exit Function
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+Sub Foo()
+End Sub
 <xatm_config_screens.Menu.btnConfig:btnConfig_Click()>
 Sub btnConfig_Click()
 	

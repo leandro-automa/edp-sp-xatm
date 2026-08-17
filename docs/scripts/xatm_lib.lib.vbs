@@ -142,11 +142,47 @@ End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartNM()>
 Sub Start_CommandStartNM()
-	
+
 	If xatm_BTC.CommandStartNM.Value = 0 Then Exit Sub
-	
-	StartMode "NM"
-	
+
+	StartMode "NM", 0
+
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandStartNM100()>
+Sub Start_CommandStartNM100()
+
+	If xatm_BTC.CommandStartNM100.Value = 0 Then Exit Sub
+
+	StartMode "NM", 100
+
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandStartNM200()>
+Sub Start_CommandStartNM200()
+
+	If xatm_BTC.CommandStartNM200.Value = 0 Then Exit Sub
+
+	StartMode "NM", 200
+
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandStartNM300()>
+Sub Start_CommandStartNM300()
+
+	If xatm_BTC.CommandStartNM300.Value = 0 Then Exit Sub
+
+	StartMode "NM", 300
+
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandStartNM400()>
+Sub Start_CommandStartNM400()
+
+	If xatm_BTC.CommandStartNM400.Value = 0 Then Exit Sub
+
+	StartMode "NM", 400
+
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartTM()>
@@ -154,8 +190,44 @@ Sub Start_CommandStartTM()
 
 	If xatm_BTC.CommandStartTM.Value = 0 Then Exit Sub
 
-	StartMode "TM"
-	
+	StartMode "TM", 0
+
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandStartTM100()>
+Sub Start_CommandStartTM100()
+
+	If xatm_BTC.CommandStartTM100.Value = 0 Then Exit Sub
+
+	StartMode "TM", 100
+
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandStartTM200()>
+Sub Start_CommandStartTM200()
+
+	If xatm_BTC.CommandStartTM200.Value = 0 Then Exit Sub
+
+	StartMode "TM", 200
+
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandStartTM300()>
+Sub Start_CommandStartTM300()
+
+	If xatm_BTC.CommandStartTM300.Value = 0 Then Exit Sub
+
+	StartMode "TM", 300
+
+End Sub
+
+<xatm_BTC.Commands.Start:Start_CommandStartTM400()>
+Sub Start_CommandStartTM400()
+
+	If xatm_BTC.CommandStartTM400.Value = 0 Then Exit Sub
+
+	StartMode "TM", 400
+
 End Sub
 
 <xatm_BTC.Commands.Start:Start_OnChangedValue()>
@@ -169,8 +241,11 @@ Sub Start_OnChangedValue()
 	Dim parts
 	parts = Split(Me.Value, ":")
 
-	If UBound(parts) <> 1 Then
-		Reject "Invalid Start format '" & Me.Value & "' (expected MODE:trigger).", ts
+	' Two fields or three. The third names the transformer the maneuver is
+	' to assume out of service, and is what the operator now picks; a
+	' request without it is a request with nothing out.
+	If UBound(parts) < 1 Or UBound(parts) > 2 Then
+		Reject "Invalid Start format '" & Me.Value & "' (expected MODE:trigger[:impeded]).", ts
 		Exit Sub
 	End If
 
@@ -178,62 +253,141 @@ Sub Start_OnChangedValue()
 	mode = UCase(Trim(parts(0)))
 
 	Select Case mode
-		
+
 		Case "TM", "NM", "TA"
-		
+
 		Case Else
-			
+
 			Reject "Unknown automation type '" & mode & "'.", ts
 			Exit Sub
-			
+
 	End Select
 
 	If Not IsNumeric(parts(1)) Then
-		
+
 		Reject "Invalid trigger transformer '" & parts(1) & "'.", ts
 		Exit Sub
-		
+
 	End If
 
 	Dim triggerId
 	triggerId = CInt(parts(1))
 
 	' ================
+	' WHICH TRANSFORMER IS OUT
+	' ================
+	'
+	' TM and NM are asked for by a person, and the person says which one -
+	' that is the whole of the new triggering philosophy. TA is asked for
+	' by the switchyard, which says nothing, so the field is read instead.
+	Dim impedeId
+	impedeId = 0
+
+	If mode = "TA" Then
+
+		Dim outCount
+		impedeId = FieldImpediment(triggerId, outCount)
+
+		' Tabela 1 situations 6-11 are two transformers out, and no
+		' sequence leaves them. Refusing is the honest answer; picking one
+		' of the two would run a sequence whose starting state is false.
+		If outCount > 1 Then
+
+			Reject "More than one transformer is out of service - no sequence is defined from there.", ts
+			Exit Sub
+
+		End If
+
+	ElseIf UBound(parts) = 2 Then
+
+		If Not IsNumeric(parts(2)) Then
+
+			Reject "Invalid impeded transformer '" & parts(2) & "'.", ts
+			Exit Sub
+
+		End If
+
+		impedeId = CInt(parts(2))
+
+	End If
+
+	' ================
+	' IS THE REQUEST ITSELF COHERENT
+	' ================
+	'
+	' Ahead of the gates below, because these say the request is malformed
+	' rather than that the switchyard is not ready for it. Each one is a
+	' case the step logic cannot express: its Else branch would take a
+	' nonsense argument for "nothing is out" and run a real maneuver.
+
+	If Not IsConfiguredTransformer(triggerId) Then
+
+		Reject "Trigger transformer " & triggerId & " is not configured in this substation.", ts
+		Exit Sub
+
+	End If
+
+	If impedeId <> 0 Then
+
+		If impedeId = triggerId Then
+
+			Reject "Transformer " & triggerId & " cannot be both the trigger and the one out of service.", ts
+			Exit Sub
+
+		End If
+
+		If Not IsConfiguredTransformer(impedeId) Then
+
+			Reject "Impeded transformer " & impedeId & " is not configured in this substation.", ts
+			Exit Sub
+
+		End If
+
+	End If
+
+	' A transfer needs somewhere to put the load. Anything that is neither
+	' the trigger nor out of service can take it; with none left there is
+	' nothing to transfer to and no sequence to run.
+	'
+	' On the four transformer ring one impediment still leaves two, so this
+	' only bites on the small layouts - two transformers with the adjacent
+	' one impeded, which is the case the client asked to have refused.
+	If CountDestinations(triggerId, impedeId) = 0 Then
+
+		Reject "No transformer is left to take the load.", ts
+		Exit Sub
+
+	End If
+
+	' ================
 	' GATE CHECKS
 	' ================
 
 	If Not xatm_BTC.Enabled Then
-		
+
 		Reject "Automation disabled.", ts
 		Exit Sub
 
 	End If
 
 	If xatm_BTC.Running Then
-		
+
 		Reject "Already running.", ts
 		Exit Sub
 
 	End If
 
 	If xatm_BTC.OperatorBlock Then
-		
+
 	 	Reject "Blocked by operator.", ts
 		Exit Sub
 
 	End If
 
 	If xatm_BTC.GeneralBlock Then
-		
+
 	 	Reject "General interlock active.", ts
 	 	Exit Sub
-
-	End If
-
-	If AnyOtherAutomationRunning() Then
-		
-		Reject "Another automation is in progress.", ts
-		Exit Sub
 
 	End If
 
@@ -257,7 +411,7 @@ Sub Start_OnChangedValue()
 	End If
 
 	If AnyOtherAutomationRunning() Then
-		
+
 		Reject "Another automation is in progress.", ts
 		Exit Sub
 
@@ -266,31 +420,35 @@ Sub Start_OnChangedValue()
 	' ================
 	' START
 	' ================
-	
+
 	xatm_BTC.Item("FSM").Item("AutomationType").WriteEx mode
 	xatm_BTC.Item("FSM").Item("TriggerTransformerId").WriteEx triggerId
+	xatm_BTC.Item("FSM").Item("ImpededTransformerId").WriteEx impedeId
 	xatm_BTC.Item("FSM").Item("StepTimer").WriteEx 0
 	xatm_BTC.Item("FSM").Item("Main").WriteEx 0
 	xatm_BTC.Running = True
 
-	WriteLog "Start - " & mode & " TR" & triggerId
+	If impedeId = 0 Then
+		WriteLog "Start - " & mode & " TR" & triggerId
+	Else
+		WriteLog "Start - " & mode & " TR" & triggerId & " with TR" & impedeId & " out of service"
+	End If
 
 	WriteEx "", ts ' clear without re-firing
 
 End Sub
-
 
 ' True if any OTHER automation object is currently running (mutual exclusion).
 ' Relies on a common Running property instead of enumerating each type.
 Function AnyOtherAutomationRunning()
 
 	AnyOtherAutomationRunning = False
-	
+
 	Dim obj
 	For Each obj In Application.GetObject("XATM_Data.Automation")
 
 		If Not (obj Is xatm_BTC) Then
-		
+
 			Dim running
 			running = False
 			On Error Resume Next
@@ -317,10 +475,24 @@ End Function
 ' kept in the one place that has them all. A command that is refused is
 ' logged there and says why, exactly as a written trigger is.
 '
+' impedeId is which transformer the maneuver is to treat as out of service,
+' or 0 for none. It is not read off the command tag: there is one tag per
+' maneuver, and which tag was written is what says which maneuver was asked
+' for. The value on it means nothing beyond "asked for".
+'
+' That is the shape Level 3 needs. Over IEC 60870-5-104 a command is a point
+' address and carries no argument, so an address has to mean one maneuver by
+' itself; the E3 operation screen works the same way round, a button writes
+' a tag rather than composing one. A single tag carrying which transformer
+' is out would have to be a setpoint, and a setpoint followed by an execute
+' is two telegrams with nothing binding them together - not something to put
+' under a switching sequence.
+'
 ' There is no TA among the commands. That one is asked for by the
 ' switchyard, through the transformer's own triggers, and never by a
-' person.
-Sub StartMode(mode)
+' person - which is also why TA takes no impediment argument and reads the
+' field for it instead.
+Sub StartMode(mode, impedeId)
 
 	Dim found, id
 	id = BoundTransformerId(found)
@@ -334,10 +506,9 @@ Sub StartMode(mode)
 
 	End If
 
-	WriteEx mode & ":" & id
+	WriteEx mode & ":" & id & ":" & impedeId
 
 End Sub
-
 
 ' The Id of the transformer this instance drives, which is the trigger of
 ' anything asked for from a screen. found stays False where nothing is
@@ -372,31 +543,197 @@ Function BoundTransformerId(ByRef found)
 
 End Function
 
+' Every transformer the substation has, as "<id>:<0|1>" pairs - the flag is
+' its out-of-service reading at the moment of asking.
+'
+' One walk, because the three questions below - is this Id configured, how
+' many are out, which one is out - are all answered off the same list.
+'
+' FSM.Main has GetDeviceById for the same job. E3 gives no way to call a
+' procedure in another object's scope, so this scope keeps its own, narrower
+' version: it only ever looks for transformers.
+Function TransformerStates()
+
+	Dim acc
+	acc = ""
+
+	On Error Resume Next
+	CollectTransformers Application.GetObject("XATM_Data.Substation"), acc
+	On Error Goto 0
+
+	TransformerStates = acc
+
+End Function
+
+Sub CollectTransformers(folder, ByRef acc)
+
+	Dim obj
+	For Each obj In folder
+
+		Select Case UCase(TypeName(obj))
+
+			Case "XATM_TRANSFORMER"
+
+				Dim id
+				id = Empty
+
+				On Error Resume Next
+				id = obj.Id
+				On Error Goto 0
+
+				If IsNumeric(id) Then
+
+					Dim flag
+					flag = 0
+
+					On Error Resume Next
+					If CBool(obj.OutOfService) Then flag = 1
+					On Error Goto 0
+
+					If acc <> "" Then acc = acc & ","
+					acc = acc & CInt(id) & ":" & flag
+
+				End If
+
+			Case "XATM_BREAKER", "XATM_DISCONNECTOR"
+
+				' a device, and not one this is looking for
+
+			Case Else
+
+				' Not a device -> treat as a subfolder and recurse.
+				On Error Resume Next
+				CollectTransformers obj, acc
+				On Error Goto 0
+
+		End Select
+
+	Next
+
+End Sub
+
+' True when id names a transformer this substation actually has.
+'
+' Without it a typo'd screen binding, or a command tag left unconfigured,
+' falls through every ElseIf in the step logic and lands on the Else that
+' means "nothing is out" - running a real maneuver on a live switchyard
+' under an assumption nobody made.
+Function IsConfiguredTransformer(id)
+
+	IsConfiguredTransformer = False
+
+	Dim entries, i, pair
+	entries = Split(TransformerStates(), ",")
+
+	For i = 0 To UBound(entries)
+
+		If entries(i) <> "" Then
+
+			pair = Split(entries(i), ":")
+
+			If CInt(pair(0)) = id Then
+				IsConfiguredTransformer = True
+				Exit Function
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+' How many transformers could take the load: everything that is neither the
+' trigger, nor the one declared out, nor out of service in the field.
+Function CountDestinations(triggerId, impedeId)
+
+	CountDestinations = 0
+
+	Dim entries, i, pair, id
+	entries = Split(TransformerStates(), ",")
+
+	For i = 0 To UBound(entries)
+
+		If entries(i) <> "" Then
+
+			pair = Split(entries(i), ":")
+			id   = CInt(pair(0))
+
+			If id <> triggerId And id <> impedeId And pair(1) = "0" Then
+				CountDestinations = CountDestinations + 1
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+' What StoreImpediments used to snapshot, reduced to the one Id the
+' sequences can take an argument for. This is the TA path: no operator said
+' anything, so the field is asked.
+'
+' The trigger is skipped. A transformer that has just tripped may carry the
+' out-of-service flag as well - stale, or set by whoever was about to work
+' on it - and counting it would make the maneuver its own impediment, which
+' Start then rejects. A protection-driven restoration refusing to run is the
+' worst way to be wrong: the busbars stay dead. StoreImpediments had the
+' same immunity, though by accident rather than on purpose - the step logic
+' simply never tested imp(trigger).
+'
+' outCount is how many OTHERS were found out, so the caller can tell "none
+' out" from "more out than any sequence covers" - 0 is returned for both.
+Function FieldImpediment(triggerId, ByRef outCount)
+
+	FieldImpediment = 0
+	outCount = 0
+
+	Dim entries, i, pair, id
+	entries = Split(TransformerStates(), ",")
+
+	For i = 0 To UBound(entries)
+
+		If entries(i) <> "" Then
+
+			pair = Split(entries(i), ":")
+			id   = CInt(pair(0))
+
+			If id <> triggerId And pair(1) = "1" Then
+
+				outCount = outCount + 1
+				If outCount = 1 Then FieldImpediment = id
+
+			End If
+
+		End If
+
+	Next
+
+End Function
+
 ' Logs the rejection and clears the trigger without re-firing.
 ' Uses the explicit tag path (not Me) so it is safe to call from a helper.
 Sub Reject(reason, ts)
 
 	WriteLog "Not started - " & reason
 	WriteEx "", ts
-	
+
 End Sub
 
 Sub WriteLog(message)
-	
+
 	Dim consoleLogEngine
 	Set consoleLogEngine = Nothing
-	
+
 	On Error Resume Next
 	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
 	Application.Trace "[" & Parent.Parent.Name & "] - " & message
 	On Error Goto 0
-	
+
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
-	
-End Sub
 
+End Sub
 <xatm_BTC.FSM.Main:Main_Completed()>
 Sub Main_Completed()
 	
@@ -484,6 +821,30 @@ Function OperationName(operation)
 	Else
 		OperationName = "operated"
 	End If
+End Function
+' Which transformer the running maneuver is treating as out of service, or 0
+' for none. Written once by Start_OnChangedValue - declared by the operator
+' for TM and NM, read off the field for TA - and constant for the whole run,
+' so no step can be handed a different contingency than the step before it.
+'
+' The spec pairs every maneuver with at most one impediment: Tabela 1
+' situations 2-5 are the states a sequence starts from, and 6-11 - two
+' transformers out - are the states they end in, with no sequence leaving
+' them. So this is one Id and not a set.
+Function ReadImpededId()
+
+	Dim id
+	id = 0
+
+	On Error Resume Next
+	id = Parent.Item("ImpededTransformerId").Value
+	On Error Goto 0
+
+	If IsEmpty(id) Or IsNull(id) Then id = 0
+	If Not IsNumeric(id) Then id = 0
+
+	ReadImpededId = CInt(id)
+
 End Function
 
 Sub WriteLog(message)
@@ -640,11 +1001,6 @@ End Sub
 
 <xatm_BTC.FSM.Main:Main_Step00()>
 Sub Main_Step00()
-	
-	' ===============
-	' Snapshot the substation transformers lockout state at trigger time.
-	' ===============
-	StoreImpediments()
 
 	WriteLog "Starting " & DescribeAutomation()
 
@@ -658,32 +1014,20 @@ Function DescribeAutomation()
 
 	Dim autoType
 	autoType  = Parent.Item("AutomationType").Value
-	
+
 	Dim triggerId
 	triggerId = Parent.Item("TriggerTransformerId").Value
-	
-	Dim impediments
-	impediments  = ReadImpediments()
-	
-	Dim lockedList
-	lockedList = ""
 
-	Dim i
-	For i = 1 To 4
-		If impediments(i) Then
-			If lockedList <> "" Then lockedList = lockedList & ", "
-			lockedList = lockedList & TransformerName(i * 100)
-		End If
-	Next
+	Dim impedeId
+	impedeId  = ReadImpededId()
 
-	If lockedList = "" Then
+	If impedeId = 0 Then
 		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - no transformer out of service"
 	Else
-		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - " & lockedList & " out of service"
+		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - " & TransformerName(impedeId) & " out of service"
 	End If
 
 End Function
-
 ' Transformer name for an id, falling back to "ID <n>" when not found.
 Function TransformerName(id)
 
@@ -698,58 +1042,39 @@ Function TransformerName(id)
 
 End Function
 
-Function ReadImpediments()
-
-    ReadImpediments = Parent.Item("TransformerImpediments").Value
-
-End Function
-
-Sub StoreImpediments()
-
-	Dim impediments(4)
-	Dim i, transformer, transformerExists
-
-	For i = 1 To 4
-
-		Set transformer = GetDeviceById(i * 100, transformerExists)
-
-		If transformerExists Then
-			impediments(i) = transformer.OutOfService
-		Else
-			impediments(i) = False
-		End If
-
-	Next
-
-	Parent.Item("TransformerImpediments").WriteEx impediments
-
+' A scope may not end on a Function - E3 takes the script without complaint
+' and then behaves as though the last one were not there. StoreImpediments
+' used to close this section; with it gone, this stub does. A guard, not
+' debris.
+Sub Step00Functions()
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Step01()>
 Sub Main_Step01()
 
-	Dim triggerId
+	Dim triggerId, impedeId
 	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
 		
 	Select Case Parent.Item("AutomationType").Value
 		
 		Case "TM"
 			
-			S1TM triggerId
+			S1TM triggerId, impedeId
 		
 		Case "NM"
 
-			S1NM triggerId
+			S1NM triggerId, impedeId
 		
 		Case "TA"
 
-			S1TA triggerId
+			S1TA triggerId, impedeId
 			
 	End Select
 	
 End Sub
 
-Sub S1NM(triggerId)
+Sub S1NM(triggerId, impedeId)
 
 	Dim breakerId, action
 	action = 2
@@ -799,7 +1124,7 @@ Sub S1NM(triggerId)
 
 End Sub
 
-Sub S1TM(triggerId)
+Sub S1TM(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -810,44 +1135,41 @@ Sub S1TM(triggerId)
 
 		action = 2
 
-		Dim impediments
-		impediments = ReadImpediments()
-
 		Select Case triggerId
 
 			Case 100
-				If impediments(2) Then
+				If impedeId = 200 Then
 					breakerId = 700
 				Else
 					breakerId = 900
 				End If
 
 			Case 200
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 700
-				ElseIf impediments(3) Or impediments(4) Then
+				ElseIf impedeId = 300 Or impedeId = 400 Then
 					breakerId = 730
 				Else
 					breakerId = 900
 				End If
 
 			Case 300
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 720
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 700
-				ElseIf impediments(4) Then
+				ElseIf impedeId = 400 Then
 					breakerId = 900
 				Else
 					breakerId = 740
 				End If
 
 			Case 400
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 720
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 700
-				ElseIf impediments(3) Then
+				ElseIf impedeId = 300 Then
 					breakerId = 730
 				Else
 					breakerId = 740
@@ -907,7 +1229,7 @@ Sub S1TM(triggerId)
 
 End Sub
 
-Sub S1TA(triggerId)
+Sub S1TA(triggerId, impedeId)
 
 	Dim breakerId, action
 	action = 1
@@ -963,28 +1285,29 @@ End Sub
 <xatm_BTC.FSM.Main:Main_Step02()>
 Sub Main_Step02()
 
-	Dim triggerId
+	Dim triggerId, impedeId
 	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
 		
 	Select Case Parent.Item("AutomationType").Value
 		
 		Case "TM"
 			
-			S2TM triggerId
+			S2TM triggerId, impedeId
 		
 		Case "NM"
 
-			S2NM triggerId
+			S2NM triggerId, impedeId
 
 		Case "TA"
 
-			S2TA triggerId
+			S2TA triggerId, impedeId
 			
 	End Select
 	
 End Sub
 
-Sub S2NM(triggerId)
+Sub S2NM(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -996,29 +1319,26 @@ Sub S2NM(triggerId)
 
 		action = 1
 
-		Dim impediments
-		impediments = ReadImpediments()
-
 		Select Case triggerId
 
 			Case 100
-				If impediments(2) Then
+				If impedeId = 200 Then
 					breakerId = 700
 				Else
 					breakerId = 710
 				End If
 
 			Case 200
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 720
 				Else
 					breakerId = 710
 				End If
 
 			Case 300
-				If impediments(4) Then
+				If impedeId = 400 Then
 					breakerId = 730
-				ElseIf impediments(1) Or impediments(2) Then
+				ElseIf impedeId = 100 Or impedeId = 200 Then
 					breakerId = 740
 				Else
 					breakerId = 740
@@ -1026,9 +1346,9 @@ Sub S2NM(triggerId)
 				End If
 
 			Case 400
-				If impediments(3) Then
+				If impedeId = 300 Then
 					breakerId = 900
-				ElseIf impediments(1) Or impediments(2) Then
+				ElseIf impedeId = 100 Or impedeId = 200 Then
 					breakerId = 740
 				Else
 					breakerId = 740
@@ -1090,7 +1410,7 @@ Sub S2NM(triggerId)
 
 End Sub
 
-Sub S2TM(triggerId)
+Sub S2TM(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -1101,35 +1421,32 @@ Sub S2TM(triggerId)
 
 		action = 1
 
-		Dim impediments
-		impediments = ReadImpediments()
-
 		nextStep = 3
 
 		Select Case triggerId
 
 			Case 100
-				If impediments(2) Then
+				If impedeId = 200 Then
 					breakerId = 120
 				Else
 					breakerId = 700
 				End If
 
 			Case 200
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 710
-				ElseIf impediments(3) Or impediments(4) Then
+				ElseIf impedeId = 300 Or impedeId = 400 Then
 					breakerId = 720
 				Else
 					breakerId = 700
 				End If
 
 			Case 300
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 730
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 900
-				ElseIf impediments(4) Then
+				ElseIf impedeId = 400 Then
 					breakerId = 740
 				Else
 					breakerId = 320
@@ -1137,11 +1454,11 @@ Sub S2TM(triggerId)
 				End If
 
 			Case 400
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 730
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 900
-				ElseIf impediments(3) Then
+				ElseIf impedeId = 300 Then
 					breakerId = 740
 				Else
 					breakerId = 420
@@ -1203,7 +1520,7 @@ Sub S2TM(triggerId)
 
 End Sub
 
-Sub S2TA(triggerId)
+Sub S2TA(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -1215,31 +1532,28 @@ Sub S2TA(triggerId)
 
 		action = 1                      ' default: open a tie to isolate the dead busbar
 
-		Dim impediments
-		impediments = ReadImpediments()
-
 		Select Case triggerId
 
 			Case 100
-				If impediments(2) Then
+				If impedeId = 200 Then
 					breakerId = 710
 				Else
 					breakerId = 700
 				End If
 
 			Case 200
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 710
 				Else
 					breakerId = 720
 				End If
 
 			Case 300
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 730
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 900
-				ElseIf impediments(4) Then
+				ElseIf impedeId = 400 Then
 					breakerId = 740
 				Else
 					breakerId = 740        ' no contingency: 2-step restore
@@ -1248,11 +1562,11 @@ Sub S2TA(triggerId)
 				End If
 
 			Case 400
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 730
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 900
-				ElseIf impediments(3) Then
+				ElseIf impedeId = 300 Then
 					breakerId = 740
 				Else
 					breakerId = 740        ' no contingency: 2-step restore
@@ -1318,28 +1632,29 @@ End Sub
 <xatm_BTC.FSM.Main:Main_Step03()>
 Sub Main_Step03()
 
-	Dim triggerId
+	Dim triggerId, impedeId
 	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
 		
 	Select Case Parent.Item("AutomationType").Value
 		
 		Case "TM"
 			
-			S3TM triggerId
+			S3TM triggerId, impedeId
 		
 		Case "NM"
 
-			S3NM triggerId
+			S3NM triggerId, impedeId
 		
 		Case "TA"
 
-			S3TA triggerId
+			S3TA triggerId, impedeId
 			
 	End Select
 	
 End Sub
 
-Sub S3NM(triggerId)
+Sub S3NM(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -1350,42 +1665,39 @@ Sub S3NM(triggerId)
 
 		action = 2
 
-		Dim impediments
-		impediments = ReadImpediments()
-
 		Select Case triggerId
 
 			Case 100
-				If impediments(2) Then
+				If impedeId = 200 Then
 					breakerId = 710
-				ElseIf impediments(3) Or impediments(4) Then
+				ElseIf impedeId = 300 Or impedeId = 400 Then
 					breakerId = 700
 				Else
 					breakerId = 720
 				End If
 
 			Case 200
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 710
 				Else
 					breakerId = 720
 				End If
 
 			Case 300
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 730
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 900
-				ElseIf impediments(4) Then
+				ElseIf impedeId = 400 Then
 					breakerId = 740
 				End If
 
 			Case 400
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 730
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 900
-				ElseIf impediments(3) Then
+				ElseIf impedeId = 300 Then
 					breakerId = 740
 				End If
 
@@ -1435,7 +1747,7 @@ Sub S3NM(triggerId)
 
 End Sub
 
-Sub S3TM(triggerId)
+Sub S3TM(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -1446,40 +1758,37 @@ Sub S3TM(triggerId)
 
 		action = 2
 
-		Dim impediments
-		impediments = ReadImpediments()
-
 		Select Case triggerId
 
 			Case 100
-				If impediments(2) Then
+				If impedeId = 200 Then
 					breakerId = 720
-				ElseIf impediments(3) Or impediments(4) Then
+				ElseIf impedeId = 300 Or impedeId = 400 Then
 					breakerId = 710
 				Else
 					breakerId = 730
 				End If
 
 			Case 200
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 720
-				ElseIf impediments(3) Or impediments(4) Then
+				ElseIf impedeId = 300 Or impedeId = 400 Then
 					breakerId = 710
 				Else
 					breakerId = 730
 				End If
 
 			Case 300
-				If impediments(1) Or impediments(2) Then
+				If impedeId = 100 Or impedeId = 200 Then
 					breakerId = 740
-				ElseIf impediments(4) Then
+				ElseIf impedeId = 400 Then
 					breakerId = 730
 				End If
 
 			Case 400
-				If impediments(1) Or impediments(2) Then
+				If impedeId = 100 Or impedeId = 200 Then
 					breakerId = 740
-				ElseIf impediments(3) Then
+				ElseIf impedeId = 300 Then
 					breakerId = 900
 				End If
 
@@ -1533,7 +1842,7 @@ Sub S3TM(triggerId)
 	
 End Sub
 
-Sub S3TA(triggerId)
+Sub S3TA(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -1543,36 +1852,33 @@ Sub S3TA(triggerId)
 
 	If layoutType = "4TR4LV_6BB6TIERING" Then
 
-		Dim impediments
-		impediments = ReadImpediments()
-
 		Select Case triggerId
 
 			Case 100
-				If impediments(2) Then
+				If impedeId = 200 Then
 					breakerId = 700
 				Else
 					breakerId = 900
 				End If
 
 			Case 200
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 700
 				Else
 					breakerId = 730
 				End If
 
 			Case 300
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 740
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 700
-				ElseIf impediments(4) Then
+				ElseIf impedeId = 400 Then
 					breakerId = 900
 				End If
 
 			Case 400
-				If impediments(3) Then
+				If impedeId = 300 Then
 					breakerId = 900
 				Else
 					breakerId = 740
@@ -1627,28 +1933,29 @@ End Sub
 <xatm_BTC.FSM.Main:Main_Step04()>
 Sub Main_Step04()
 
-	Dim triggerId
+	Dim triggerId, impedeId
 	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
 		
 	Select Case Parent.Item("AutomationType").Value
 		
 		Case "TM"
 			
-			S4TM triggerId
+			S4TM triggerId, impedeId
 		
 		Case "NM"
 
-			S4NM triggerId
+			S4NM triggerId, impedeId
 		
 		Case "TA"
 
-			S4TA triggerId
+			S4TA triggerId, impedeId
 			
 	End Select
 	
 End Sub
 
-Sub S4NM(triggerId)
+Sub S4NM(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -1660,15 +1967,12 @@ Sub S4NM(triggerId)
 
 		action = 1
 
-		Dim impediments
-		impediments = ReadImpediments()
-
 		Select Case triggerId
 
 			Case 100
-				If impediments(2) Then
+				If impedeId = 200 Then
 					breakerId = 720
-				ElseIf impediments(3) Or impediments(4) Then
+				ElseIf impedeId = 300 Or impedeId = 400 Then
 					breakerId = 900
 				Else
 					breakerId = 730
@@ -1676,9 +1980,9 @@ Sub S4NM(triggerId)
 				End If
 
 			Case 200
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 700
-				ElseIf impediments(3) Or impediments(4) Then
+				ElseIf impedeId = 300 Or impedeId = 400 Then
 					breakerId = 730
 				Else
 					breakerId = 730
@@ -1686,20 +1990,20 @@ Sub S4NM(triggerId)
 				End If
 
 			Case 300
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 720
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 700
-				ElseIf impediments(4) Then
+				ElseIf impedeId = 400 Then
 					breakerId = 900
 				End If
 
 			Case 400
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 720
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 700
-				ElseIf impediments(3) Then
+				ElseIf impedeId = 300 Then
 					breakerId = 730
 				End If
 
@@ -1749,7 +2053,7 @@ Sub S4NM(triggerId)
 
 End Sub
 
-Sub S4TM(triggerId)
+Sub S4TM(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -1763,15 +2067,12 @@ Sub S4TM(triggerId)
 
 		action = 1
 
-		Dim impediments
-		impediments = ReadImpediments()
-
 		Select Case triggerId
 
 			Case 100
-				If impediments(2) Then
+				If impedeId = 200 Then
 					breakerId = 710
-				ElseIf impediments(3) Or impediments(4) Then
+				ElseIf impedeId = 300 Or impedeId = 400 Then
 					breakerId = 120
 				Else
 					breakerId = 720
@@ -1779,7 +2080,7 @@ Sub S4TM(triggerId)
 				End If
 
 			Case 200
-				If impediments(1) Or impediments(3) Or impediments(4) Then
+				If impedeId = 100 Or impedeId = 300 Or impedeId = 400 Then
 					breakerId = 220
 				Else
 					breakerId = 720
@@ -1790,11 +2091,13 @@ Sub S4TM(triggerId)
 				breakerId = 320
 
 			Case 400
-				If impediments(3) Then
-					breakerId = 320
-				Else
-					breakerId = 420
-				End If
+				' Ends on DJ06/420. Spec 1.4.2.23's step table writes
+				' DESLIGA DJ05, but its own prose says "Ligar DJ-10 e
+				' desligar DJ-06", its end state puts B4A back on TR1, and
+				' DJ05 is already open whenever TR3 is impeded - so the
+				' table's step is a no-op that would leave TR4 connected
+				' and report success. Same typo as 1.4.3.16 for TA.
+				breakerId = 420
 
 		End Select
 
@@ -1846,7 +2149,7 @@ Sub S4TM(triggerId)
 	
 End Sub
 
-Sub S4TA(triggerId)
+Sub S4TA(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -1856,16 +2159,13 @@ Sub S4TA(triggerId)
 
 	If layoutType = "4TR4LV_6BB6TIERING" Then
 
-		Dim impediments
-		impediments = ReadImpediments()
-
 		Select Case triggerId
 
 			Case 100
-				If impediments(2) Then
+				If impedeId = 200 Then
 					action = 2
 					breakerId = 720
-				ElseIf impediments(3) Or impediments(4) Then
+				ElseIf impedeId = 300 Or impedeId = 400 Then
 					action = 2
 					breakerId = 710
 				Else
@@ -1875,10 +2175,10 @@ Sub S4TA(triggerId)
 				End If
 
 			Case 200
-				If impediments(1) Then
+				If impedeId = 100 Then
 					action = 2
 					breakerId = 720
-				ElseIf impediments(3) Or impediments(4) Then
+				ElseIf impedeId = 300 Or impedeId = 400 Then
 					action = 2
 					breakerId = 710
 				Else
@@ -1889,21 +2189,21 @@ Sub S4TA(triggerId)
 
 			Case 300
 				action = 2
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 720
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 740
-				ElseIf impediments(4) Then
+				ElseIf impedeId = 400 Then
 					breakerId = 730
 				End If
 
 			Case 400
 				action = 2
-				If impediments(1) Then
+				If impedeId = 100 Then
 					breakerId = 720
-				ElseIf impediments(2) Then
+				ElseIf impedeId = 200 Then
 					breakerId = 700
-				ElseIf impediments(3) Then
+				ElseIf impedeId = 300 Then
 					breakerId = 730
 				End If
 
@@ -1956,28 +2256,29 @@ End Sub
 <xatm_BTC.FSM.Main:Main_Step05()>
 Sub Main_Step05()
 
-	Dim triggerId
+	Dim triggerId, impedeId
 	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
 		
 	Select Case Parent.Item("AutomationType").Value
 		
 		Case "TM"
 			
-			S5TM triggerId
+			S5TM triggerId, impedeId
 		
 		Case "NM"
 
-			S5NM triggerId
+			S5NM triggerId, impedeId
 		
 		Case "TA"
 
-			S5TA triggerId
+			S5TA triggerId, impedeId
 			
 	End Select
 	
 End Sub
 
-Sub S5NM(triggerId)
+Sub S5NM(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -2039,7 +2340,7 @@ Sub S5NM(triggerId)
 
 End Sub
 
-Sub S5TM(triggerId)
+Sub S5TM(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -2049,9 +2350,6 @@ Sub S5TM(triggerId)
 	If layoutType = "4TR4LV_6BB6TIERING" Then
 
 		action = 2
-
-		Dim impediments
-		impediments = ReadImpediments()
 
 		Select Case triggerId
 
@@ -2109,7 +2407,7 @@ Sub S5TM(triggerId)
 
 End Sub
 
-Sub S5TA(triggerId)
+Sub S5TA(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -2176,28 +2474,29 @@ End Sub
 <xatm_BTC.FSM.Main:Main_Step06()>
 Sub Main_Step06()
 
-	Dim triggerId
+	Dim triggerId, impedeId
 	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
 		
 	Select Case Parent.Item("AutomationType").Value
 		
 		Case "TM"
 			
-			S6TM triggerId
+			S6TM triggerId, impedeId
 		
 		Case "NM"
 
-			S6NM triggerId
+			S6NM triggerId, impedeId
 		
 		Case "TA"
 
-			S6TA triggerId
+			S6TA triggerId, impedeId
 			
 	End Select
 	
 End Sub
 
-Sub S6NM(triggerId)
+Sub S6NM(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -2259,7 +2558,7 @@ Sub S6NM(triggerId)
 
 End Sub
 
-Sub S6TM(triggerId)
+Sub S6TM(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -2269,9 +2568,6 @@ Sub S6TM(triggerId)
 	If layoutType = "4TR4LV_6BB6TIERING" Then
 
 		action = 1
-
-		Dim impediments
-		impediments = ReadImpediments()
 
 		Select Case triggerId
 
@@ -2331,7 +2627,7 @@ Sub S6TM(triggerId)
 
 End Sub
 
-Sub S6TA(triggerId)
+Sub S6TA(triggerId, impedeId)
 
 	Dim layoutType
 	layoutType = GetLayoutType()
@@ -3134,12 +3430,22 @@ Sub xatm_ConsoleLogEngine_OnWriteLineChanged()
     End If
     On Error Goto 0
     
-    Dim message
-    message = formattedTimeStamp & vbTab & WriteLine
-
     ' ====================================
     ' Append to content array
     ' ====================================
+    '
+    ' One entry per physical line, not one per call.
+    '
+    ' A caller may hand over a whole report in a single write - BuildAlarms
+    ' builds its complaint with a vbCrLf before every item - and two things
+    ' break when that lands in one entry. The ring below counts entries, so
+    ' MaxLines stops meaning lines and a twenty line report evicts nineteen
+    ' lines that should have stayed. And the list box the Footer draws with
+    ' refuses an item carrying a line break outright, which takes the whole
+    ' redraw down with it rather than just that row.
+    '
+    ' The timestamp goes on the first line and the rest are indented under
+    ' it, so a report still reads as one event instead of twenty.
     Dim contentTag
     Set contentTag = Item("Data").Item("Content")
 
@@ -3150,50 +3456,75 @@ Sub xatm_ConsoleLogEngine_OnWriteLineChanged()
         contentArr = Array()
     End If
 
-    Dim currentSize
-    currentSize = UBound(contentArr) + 1
-	
-    ' Determine the index for the new message
-    Dim index
-    
-    If currentSize < MAX_LINES Then
-        
-        ' Array still growing — just append
-        index = currentSize
-        ReDim Preserve contentArr(currentSize)
-        
-    Else
-        
-        index = MAX_LINES - 1
+    Dim msgBody
+    msgBody = Replace(Replace(WriteLine & "", vbCrLf, vbLf), vbCr, vbLf)
 
-        ' Array at capacity — shift and append
-        Dim j
-        For j = 0 To MAX_LINES - 2
-            contentArr(j) = contentArr(j + 1)
-        Next
-        
-    End If
+    Dim msgLines
+    msgLines = Split(msgBody, vbLf)
 
-    ' Add new message at the end
-    contentArr(index) = message
+    Dim continuationPad
+    continuationPad = Space(Len(formattedTimeStamp))
 
-    ' Trace the message for debugging
-    If TraceEnabled Then
-		On Error Resume Next
-		Application.Trace message, False
-		On Error Goto 0
-	End If
-	
+    Dim n, lineText, currentSize, index, j
+
+    For n = 0 To UBound(msgLines)
+
+        ' A blank continuation line carries nothing and would only push a
+        ' real one out of the ring. The first line is kept either way: an
+        ' empty message is still an event worth timestamping.
+        If n = 0 Or Trim(msgLines(n)) <> "" Then
+
+            If n = 0 Then
+                lineText = formattedTimeStamp & vbTab & RTrim(msgLines(n))
+            Else
+                lineText = continuationPad & vbTab & RTrim(msgLines(n))
+            End If
+
+            currentSize = UBound(contentArr) + 1
+
+            If currentSize < MAX_LINES Then
+
+                ' Array still growing - just append
+                index = currentSize
+                ReDim Preserve contentArr(currentSize)
+
+            Else
+
+                index = MAX_LINES - 1
+
+                ' Array at capacity - shift and append
+                For j = 0 To MAX_LINES - 2
+                    contentArr(j) = contentArr(j + 1)
+                Next
+
+            End If
+
+            contentArr(index) = lineText
+
+            ' Traced a line at a time, so the E3 trace and the console
+            ' agree on what one line is.
+            If TraceEnabled Then
+                On Error Resume Next
+                Application.Trace lineText, False
+                On Error Goto 0
+            End If
+
+        End If
+
+    Next
+
     ' ================================
-	' Update the content tag with the new array
+    ' Update the content tag with the new array
     ' ================================
-	contentTag.Value = contentArr
-    
-    
+    '
+    ' Written once, after every line. The tag drives the Footer's redraw,
+    ' so writing it per line would redraw the screen once per line of a
+    ' report.
+    contentTag.Value = contentArr
+
     ' ================================
     ' Clear the WriteLine property to prepare for the next message
-    ' ================================
-    Me.WriteLine = Empty
+    ' ================================    Me.WriteLine = Empty
 	
 End Sub
 
