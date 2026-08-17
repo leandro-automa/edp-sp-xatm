@@ -373,6 +373,13 @@ Const AUTOMATION_TAG_CLASS    = "InternalTag"
 Const ALARM_SOURCE_CLASS      = "DigitalAlarmSource"
 Const ALARM_SOURCE_NAME       = "Alarm"
 
+' What marks a tag as this configuration's to remake - the same mark the
+' distribution puts on its IOTags and the interface rebuild puts on its
+' own. The folder is emptied and built again on every run, so nothing here
+' reads the mark yet; it is written so that a tag under the substation can
+' be told from one an engineer put there by hand.
+Const SELF_MARK               = "$XATM$"
+
 ' How a link carries the value - the BindType argument of CreateLink,
 ' which is a Simple Link when it is left off.
 '
@@ -607,6 +614,11 @@ Function BoundTag(folder, interfacePath, obj, p, problem, linkType)
 		problem = problem & vbCrLf & "  no tag for " & obj.Name & "." & p.Name
 		Exit Function
 	End If
+
+	Dim where
+	where = obj.Name & "." & p.Name
+
+	SetMember tag, "DocString", SELF_MARK, where, problem
 
 	On Error Resume Next
 	Err.Clear
@@ -3441,9 +3453,6 @@ Sub xatm_BTC_OnStartRunning()
 		"Transformer XObject this automation instance is bound to.", _
 		"XObject do transformador ao qual esta instância do automatismo está vinculada."
 	
-	AddProperty bag, "Preconditions", "Boolean", True, _
-		"Field conditions that have to hold before a sequence may start. Bound to an expression - True while the maneuver is permitted.", _
-		"Condições de campo que devem valer antes de uma sequência partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
 
 	AddProperty bag, "OperatorBlock", "Boolean", False, _
 		"Operator lock. Blocks the start until the operator releases it.", _
@@ -3454,9 +3463,69 @@ Sub xatm_BTC_OnStartRunning()
 		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
 		
 	
-	AddProperty bag, "AutomaticBlock", "Boolean", False, _
-		"Field conditions that block the automation. Bound to an expression - True keeps a sequence from starting, alongside OperatorBlock and GeneralBlock.", _
-		"Condições de campo que bloqueiam o automatismo. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
+	' --- the gates, one pair for each maneuver --------------------------
+	'
+	' A pair for every command, because what has to hold before a transfer
+	' may start is not the same from one contingency to the next: TM with
+	' TR2 out closes a different path, over different equipment, from a
+	' different starting state. One expression could not answer for all of
+	' them, and a single pair is what forced the question.
+	'
+	' Preconditions<gate> is True while that maneuver is permitted;
+	' AutomaticBlock<gate> is True while the switchyard bars it. The two
+	' polarities the single pair had, kept.
+	'
+	' The gate name is the mode, and the transformer the maneuver assumes
+	' is out where there is one: TM, TM200, NM, NM400. Exactly the names
+	' the command tags carry, so a command and the gates that let it
+	' through are read off one string and cannot drift apart.
+	'
+	' TA has one pair and not five. Nobody commands it - it answers a trip -
+	' so there is no command for a gate to pair with, and a scheme that
+	' restores a dead busbar should not have five ways to be barred.
+	AddProperty bag, "PreconditionsTA", "Boolean", True, _
+		"Field conditions that have to hold before an automatic transfer may start. Bound to an expression - True while the maneuver is permitted.", _
+		"Condições de campo que devem valer antes que uma transferência automática possa partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
+
+	AddProperty bag, "AutomaticBlockTA", "Boolean", False, _
+		"Field conditions that block the automatic transfer. Bound to an expression - True keeps it from starting, alongside OperatorBlock and GeneralBlock.", _
+		"Condições de campo que bloqueiam a transferência automática. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
+
+	Dim gm, gi, gate, gateLabel, outEN, outPT, whatEN, whatPT
+
+	For Each gm In Array("TM", "NM")
+
+		If gm = "TM" Then
+			whatEN = "a manual transfer"
+			whatPT = "uma transferência manual"
+		Else
+			whatEN = "a manual normalisation"
+			whatPT = "uma normalização manual"
+		End If
+
+		For gi = 0 To 4
+
+			If gi = 0 Then
+				gate  = gm
+				outEN = ""
+				outPT = ""
+			Else
+				gate  = gm & (gi * 100)
+				outEN = " with transformer " & (gi * 100) & " out of service"
+				outPT = " com o transformador " & (gi * 100) & " impedido"
+			End If
+
+			AddProperty bag, "Preconditions" & gate, "Boolean", True, _
+				"Field conditions that have to hold before " & whatEN & outEN & " may start. Bound to an expression - True while the maneuver is permitted.", _
+				"Condições de campo que devem valer antes que " & whatPT & outPT & " possa partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
+
+			AddProperty bag, "AutomaticBlock" & gate, "Boolean", False, _
+				"Field conditions that block " & whatEN & outEN & ". Bound to an expression - True keeps it from starting, alongside OperatorBlock and GeneralBlock.", _
+				"Condições de campo que bloqueiam " & whatPT & outPT & ". Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
+
+		Next
+
+	Next
 
 
 	' --- the command interface -----------------------------------------
@@ -3520,9 +3589,9 @@ Sub xatm_BTC_OnStartRunning()
 	' What the screen may do with each of these, and which are settings
 	' rather than readings. Anything left out stays EXPOSE_NONE.
 	'
-	' The four that are readings - the blocks and Preconditions - are not
-	' saved: their expression is the configuration, and the reading is
-	' whatever the switchyard was doing at the time.
+	' The readings - the blocks and every gate - are not saved: their
+	' expression is the configuration, and the reading is whatever the
+	' switchyard was doing at the time.
 	'
 	' EXPOSE_INTERFACE is a different question from the rest, and answered
 	' separately: not what the panel may do with a property, but whether
@@ -3531,10 +3600,23 @@ Sub xatm_BTC_OnStartRunning()
 	' the transformer this instance drives - is not.
 	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	' Every gate is shown, bound to an expression, forceable for a test and
+	' interfaced - what the single pair was - and carried to level 3 as
+	' well, so the control centre reads which maneuver is barred and not
+	' merely that one of them is.
+	SetExposure bag, "PreconditionsTA",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "AutomaticBlockTA", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+			If gi = 0 Then gate = gm Else gate = gm & (gi * 100)
+			SetExposure bag, "Preconditions"  & gate, EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+			SetExposure bag, "AutomaticBlock" & gate, EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+		Next
+	Next
 
 	' Running and the six step latches are the automation talking about
 	' itself. Neither belongs on the configuration panel - there is
@@ -3580,9 +3662,39 @@ Sub xatm_BTC_OnStartRunning()
 	' maneuver is permitted, so PAIR_PRECONDITION carries a limit of 0.
 	SetAlarm bag, "GeneralBlock",   "BLOQUEIO GERAL",      PAIR_BLOCKED,      SEV_HIGH
 	SetAlarm bag, "OperatorBlock",  "BLOQUEIO OPERADOR",   PAIR_BLOCKED,      SEV_MEDIUM
-	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO", PAIR_BLOCKED,      SEV_MEDIUM
-	SetAlarm bag, "Preconditions",  "PRECONDIÇÕES",        PAIR_PRECONDITION, SEV_MEDIUM
 	SetAlarm bag, "Running",        "AUTOMATISMO",         PAIR_RUNNING,      SEV_LOW
+
+	' Every gate raises too, the way the single pair did.
+	'
+	' This is also what puts them in the substation folder at all:
+	' AlarmObject builds a tag for a reading that is alarmed and for a
+	' command, and for nothing else. An unalarmed gate is interfaced and
+	' carried to level 3, but has no tag under the PowerSubstation - so the
+	' alarm table is what decides whether the control room can see it, not
+	' merely whether it is told about it.
+	'
+	' The label names the maneuver the way the control room says it: TM-TR2
+	' is a manual transfer with TR2 impeded, which is the spec's own
+	' "TM TR<trigger>-TR2".
+	SetAlarm bag, "PreconditionsTA",  "PRECONDIÇÕES TA",        PAIR_PRECONDITION, SEV_MEDIUM
+	SetAlarm bag, "AutomaticBlockTA", "BLOQUEIO AUTOMÁTICO TA", PAIR_BLOCKED,      SEV_MEDIUM
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+
+			If gi = 0 Then
+				gate      = gm
+				gateLabel = gm
+			Else
+				gate      = gm & (gi * 100)
+				gateLabel = gm & "-TR" & gi
+			End If
+
+			SetAlarm bag, "Preconditions"  & gate, "PRECONDIÇÕES " & gateLabel,        PAIR_PRECONDITION, SEV_MEDIUM
+			SetAlarm bag, "AutomaticBlock" & gate, "BLOQUEIO AUTOMÁTICO " & gateLabel, PAIR_BLOCKED,      SEV_MEDIUM
+
+		Next
+	Next
 
 	For i = 1 To 6
 		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH

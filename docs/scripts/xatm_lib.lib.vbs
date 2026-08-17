@@ -391,21 +391,39 @@ Sub Start_OnChangedValue()
 
 	End If
 
-	' The switchyard withholding it, the way the other two are a person and
-	' a failure withholding it.
-	If xatm_BTC.AutomaticBlock Then
+	' The switchyard withholding it and the switchyard permitting it - but
+	' asked of this maneuver own pair of gates, not of one pair standing
+	' for every maneuver the automation can run.
+	'
+	' Both are read before either is judged, so a manifest that has not
+	' been rebuilt is reported as the configuration fault it is rather than
+	' surfacing as a maneuver that will not start for no stated reason.
+	Dim gate, missing, blocked, permitted
+	gate    = GateSuffix(mode, impedeId)
+	missing = ""
 
-		Reject "Blocked by field conditions.", ts
+	blocked   = ReadGate("AutomaticBlock" & gate, False, missing)
+	permitted = ReadGate("Preconditions"  & gate, True,  missing)
+
+	If missing <> "" Then
+
+		Reject "this automation has no " & missing & " - the manifest has not been rebuilt.", ts
 		Exit Sub
 
 	End If
 
-	' And the switchyard permitting it. This one reads the other way round -
-	' the expression on it says when the maneuver may go ahead, so it is
-	' the absence of it that rejects.
-	If Not xatm_BTC.Preconditions Then
+	If blocked Then
 
-		Reject "Preconditions are not met.", ts
+		Reject "Blocked by field conditions (AutomaticBlock" & gate & ").", ts
+		Exit Sub
+
+	End If
+
+	' This one reads the other way round - the expression on it says when
+	' the maneuver may go ahead, so it is the absence of it that rejects.
+	If Not permitted Then
+
+		Reject "Preconditions are not met (Preconditions" & gate & ").", ts
 		Exit Sub
 
 	End If
@@ -709,6 +727,69 @@ Function FieldImpediment(triggerId, ByRef outCount)
 	Next
 
 End Function
+
+' Which pair of gates a maneuver answers to.
+'
+' The mode, and the transformer it assumes is out where there is one: TM,
+' TM200, NM400. The same names the command tags carry, so the command and
+' the gates that let it through are one string apart.
+'
+' TA is always plain TA. It has one pair and not five - nobody commands
+' it, so there is no command for a gate to pair with.
+Function GateSuffix(mode, impedeId)
+
+	If mode = "TA" Then
+		GateSuffix = "TA"
+	ElseIf impedeId = 0 Then
+		GateSuffix = mode
+	Else
+		GateSuffix = mode & impedeId
+	End If
+
+End Function
+
+
+' One gate, read by the name built for it.
+'
+' E3 gives no way to index an XObject properties, so the read is late
+' bound - the same Execute and scratch cell the configuration import uses
+' to write one.
+'
+' A property that is not there leaves the default and adds its name to
+' missing. Reported rather than assumed either way round: defaulting a
+' precondition to True would let a maneuver run on a gate nobody wrote,
+' and defaulting it to False would bar every maneuver with nothing said
+' about why.
+Function ReadGate(propertyName, defaultValue, ByRef missing)
+
+	gGateValue = defaultValue
+
+	Dim failed
+	failed = False
+
+	On Error Resume Next
+	Err.Clear
+	Execute "gGateValue = xatm_BTC." & propertyName
+	If Err.Number <> 0 Then failed = True
+	Err.Clear
+	On Error Goto 0
+
+	If failed Then
+
+		If missing <> "" Then missing = missing & ", "
+		missing = missing & propertyName
+		gGateValue = defaultValue
+
+	End If
+
+	ReadGate = CBool(gGateValue)
+
+End Function
+
+' Scratch cell for the late-bound read, the way the configuration import
+' keeps one for its writes.
+Dim gGateValue
+
 
 ' Logs the rejection and clears the trigger without re-firing.
 ' Uses the explicit tag path (not Me) so it is safe to call from a helper.
