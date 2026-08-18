@@ -1,0 +1,8 @@
+# Binary. Without this, core.autocrlf=true inserts CR bytes into them
+# on checkout and quietly corrupts the file.
+*.pdf  binary
+*.prj  binary
+*.lib  binary
+*.png  binary
+*.bmp  binary
+*.wmf  binary
