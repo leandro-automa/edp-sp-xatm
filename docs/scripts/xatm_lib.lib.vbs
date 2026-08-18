@@ -395,9 +395,14 @@ Sub Start_OnChangedValue()
 	' asked of this maneuver own pair of gates, not of one pair standing
 	' for every maneuver the automation can run.
 	'
-	' Both are read before either is judged, so a manifest that has not
-	' been rebuilt is reported as the configuration fault it is rather than
+	' Both are read before either is judged, so a gate the XObject has not
+	' been given is reported as the configuration fault it is, rather than
 	' surfacing as a maneuver that will not start for no stated reason.
+	'
+	' The manifest only describes a property - it drives the config screen,
+	' the interface, the alarms and the distribution. The XObject has to
+	' carry the property itself, or there is nothing for any of them to
+	' describe.
 	Dim gate, missing, blocked, permitted
 	gate    = GateSuffix(mode, impedeId)
 	missing = ""
@@ -407,7 +412,7 @@ Sub Start_OnChangedValue()
 
 	If missing <> "" Then
 
-		Reject "this automation has no " & missing & " - the manifest has not been rebuilt.", ts
+		Reject "this automation has no " & missing & " - add the property to the xatm_BTC XObject.", ts
 		Exit Sub
 
 	End If

@@ -4950,13 +4950,13 @@ Sub SimulationMode_OnChangedValue()
 End Sub
 
 ' Returns True if at least one position tag has good quality — breaker does NOT need sim mode.
-Function AnyBreakerTagHealthy(breaker)
+Function AnyPositionTagHealthy(device)
 
-    If TagHealthy(breaker.PositionOpen)      Then AnyBreakerTagHealthy = True : Exit Function
-    If TagHealthy(breaker.PositionClosed)    Then AnyBreakerTagHealthy = True : Exit Function
-    If TagHealthy(breaker.PositionOpenAlt)   Then AnyBreakerTagHealthy = True : Exit Function
-    If TagHealthy(breaker.PositionClosedAlt) Then AnyBreakerTagHealthy = True : Exit Function
-    AnyBreakerTagHealthy = False
+    If TagHealthy(device.PositionOpen)      Then AnyPositionTagHealthy = True : Exit Function
+    If TagHealthy(device.PositionClosed)    Then AnyPositionTagHealthy = True : Exit Function
+    If TagHealthy(device.PositionOpenAlt)   Then AnyPositionTagHealthy = True : Exit Function
+    If TagHealthy(device.PositionClosedAlt) Then AnyPositionTagHealthy = True : Exit Function
+    AnyPositionTagHealthy = False
 
 End Function
 
@@ -4975,12 +4975,17 @@ Sub ScanFolder(folder, simEnabled)
     Dim obj
     For Each obj In folder
         Select Case UCase(TypeName(obj))
-            Case "XATM_BREAKER"
+
+            ' A disconnector carries the same four position properties a
+            ' breaker does, so one branch serves both. Without it the Else
+            ' below walked into a disconnector as though it were a folder,
+            ' which quietly left it out of simulation altogether.
+            Case "XATM_BREAKER", "XATM_DISCONNECTOR"
     
                 Dim shouldSim
                 
                 If simEnabled Then
-                    shouldSim = Not AnyBreakerTagHealthy(obj)
+                    shouldSim = Not AnyPositionTagHealthy(obj)
                 Else
                     shouldSim = False
                 End If
