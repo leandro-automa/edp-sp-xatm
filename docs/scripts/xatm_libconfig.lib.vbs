@@ -86,6 +86,270 @@ Sub objButton_Click()
 	
 End Sub
 
+<xatm_PropertyRow.btnForce:btnForce_Click()>
+Sub btnForce_Click()
+
+	' Operating the plant, not configuring it.
+	'
+	' EXPOSE_FORCE says the value is never saved, so nothing here is staged
+	' in the document the way a picked tag or a typed setting is. What is
+	' written is what the switchyard is doing this moment, and the next
+	' rebuild reads the plant rather than the file.
+
+	If Not Can(EXPOSE_FORCE) Then Exit Sub
+
+	Dim obj
+	Set obj = Nothing
+
+	On Error Resume Next
+	Set obj = Application.GetObject(xatm_PropertyRow.ObjectPath)
+	On Error Goto 0
+
+	If obj Is Nothing Then
+		MsgBox "Nothing written - the project has nothing at " & _
+		       xatm_PropertyRow.ObjectPath & "."
+		Exit Sub
+	End If
+
+	' Three shapes, and the type is what tells them apart. A command output
+	' holds a tag and is sent a number; a block or a gate is a boolean and
+	' is flipped; anything else the manifest lets be forced is typed.
+	If IsTagProperty() Then
+		SendRawValue obj
+	ElseIf IsBooleanProperty() Then
+		ToggleProperty obj
+	Else
+		TypeValue obj
+	End If
+
+End Sub
+
+
+' The raw value this command output is configured to send.
+'
+' Which one depends on the direction and not on which of the four tags
+' it is: an Alt output is the same command over the second path, and a
+' select output is the same command with the execute withheld, so all
+' four carry the same number.
+'
+' A command the manifest has no raw value for opens the box on 0 rather
+' than on nothing, so what is about to be sent is always in front of
+' whoever is sending it.
+Function RawValueFor(obj)
+
+	RawValueFor = 0
+
+	Dim source
+	source = ""
+
+	Select Case LCase(xatm_PropertyRow.PropertyName & "")
+
+		Case "commandopen",  "commandopenalt", _
+		     "commandsboopen",  "commandsboopenalt"
+			source = "RawValueCommandOpen"
+
+		Case "commandclose", "commandclosealt", _
+		     "commandsboclose", "commandsboclosealt"
+			source = "RawValueCommandClose"
+
+	End Select
+
+	If source = "" Then Exit Function
+
+	gForceValue = Empty
+
+	On Error Resume Next
+	Execute "gForceValue = obj." & source
+	On Error Goto 0
+
+	If IsNumeric(gForceValue) Then RawValueFor = CLng(gForceValue)
+
+End Function
+
+
+' A block or a gate: flipped where it stands.
+'
+' Read and written back rather than flipped in one line, so a refusal can
+' say which value was refused instead of only that something went wrong.
+Sub ToggleProperty(obj)
+
+	gForceValue = Empty
+
+	Dim failed
+	failed = ""
+
+	On Error Resume Next
+	Err.Clear
+	Execute "gForceValue = obj." & xatm_PropertyRow.PropertyName
+	If Err.Number <> 0 Then failed = Err.Description
+	On Error Goto 0
+
+	If failed <> "" Then
+		MsgBox "Nothing written - " & xatm_PropertyRow.PropertyName & _
+		       " could not be read - " & failed
+		Exit Sub
+	End If
+
+	' Empty reads as False, so a property nobody has written yet turns on
+	' rather than refusing to move.
+	gForceValue = Not CBool(gForceValue)
+
+	On Error Resume Next
+	Err.Clear
+	Execute "obj." & xatm_PropertyRow.PropertyName & " = gForceValue"
+	If Err.Number <> 0 Then failed = Err.Description
+	On Error Goto 0
+
+	If failed <> "" Then
+		MsgBox "Nothing written - " & xatm_PropertyRow.PropertyName & _
+		       " would not take " & gForceValue & " - " & failed
+	End If
+
+End Sub
+
+
+' Anything else the manifest lets be forced: a number, typed into a box
+' that opens on whatever the property holds now.
+Sub TypeValue(obj)
+
+	gForceValue = Empty
+
+	On Error Resume Next
+	Execute "gForceValue = obj." & xatm_PropertyRow.PropertyName
+	On Error Goto 0
+
+	Dim seed
+	seed = ""
+	If Not (IsEmpty(gForceValue) Or IsNull(gForceValue)) Then seed = CStr(gForceValue)
+
+	Dim answer
+	answer = InputBox("Value to force into " & xatm_PropertyRow.PropertyName, _
+	                  "Force value", seed)
+
+	If Trim(answer) = "" Then Exit Sub
+
+	If Not IsNumeric(answer) Then
+		MsgBox "Nothing written - '" & answer & "' is not a number."
+		Exit Sub
+	End If
+
+	gForceValue = CLng(answer)
+
+	Dim failed
+	failed = ""
+
+	On Error Resume Next
+	Err.Clear
+	Execute "obj." & xatm_PropertyRow.PropertyName & " = gForceValue"
+	If Err.Number <> 0 Then failed = Err.Description
+	On Error Goto 0
+
+	If failed <> "" Then
+		MsgBox "Nothing written - " & xatm_PropertyRow.PropertyName & _
+		       " would not take " & answer & " - " & failed
+	End If
+
+End Sub
+
+
+' The one flag this button asks about, and the two type questions - all
+' written out again because one E3 object cannot call another's, and the
+' row's own copies live in the control's scope and not in this button's.
+Const EXPOSE_FORCE = 16
+
+Function Can(flag)
+
+	Can = ((xatm_PropertyRow.Exposure And flag) <> 0)
+
+End Function
+
+Function IsTagProperty()
+
+	IsTagProperty = False
+
+	Select Case LCase(xatm_PropertyRow.PropertyType & "")
+		Case "iotag", "internaltag" : IsTagProperty = True
+	End Select
+
+End Function
+
+Function IsBooleanProperty()
+
+	IsBooleanProperty = (LCase(xatm_PropertyRow.PropertyType & "") = "boolean")
+
+End Function
+
+
+' Scratch cell for the reads and writes done through Execute. The property
+' is named at runtime, so the line is built as text and the value has to
+' be waiting in something the text can name.
+Dim gForceValue
+
+
+' A command output: the raw value configured for it, sent to the tag.
+'
+' Not a boolean flipped. A protocol may want 65 to close, which is the
+' whole reason RawValueCommandOpen and RawValueCommandClose are configured
+' at all - so the box opens on that number and the ordinary case is one
+' keypress. Anything else can be typed, for the case it was configured
+' wrong and somebody is finding out which value the IED wants.
+'
+' The write goes to the tag and never to the property. The property holds
+' the tag; assigning to it would re-associate the row instead of operating
+' the switchyard.
+Sub SendRawValue(obj)
+
+	Dim tagPath
+	tagPath = Trim(xatm_PropertyRow.PropertySource & "")
+
+	If tagPath = "" Then
+		MsgBox "Nothing written - " & xatm_PropertyRow.PropertyName & _
+		       " is not wired to a tag yet."
+		Exit Sub
+	End If
+
+	Dim tag
+	Set tag = Nothing
+
+	On Error Resume Next
+	Set tag = Application.GetObject(tagPath)
+	On Error Goto 0
+
+	If tag Is Nothing Then
+		MsgBox "Nothing written - the project has nothing at " & tagPath & "."
+		Exit Sub
+	End If
+
+	Dim answer
+	answer = InputBox("Value to send to " & xatm_PropertyRow.PropertyName & _
+	                  vbCrLf & vbCrLf & tagPath, _
+	                  "Send command", CStr(RawValueFor(obj)))
+
+	' Cancel answers "" and so does a box that was emptied. Neither is a
+	' command, and a command is not something to guess at.
+	If Trim(answer) = "" Then Exit Sub
+
+	If Not IsNumeric(answer) Then
+		MsgBox "Nothing written - '" & answer & "' is not a number."
+		Exit Sub
+	End If
+
+	Dim failed
+	failed = ""
+
+	On Error Resume Next
+	Err.Clear
+	tag.WriteEx CLng(answer)
+	If Err.Number <> 0 Then failed = Err.Description
+	On Error Goto 0
+
+	If failed <> "" Then
+		MsgBox "Nothing written - " & tagPath & " would not take " & _
+		       answer & " - " & failed
+	End If
+
+End Sub
+
 <xatm_PropertyRow.btnPickTag:btnPickTag_Click()>
 Sub btnPickTag_Click()
 
@@ -545,6 +809,12 @@ Sub xatm_PropertyRow_OnStartRunning()
 	' two are exclusive: no property is both an IOTag and bindable.
 	ShowItem "btnPickTag", PicksTag()
 	ShowItem "btnBuildExpression", Can(EXPOSE_EXPRESSION)
+
+	' And the force button, where the manifest says the value may be
+	' forced at runtime. Not exclusive with the other two: a command
+	' output is both wired to a tag and forceable, so a row can carry
+	' the picker and this one at once.
+	ShowItem "btnForce", Can(EXPOSE_FORCE)
 
 End Sub
 

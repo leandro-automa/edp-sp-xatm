@@ -4024,6 +4024,11 @@ Sub xatm_Breaker_OnStartRunning()
 	' configured for it rather than flipping a boolean, because a protocol
 	' may want 65 to close.
 	'
+	' The select outputs are forced the same way and for the same
+	' reason: where the IED wants select before operate, a command
+	' cannot be tried from the panel at all unless the select can be
+	' sent first.
+	'
 	' Id is shown and never edited: it is what the automation locates this
 	' breaker by, and what the panel and the import address it by.
 	SetExposure bag, "Id",                   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
@@ -4042,13 +4047,13 @@ Sub xatm_Breaker_OnStartRunning()
 	SetExposure bag, "RawValueCommandClose", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 
 	SetExposure bag, "CommandOpen",          EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOOpen",       EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpen",       EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
 	SetExposure bag, "CommandOpenAlt",       EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOOpenAlt",    EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpenAlt",    EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
 	SetExposure bag, "CommandClose",         EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOClose",      EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOClose",      EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
 	SetExposure bag, "CommandCloseAlt",      EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOCloseAlt",   EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOCloseAlt",   EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
 	
 	
 	' Defective is configured the way a transformer's relays are: an
@@ -4423,6 +4428,11 @@ Sub xatm_Disconnector_OnStartRunning()
 	' configured for it rather than flipping a boolean, because a protocol
 	' may want 65 to close.
 	'
+	' The select outputs are forced the same way and for the same
+	' reason: where the IED wants select before operate, a command
+	' cannot be tried from the panel at all unless the select can be
+	' sent first.
+	'
 	' Id is shown and never edited: it is what the automation locates this
 	' breaker by, and what the panel and the import address it by.
 	SetExposure bag, "Id",                   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
@@ -4442,13 +4452,13 @@ Sub xatm_Disconnector_OnStartRunning()
 	SetExposure bag, "RawValueCommandClose", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 
 	SetExposure bag, "CommandOpen",          EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOOpen",       EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpen",       EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
 	SetExposure bag, "CommandOpenAlt",       EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOOpenAlt",    EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOOpenAlt",    EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
 	SetExposure bag, "CommandClose",         EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOClose",      EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOClose",      EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
 	SetExposure bag, "CommandCloseAlt",      EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
-	SetExposure bag, "CommandSBOCloseAlt",   EXPOSE_VIEW + EXPOSE_SAVED
+	SetExposure bag, "CommandSBOCloseAlt",   EXPOSE_VIEW + EXPOSE_FORCE + EXPOSE_SAVED
 	
 	
 	' Defective is configured the way a transformer's relays are: an
