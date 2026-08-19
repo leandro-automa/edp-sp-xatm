@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Fri Aug 14 16:30:22 2026
+Wed Aug 19 16:18:37 2026
 -----------------------
 
 <xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
@@ -661,7 +661,7 @@ Sub AlarmTag(folder, interfacePath, obj, p, problem)
 	' the whole alarm.
 	Dim where
 	where = obj.Name & "." & p.Name
-
+	
 	SetMember alarm, "Digital",                  True,                where, problem
 	SetMember alarm, "DigitalLimit",             p.AlarmLimit(),      where, problem
 	SetMember alarm, "DigitalMessageText",       p.AlarmActiveText(), where, problem
@@ -827,7 +827,7 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
 	End If
-	
+		
 End Sub
 
 <xatm_config_data.Config.BuildAlarms:BuildAlarms_OnStartRunning()>
@@ -1009,7 +1009,6 @@ Const ADVISE_ALWAYS       = 0
 Const TYPE_MONITOR        = "SP"
 Const TYPE_COMMAND        = "SC"
 Const COMMAND_ACTION      = "Execute"
-
 
 ' How a link carries the value - the BindType argument of CreateLink.
 ' A discrete signal is copied from the interface into the tag the driver
@@ -1207,7 +1206,6 @@ Function IsCommand(p)
 	IsCommand = True
 
 End Function
-
 
 
 ' The next address, and the one after it kept for the next caller.
@@ -3909,7 +3907,7 @@ Sub SetExposure(bag, name, exposure)
 	If Not bag.Exists(k) Then Exit Sub
 
 	bag(k).Exposure = exposure
-	
+		
 End Sub
 
 <xatm_config_data.PropertiesHelper.xatm_Breaker:xatm_Breaker_OnStartRunning()>
@@ -4319,7 +4317,7 @@ Sub SetExposure(bag, name, exposure)
 	If Not bag.Exists(k) Then Exit Sub
 
 	bag(k).Exposure = exposure
-	
+		
 End Sub
 
 <xatm_config_data.PropertiesHelper.xatm_Disconnector:xatm_Disconnector_OnStartRunning()>
@@ -4447,11 +4445,6 @@ Sub xatm_Disconnector_OnStartRunning()
 	' there is nothing to read back. Forcing one sends the raw value
 	' configured for it rather than flipping a boolean, because a protocol
 	' may want 65 to close.
-	'
-	' The select outputs are forced the same way and for the same
-	' reason: where the IED wants select before operate, a command
-	' cannot be tried from the panel at all unless the select can be
-	' sent first.
 	'
 	' Id is shown and never edited: it is what the automation locates this
 	' breaker by, and what the panel and the import address it by.
@@ -4725,7 +4718,7 @@ Sub SetExposure(bag, name, exposure)
 	If Not bag.Exists(k) Then Exit Sub
 
 	bag(k).Exposure = exposure
-		
+	
 End Sub
 
 <xatm_config_data.PropertiesHelper.xatm_RASEAT:xatm_RASEAT_OnStartRunning()>
@@ -5050,7 +5043,7 @@ Sub SetExposure(bag, name, exposure)
 	If Not bag.Exists(k) Then Exit Sub
 
 	bag(k).Exposure = exposure
-	
+		
 End Sub
 
 <xatm_config_data.PropertiesHelper.xatm_Transformer:xatm_Transformer_OnStartRunning()>
@@ -5106,7 +5099,7 @@ Sub xatm_Transformer_OnStartRunning()
 		"Transformer is electrically isolated from the high-voltage busbars. Bound to an expression - the GOOSE its IED publishes, and that IED not having failed.", _
 		"Transformador isolado eletricamente das barras de alta tensão. Vinculada a uma expressão - a mensagem GOOSE publicada pelo seu IED, e esse IED sem defeito."
 
-	AddProperty bag, "Maintenance", "Boolean", False, _
+	AddProperty bag, "UnderMaintenance", "Boolean", False, _
 		"Transformer is under maintenance - isolated, and with the command locks applied so it stays that way. Bound to an expression.", _
 		"Transformador em manutenção - isolado e com os bloqueios de comando aplicados para que assim permaneça. Vinculada a uma expressão."
 
@@ -5124,7 +5117,7 @@ Sub xatm_Transformer_OnStartRunning()
 	SetExposure bag, "UndervoltageRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "CR",                EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "Isolated",          EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
-	SetExposure bag, "Maintenance",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "UnderMaintenance",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 
 	Set Value = bag
 
@@ -5332,17 +5325,18 @@ Sub SetExposure(bag, name, exposure)
 	If Not bag.Exists(k) Then Exit Sub
 
 	bag(k).Exposure = exposure
-	
+		
 End Sub
 
 <xatm_config_data.SimulationMode:SimulationMode_OnChangedValue()>
 Sub SimulationMode_OnChangedValue()
 
+
     ScanFolder Application.GetObject("XATM_Data.Substation"), Value
 
 End Sub
 
-' Returns True if at least one position tag has good quality — breaker does NOT need sim mode.
+' Returns True if at least one position tag has good quality - breaker does NOT need sim mode.
 Function AnyPositionTagHealthy(device)
 
     If TagHealthy(device.PositionOpen)      Then AnyPositionTagHealthy = True : Exit Function
@@ -5395,7 +5389,7 @@ Sub ScanFolder(folder, simEnabled)
                 On Error GoTo 0
         End Select
     Next
-	
+		
 End Sub
 
 <xatm_config_screens.Config.TreeView:TreeView_NodeClick(Node)>
@@ -5826,7 +5820,7 @@ Function StripBom(text)
 End Function
 
 Sub Foo()	
-	
+
 End Sub
 
 <xatm_config_screens.Config.TreeView:TreeView_OnStartRunning()>
@@ -6743,13 +6737,13 @@ Sub btnApply_Click()
 	End If
 
 	SyncAutomation doc, AutomationCount(transformerType), removed, added, failed
-
+	
 	' After the incomer folder above, so the breakers a reclosing will
 	' operate are already in the document by the time it appears - and
 	' after SyncAutomation, which shares the folder and prunes only its
 	' own class.
 	SyncRASEAT doc, RASEATCount(incomerType), removed, added, failed
-
+	
 	SetLayoutTag doc, "Transformer", transformerType
 	SetLayoutTag doc, "Busbar", busbarType
 	SetLayoutTag doc, "Incomer", incomerType
@@ -7000,7 +6994,6 @@ Function RASEATCount(incomerType)
 	End Select
 
 End Function
-
 
 Function AutomationCount(layoutType)
 
@@ -7294,6 +7287,8 @@ Sub SyncAutomation(doc, keepCount, removed, added, failed)
 End Sub
 
 
+
+
 ' Brings the Automation folder to the number of reclosing automations the
 ' incomer layout wants - which is one, or none.
 '
@@ -7366,7 +7361,6 @@ Sub SyncRASEAT(doc, keepCount, removed, added, failed)
 	Next
 
 End Sub
-
 
 ' The path of the transformer carrying an Id, "" when the document has
 ' no such transformer.
@@ -9375,6 +9369,7 @@ Sub ListBox_Timer()
 	
 End Sub
 
+
 ' The longest item the list box is asked to take.
 Const MAX_ITEM_LENGTH = 512
 
@@ -9403,7 +9398,6 @@ Function SafeItem(v)
     SafeItem = s
 
 End Function
-
 
 Sub AddArrayContentToList()
 
@@ -9440,7 +9434,9 @@ Sub AddArrayContentToList()
 
     Dim i
     For i = ListCount To UBound(contentArr)
-        AddItem SafeItem(contentArr(i)), 0
+    
+    	AddItem SafeItem(contentArr(i)), 0
+    	
         'If Application.GetObject("xatm_config_data.ConsoleLogEngine").AutoScrolling Then
             ListIndex = 0
         'End If
@@ -9666,7 +9662,16 @@ Function OtherTransformer(btc, total, idx, n)
 End Function
 
 Sub Foo()
+	
 End Sub
+
+<xatm_config_screens.Menu.btnClose:btnClose_Click()>
+Sub btnClose_Click()
+	
+	Screen.Close(0)
+	
+End Sub
+
 <xatm_config_screens.Menu.btnConfig:btnConfig_Click()>
 Sub btnConfig_Click()
 	
@@ -9674,6 +9679,11 @@ Sub btnConfig_Click()
 	Set fr = Application.GetFrame("Superior")
 	fr.OpenScreen "xatm_config_screens.Config?4?0", 0
 		
+End Sub
+
+<xatm_config_screens.Menu.btnMinimize:btnMinimize_Click()>
+Sub btnMinimize_Click()
+	Me.Frame.MinimizeFrame()	
 End Sub
 
 <xatm_config_screens.Menu.btnRASEAT:btnRASEAT_Click()>
@@ -9742,7 +9752,7 @@ Sub btnRASEAT_Click()
 			target.Item("Commands").Item("Reset").WriteEx True
 
 	End Select
-
+	
 End Sub
 
 <xatm_config_screens.Menu.btnSimulationMode:btnSimulationMode_Click()>
@@ -9761,6 +9771,154 @@ Sub btnSupervision_Click()
 	Set fr = Application.GetFrame("Superior")
 	fr.OpenScreen "xatm_config_screens.SingleLineDiagram?4?0", 0
 		
+End Sub
+
+<xatm_config_screens.Menu.grpDemo.lblDemo:lblDemo_OnStartRunning()>
+Sub lblDemo_OnStartRunning()
+	
+	' Blank in a runtime build, so the label simply is not there. Anything
+	' else - a greyed word, a different colour - is something an operator
+	' learns to stop seeing.
+	Value = ""
+
+	If IsDemoLibrary() Then Value = "DEMO"
+
+End Sub
+
+
+' Whether the library driving this station is the demo build.
+'
+' Asked of the equipment rather than of a singleton somewhere: every
+' breaker and disconnector carries a Build, all of them come from the same
+' library file, so the first one found answers for the rest and there is
+' nothing to keep in agreement.
+'
+' No device carrying a Build means either a substation that has not been
+' built yet or a library too old to have the class. Neither is a demo, and
+' neither is this label's business to announce - the command gate is what
+' actually withholds anything, and it fails closed on its own.
+Function IsDemoLibrary()
+
+	IsDemoLibrary = False
+
+	Dim substation
+	Set substation = Nothing
+
+	On Error Resume Next
+	Set substation = Application.GetObject("XATM_Data.Substation")
+	On Error Goto 0
+
+	If substation Is Nothing Then Exit Function
+
+	Dim found
+	found = Empty
+
+	FindBuild substation, found
+
+	If Not IsEmpty(found) Then IsDemoLibrary = CBool(found)
+
+End Function
+
+
+' Walks the substation until something answers, then stops.
+'
+' found stays Empty while nothing has, which is what lets the caller tell
+' "no device carries a Build" from "a device carries one and it says
+' runtime" - the two look alike at a glance and mean quite different
+' things.
+Sub FindBuild(folder, ByRef found)
+
+	If Not IsEmpty(found) Then Exit Sub
+
+	Dim obj
+	For Each obj In folder
+
+		If Not IsEmpty(found) Then Exit Sub
+
+		Dim build
+		Set build = Nothing
+
+		On Error Resume Next
+		Set build = obj.Item("Build")
+		On Error Goto 0
+
+		If Not build Is Nothing Then
+
+			On Error Resume Next
+			found = CBool(build.Demo)
+			On Error Goto 0
+
+			If Not IsEmpty(found) Then Exit Sub
+
+		End If
+
+		' A folder, or a device from a library that has no Build - either
+		' way, look inside it. A tag refuses to be walked, and the error
+		' that raises is how the walk finds the leaves.
+		On Error Resume Next
+		FindBuild obj, found
+		On Error Goto 0
+
+	Next
+		
+End Sub
+
+<xatm_config_screens.Menu.grpDemo.objArea:objArea_Click()>
+Sub objArea_Click()
+
+	If HELP_LANG = "pt-BR" Then
+		MsgBox DemoTextPt(), vbInformation, "Versão de demonstração"
+	Else
+		MsgBox DemoTextEn(), vbInformation, "Demo build"
+	End If
+
+End Sub
+
+
+' Which language the panel speaks. Written out again here because one E3
+' object cannot read another's constants - the same copy the Config screen
+' keeps for the property help.
+Const HELP_LANG = "pt-BR"
+
+
+' What a demo build withholds, said in full.
+'
+' Functions and not constants: VBScript will not build a Const out of an
+' expression, so the line breaks between the paragraphs have to be joined
+' where they can be - inside a body.
+'
+' Worth spelling out rather than shortening: somebody clicking this label
+' is asking why the switchyard did not move, and the useful answer is three
+' things - that simulation still works, that the sequence they just watched
+' was real logic on simulated plant, and what operating for real would
+' take. "This is a demo" leaves them with the same question.
+Function DemoTextPt()
+
+	DemoTextPt = "Esta cópia da biblioteca de automatismos é uma versão de demonstração." & vbCrLf & vbCrLf & _
+	             "Os comandos alcançam apenas equipamentos em modo de simulação. Nada é enviado ao pátio: " & _
+	             "um disjuntor simulado se move como se moveria em serviço, e uma sequência inteira pode ser " & _
+	             "executada do início ao fim - mas nenhum equipamento real é operado." & vbCrLf & vbCrLf & _
+	             "Operar equipamento real exige a versão de runtime, licenciada para executar somente em " & _
+	             "hardkey que contenha essa licença."
+
+End Function
+
+Function DemoTextEn()
+
+	DemoTextEn = "This copy of the automation library is a demo build." & vbCrLf & vbCrLf & _
+	             "Commands reach simulated equipment only. Nothing is sent to the switchyard: a simulated " & _
+	             "breaker moves as it would in service, and a whole sequence can be run end to end - but no " & _
+	             "real equipment is operated." & vbCrLf & vbCrLf & _
+	             "Operating real equipment needs the runtime build, licensed to run only on a hardkey " & _
+	             "carrying that licence."
+
+End Function
+
+
+' A scope may not end on a Function - E3 takes the script without complaint
+' and then behaves as though the last one were not there.
+Sub Foo()
+
 End Sub
 
 <xatm_config_screens.SingleLineDiagram:SingleLineDiagram_OnPreShow(Arg)>
