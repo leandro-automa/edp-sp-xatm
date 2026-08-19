@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Wed Aug 12 16:59:28 2026
+Wed Aug 19 16:18:13 2026
 -----------------------
 
 <xatm_BTC.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
@@ -142,11 +142,11 @@ End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartNM()>
 Sub Start_CommandStartNM()
-
+	
 	If xatm_BTC.CommandStartNM.Value = 0 Then Exit Sub
-
+	
 	StartMode "NM", 0
-
+	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartNM100()>
@@ -155,7 +155,7 @@ Sub Start_CommandStartNM100()
 	If xatm_BTC.CommandStartNM100.Value = 0 Then Exit Sub
 
 	StartMode "NM", 100
-
+	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartNM200()>
@@ -164,7 +164,7 @@ Sub Start_CommandStartNM200()
 	If xatm_BTC.CommandStartNM200.Value = 0 Then Exit Sub
 
 	StartMode "NM", 200
-
+	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartNM300()>
@@ -173,7 +173,7 @@ Sub Start_CommandStartNM300()
 	If xatm_BTC.CommandStartNM300.Value = 0 Then Exit Sub
 
 	StartMode "NM", 300
-
+	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartNM400()>
@@ -182,7 +182,7 @@ Sub Start_CommandStartNM400()
 	If xatm_BTC.CommandStartNM400.Value = 0 Then Exit Sub
 
 	StartMode "NM", 400
-
+	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartTM()>
@@ -191,7 +191,7 @@ Sub Start_CommandStartTM()
 	If xatm_BTC.CommandStartTM.Value = 0 Then Exit Sub
 
 	StartMode "TM", 0
-
+	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartTM100()>
@@ -200,7 +200,7 @@ Sub Start_CommandStartTM100()
 	If xatm_BTC.CommandStartTM100.Value = 0 Then Exit Sub
 
 	StartMode "TM", 100
-
+	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartTM200()>
@@ -209,7 +209,7 @@ Sub Start_CommandStartTM200()
 	If xatm_BTC.CommandStartTM200.Value = 0 Then Exit Sub
 
 	StartMode "TM", 200
-
+	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartTM300()>
@@ -218,7 +218,7 @@ Sub Start_CommandStartTM300()
 	If xatm_BTC.CommandStartTM300.Value = 0 Then Exit Sub
 
 	StartMode "TM", 300
-
+	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_CommandStartTM400()>
@@ -227,7 +227,7 @@ Sub Start_CommandStartTM400()
 	If xatm_BTC.CommandStartTM400.Value = 0 Then Exit Sub
 
 	StartMode "TM", 400
-
+	
 End Sub
 
 <xatm_BTC.Commands.Start:Start_OnChangedValue()>
@@ -395,14 +395,9 @@ Sub Start_OnChangedValue()
 	' asked of this maneuver own pair of gates, not of one pair standing
 	' for every maneuver the automation can run.
 	'
-	' Both are read before either is judged, so a gate the XObject has not
-	' been given is reported as the configuration fault it is, rather than
+	' Both are read before either is judged, so a manifest that has not
+	' been rebuilt is reported as the configuration fault it is rather than
 	' surfacing as a maneuver that will not start for no stated reason.
-	'
-	' The manifest only describes a property - it drives the config screen,
-	' the interface, the alarms and the distribution. The XObject has to
-	' carry the property itself, or there is nothing for any of them to
-	' describe.
 	Dim gate, missing, blocked, permitted
 	gate    = GateSuffix(mode, impedeId)
 	missing = ""
@@ -412,7 +407,7 @@ Sub Start_OnChangedValue()
 
 	If missing <> "" Then
 
-		Reject "this automation has no " & missing & " - add the property to the xatm_BTC XObject.", ts
+		Reject "this automation has no " & missing & " - the manifest has not been rebuilt.", ts
 		Exit Sub
 
 	End If
@@ -818,8 +813,9 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
-
+	
 End Sub
+
 <xatm_BTC.FSM.Main:Main_Completed()>
 Sub Main_Completed()
 	
@@ -946,7 +942,7 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
-	
+		
 End Sub
 
 <xatm_BTC.FSM.Main:Main_GlobalLockout()>
@@ -1114,6 +1110,7 @@ Function DescribeAutomation()
 	End If
 
 End Function
+
 ' Transformer name for an id, falling back to "ID <n>" when not found.
 Function TransformerName(id)
 
@@ -1128,11 +1125,8 @@ Function TransformerName(id)
 
 End Function
 
-' A scope may not end on a Function - E3 takes the script without complaint
-' and then behaves as though the last one were not there. StoreImpediments
-' used to close this section; with it gone, this stub does. A guard, not
-' debris.
-Sub Step00Functions()
+Sub Foo()
+
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Step01()>
@@ -1365,7 +1359,7 @@ Sub S1TA(triggerId, impedeId)
 			Exit Sub
 
 	End Select
-
+	
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Step02()>
@@ -1712,7 +1706,7 @@ Sub S2TA(triggerId, impedeId)
 			Exit Sub
 
 	End Select
-
+	
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Step03()>
@@ -2013,7 +2007,7 @@ Sub S3TA(triggerId, impedeId)
 			Exit Sub
 
 	End Select
-
+	
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Step04()>
@@ -2336,7 +2330,7 @@ Sub S4TA(triggerId, impedeId)
 			Exit Sub
 
 	End Select
-
+	
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Step05()>
@@ -2554,7 +2548,7 @@ Sub S5TA(triggerId, impedeId)
 			Exit Sub
 
 	End Select
-
+	
 End Sub
 
 <xatm_BTC.FSM.Main:Main_Step06()>
@@ -2771,7 +2765,7 @@ Sub S6TA(triggerId, impedeId)
 			Exit Sub
 
 	End Select
-
+	
 End Sub
 
 <xatm_Breaker.Data.CommandInProgress:CommandInProgress_OnChangedValue()>
@@ -2859,6 +2853,20 @@ Sub CommandOpenClose_OnChangedValue()
 
 	Else
 
+		' Nothing real leaves a demo build.
+		'
+		' Asked here and not before the simulation branch on purpose: a demo
+		' build drives simulated equipment exactly as the runtime one does,
+		' so a whole sequence can still be watched end to end. It is only the
+		' switchyard it is kept away from.
+		If IsDemoBuild() Then
+
+			WriteLog IIf(command = 1, "Open", "Close") & _
+			         " command not executed - DEMO build, only simulated equipment is operated."
+			Exit Sub
+
+		End If
+
 		' Route the command to a relay that is actually communicating: try the
 		' configured priority source first, then fall back to the redundant one.
 		Dim useAlt
@@ -2888,6 +2896,27 @@ Sub CommandOpenClose_OnChangedValue()
 	End If
 
 End Sub
+
+' Whether the library driving this breaker is the demo build.
+'
+' Read off the xatm_Version the breaker carries, so the answer comes from
+' the same library file as this code - not from a constant copied into
+' this scope, which would be a second thing to flip, and not from a
+' singleton in another project, which a site might not have deployed.
+'
+' Fails closed. A breaker with no Build inside it is one driven by a
+' library too old to have the class at all, and that is not a library to
+' let near a switchyard.
+Function IsDemoBuild()
+
+	IsDemoBuild = True
+
+	On Error Resume Next
+	IsDemoBuild = CBool(xatm_Breaker.Item("Build").Demo)
+	On Error Goto 0
+
+End Function
+
 
 ' Writes the command output of one relay - main (useAlt = False) or redundant
 ' (useAlt = True). Returns True only when the output tag was actually written.
@@ -3495,6 +3524,107 @@ Sub WriteLog(message)
 
 End Sub
 
+<xatm_Build:xatm_Build_OnStartRunning()>
+Sub xatm_Build_OnStartRunning()
+
+	' What this build of the library is, published where anything can read
+	' it without having to know where it came from.
+	'
+	' One of these sits inside every breaker and every disconnector, so the
+	' command gate can ask the device it is already holding. One more stands
+	' alone in xatm_config_data, and that is the one the console line and
+	' the screen label read.
+	'
+	' Nothing here is configured. The class comes from whichever
+	' xatm_lib.lib the domain has loaded, so swapping the file swaps what
+	' every instance says at once - which is the whole mechanism.
+	Version      = LIBRARY_VERSION
+	ReleaseNotes = RELEASE_NOTES
+	Demo         = DEMO_BUILD
+
+	' The same fact as a word, for a label to bind to. Derived rather than
+	' declared, so it cannot come to disagree with the flag - and the gate
+	' reads the flag and never this, because a typo or a stray capital in
+	' a string comparison is not a thing to put in front of a switchyard.
+	Edition = IIf(DEMO_BUILD, "DEMO", "RUNTIME")
+
+	If ShouldAnnounce() Then WriteLog Announcement()
+
+End Sub
+
+
+' The library's identity, and the one line that differs between the two
+' builds that ship.
+'
+' This is the only place either fact is written down. The command gate does
+' not keep a copy - it reads the instance its own breaker carries - so
+' there is no second constant to fall out of step, and no dependency on a
+' project a site might not deploy.
+'
+' Building the pair is: flip DEMO_BUILD, export, protect the runtime one.
+Const LIBRARY_VERSION = "1.0.0"
+Const RELEASE_NOTES   = "Initial commit."
+Const DEMO_BUILD      = False
+
+
+' Whether this copy is the one that talks.
+'
+' A station carries one per breaker and one per disconnector - dozens of
+' them - and none of those should say anything at start. The one that does
+' is the instance standing on its own in a data server rather than inside
+' another object.
+Function ShouldAnnounce()
+
+	Dim parentType
+	parentType = ""
+
+	On Error Resume Next
+	parentType = TypeName(Parent)
+	On Error Goto 0
+
+	ShouldAnnounce = (LCase(Left(parentType & "", 5)) <> "xatm_")
+
+End Function
+
+
+' What goes on the console at start, in the two shapes it can take.
+'
+' The demo line says what is withheld rather than only that something is:
+' an engineer who reads that the build is a demo and nothing more will
+' still expect the switchyard to move.
+Function Announcement()
+
+	If DEMO_BUILD Then
+
+		Announcement = "xatm_lib " & LIBRARY_VERSION & " - DEMO build - " & _
+		               "commands reach simulated equipment only; nothing is sent to the switchyard."
+
+	Else
+
+		Announcement = "xatm_lib " & LIBRARY_VERSION & " - runtime build."
+
+	End If
+
+End Function
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+	
+End Sub
+
 <xatm_ConsoleLogEngine.WriteLine:xatm_ConsoleLogEngine_OnWriteLineChanged()>
 Sub xatm_ConsoleLogEngine_OnWriteLineChanged()
 
@@ -3516,22 +3646,12 @@ Sub xatm_ConsoleLogEngine_OnWriteLineChanged()
     End If
     On Error Goto 0
     
+    Dim message
+    message = formattedTimeStamp & vbTab & WriteLine
+
     ' ====================================
     ' Append to content array
     ' ====================================
-    '
-    ' One entry per physical line, not one per call.
-    '
-    ' A caller may hand over a whole report in a single write - BuildAlarms
-    ' builds its complaint with a vbCrLf before every item - and two things
-    ' break when that lands in one entry. The ring below counts entries, so
-    ' MaxLines stops meaning lines and a twenty line report evicts nineteen
-    ' lines that should have stayed. And the list box the Footer draws with
-    ' refuses an item carrying a line break outright, which takes the whole
-    ' redraw down with it rather than just that row.
-    '
-    ' The timestamp goes on the first line and the rest are indented under
-    ' it, so a report still reads as one event instead of twenty.
     Dim contentTag
     Set contentTag = Item("Data").Item("Content")
 
@@ -3542,76 +3662,807 @@ Sub xatm_ConsoleLogEngine_OnWriteLineChanged()
         contentArr = Array()
     End If
 
-    Dim msgBody
-    msgBody = Replace(Replace(WriteLine & "", vbCrLf, vbLf), vbCr, vbLf)
+    Dim currentSize
+    currentSize = UBound(contentArr) + 1
+	
+    ' Determine the index for the new message
+    Dim index
+    
+    If currentSize < MAX_LINES Then
+        
+        ' Array still growing — just append
+        index = currentSize
+        ReDim Preserve contentArr(currentSize)
+        
+    Else
+        
+        index = MAX_LINES - 1
 
-    Dim msgLines
-    msgLines = Split(msgBody, vbLf)
+        ' Array at capacity — shift and append
+        Dim j
+        For j = 0 To MAX_LINES - 2
+            contentArr(j) = contentArr(j + 1)
+        Next
+        
+    End If
 
-    Dim continuationPad
-    continuationPad = Space(Len(formattedTimeStamp))
+    ' Add new message at the end
+    contentArr(index) = message
 
-    Dim n, lineText, currentSize, index, j
-
-    For n = 0 To UBound(msgLines)
-
-        ' A blank continuation line carries nothing and would only push a
-        ' real one out of the ring. The first line is kept either way: an
-        ' empty message is still an event worth timestamping.
-        If n = 0 Or Trim(msgLines(n)) <> "" Then
-
-            If n = 0 Then
-                lineText = formattedTimeStamp & vbTab & RTrim(msgLines(n))
-            Else
-                lineText = continuationPad & vbTab & RTrim(msgLines(n))
-            End If
-
-            currentSize = UBound(contentArr) + 1
-
-            If currentSize < MAX_LINES Then
-
-                ' Array still growing - just append
-                index = currentSize
-                ReDim Preserve contentArr(currentSize)
-
-            Else
-
-                index = MAX_LINES - 1
-
-                ' Array at capacity - shift and append
-                For j = 0 To MAX_LINES - 2
-                    contentArr(j) = contentArr(j + 1)
-                Next
-
-            End If
-
-            contentArr(index) = lineText
-
-            ' Traced a line at a time, so the E3 trace and the console
-            ' agree on what one line is.
-            If TraceEnabled Then
-                On Error Resume Next
-                Application.Trace lineText, False
-                On Error Goto 0
-            End If
-
-        End If
-
-    Next
-
+    ' Trace the message for debugging
+    If TraceEnabled Then
+		On Error Resume Next
+		Application.Trace message, False
+		On Error Goto 0
+	End If
+	
     ' ================================
-    ' Update the content tag with the new array
+	' Update the content tag with the new array
     ' ================================
-    '
-    ' Written once, after every line. The tag drives the Footer's redraw,
-    ' so writing it per line would redraw the screen once per line of a
-    ' report.
-    contentTag.Value = contentArr
-
+	contentTag.Value = contentArr
+    
+    
     ' ================================
     ' Clear the WriteLine property to prepare for the next message
-    ' ================================    Me.WriteLine = Empty
+    ' ================================
+    Me.WriteLine = Empty
 	
+End Sub
+
+<xatm_Disconnector.Data.CommandInProgress:CommandInProgress_OnChangedValue()>
+Sub CommandInProgress_OnChangedValue()
+
+	Select Case Value
+
+		Case 2
+			' Command in progress - start the countdown from the configured timeout.
+			Parent.Item("Timers").Item("CommandTimer").WriteEx xatm_Disconnector.CommandTimeout
+
+		Case 1
+			' Command execution failed.
+			WriteLog "Command execution failed."
+
+		Case 3
+			' Command completed successfully - back to idle.
+
+	End Select
+	
+End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+	
+End Sub
+
+<xatm_Disconnector.Data.CommandOpenClose:CommandOpenClose_OnChangedValue()>
+Sub CommandOpenClose_OnChangedValue()
+	
+	Dim command
+	command = Value      ' 1 = open, 2 = close
+
+	' --- Position interlock: don't command a disconnector already at target ---
+	Dim position
+	position = Parent.Item("Position").Value
+
+	Select Case command
+
+		Case 1   ' Open: only when currently closed
+			If position <> 2 Then
+				WriteLog "Open command not executed - position interlock (disconnector not closed)."
+				Exit Sub
+			End If
+
+		Case 2   ' Close: only when currently open
+			If position <> 1 Then
+				WriteLog "Close command not executed - position interlock (disconnector not open)."
+				Exit Sub
+			End If
+
+		Case Else
+			WriteLog "Command not executed - invalid command value: " & command
+			Exit Sub
+
+	End Select
+
+	' --- Issue the command. Handle with position only (no provisional position) ---
+	Dim commandSent
+	commandSent = False
+
+	If CBool(Parent.Item("SimulationModeEnabled").Value) Then
+
+		WriteLog IIf(command = 1, "Open", "Close") & " command sent (Simulation Mode)."
+
+		' The disconnector "responds" by moving to the commanded position - unless we are
+		' simulating a failure, in which case Position is left unchanged so the
+		' command is never confirmed and times out.
+		If Not CBool(Parent.Item("SimulateCommandFailure").Value) Then
+			Parent.Item("Position").WriteEx command      ' 1 -> open, 2 -> closed
+		End If
+
+		commandSent = True
+
+	Else
+		
+		' Nothing real leaves a demo build.
+		'
+		' Asked here and not before the simulation branch on purpose: a demo
+		' build drives simulated equipment exactly as the runtime one does,
+		' so a whole sequence can still be watched end to end. It is only the
+		' switchyard it is kept away from.
+		If IsDemoBuild() Then
+
+			WriteLog IIf(command = 1, "Open", "Close") & _
+			         " command not executed - DEMO build, only simulated equipment is operated."
+			Exit Sub
+
+		End If
+
+		' Route the command to a relay that is actually communicating: try the
+		' configured priority source first, then fall back to the redundant one.
+		Dim useAlt
+		'useAlt = CBool(xatm_Disconnector.PreferAlternateSource)
+		useAlt = False
+
+		If IsSourceHealthy(useAlt) Then
+			commandSent = SendCommand(useAlt, command)
+		End If
+
+		If Not commandSent Then
+			If IsSourceHealthy(Not useAlt) Then
+				commandSent = SendCommand(Not useAlt, command)
+			End If
+		End If
+
+		If Not commandSent Then
+			WriteLog IIf(command = 1, "Open", "Close") & " command not executed - no relay available."
+			Exit Sub
+		End If
+
+	End If
+
+	' --- Flag command in progress (drives the command timer / BTC) ---
+	If Parent.Item("CommandInProgress").Value <> 2 Then
+		Parent.Item("CommandInProgress").WriteEx 2
+	End If
+
+End Sub
+
+' Whether the library driving this breaker is the demo build.
+'
+' Read off the xatm_Version the breaker carries, so the answer comes from
+' the same library file as this code - not from a constant copied into
+' this scope, which would be a second thing to flip, and not from a
+' singleton in another project, which a site might not have deployed.
+'
+' Fails closed. A breaker with no Build inside it is one driven by a
+' library too old to have the class at all, and that is not a library to
+' let near a switchyard.
+Function IsDemoBuild()
+
+	IsDemoBuild = True
+
+	On Error Resume Next
+	IsDemoBuild = CBool(xatm_Disconnector.Item("Build").Demo)
+	On Error Goto 0
+
+End Function
+
+
+' Writes the command output of one relay - main (useAlt = False) or redundant
+' (useAlt = True). Returns True only when the output tag was actually written.
+Function SendCommand(useAlt, command)
+
+	SendCommand = False
+
+	Dim outputTag
+	Set outputTag = Nothing
+	
+	Dim selectTag
+	Set selectTag = Nothing
+	
+	Dim sourceName
+	If useAlt Then
+		sourceName = "relay 2"
+	Else
+		sourceName = "relay 1"
+	End If
+	
+	Dim rawValue
+		
+	On Error Resume Next
+	
+	If command = 1 Then
+
+		' ======================
+		' Open
+		' ======================
+		rawValue = xatm_Disconnector.RawValueCommandOpen
+
+		If useAlt Then
+			Set outputTag = xatm_Disconnector.CommandOpenAlt
+			Set selectTag = xatm_Disconnector.CommandSBOOpenAlt
+		Else
+			Set outputTag = xatm_Disconnector.CommandOpen
+			Set selectTag = xatm_Disconnector.CommandSBOOpen
+		End If
+
+	Else
+
+		' ======================
+		' Close
+		' ======================
+		rawValue = xatm_Disconnector.RawValueCommandClose
+
+		If useAlt Then
+			Set outputTag = xatm_Disconnector.CommandCloseAlt
+			Set selectTag = xatm_Disconnector.CommandSBOCloseAlt
+		Else
+			Set outputTag = xatm_Disconnector.CommandClose
+			Set selectTag = xatm_Disconnector.CommandSBOClose
+		End If
+
+	End If
+
+	Err.Clear
+	On Error Goto 0
+
+	If Not IsTagLinked(outputTag) Then
+		WriteLog IIf(command = 1, "Open", "Close") & " command not executed - output not linked (" & sourceName & ")."
+		Exit Function
+	End If
+
+	' Select-Before-Operate: only performed when a select tag is configured.
+	If IsTagLinked(selectTag) Then
+		selectTag.WriteEx rawValue
+	End If
+
+	outputTag.WriteEx rawValue
+
+	WriteLog IIf(command = 1, "Open", "Close") & " command sent (" & sourceName & ") - value = " & rawValue & "."
+
+	SendCommand = True
+
+End Function
+
+' Communication check for a single relay, same criteria used by CommunicationFailure:
+' double point needs one readable tag, single point needs the whole contact pair.
+Function IsSourceHealthy(useAlt)
+
+	Dim tagOpen
+	Dim tagClosed
+
+	Set tagOpen = Nothing
+	Set tagClosed = Nothing
+
+	On Error Resume Next
+
+	If useAlt Then
+		Set tagOpen   = xatm_Disconnector.PositionOpenAlt
+		Set tagClosed = xatm_Disconnector.PositionClosedAlt
+	Else
+		Set tagOpen   = xatm_Disconnector.PositionOpen
+		Set tagClosed = xatm_Disconnector.PositionClosed
+	End If
+
+	Err.Clear
+	On Error Goto 0
+
+	If xatm_Disconnector.UseDoublePoints Then
+		IsSourceHealthy = IsTagHealthy(tagOpen) Or IsTagHealthy(tagClosed)
+	Else
+		IsSourceHealthy = IsTagHealthy(tagOpen) And IsTagHealthy(tagClosed)
+	End If
+
+End Function
+
+Function IsTagHealthy(tag)
+
+	IsTagHealthy = False
+
+	If tag Is Nothing Then
+		Exit Function
+	End If
+
+	Dim quality
+	On Error Resume Next
+	quality = tag.Quality
+	IsTagHealthy = (Err.Number = 0) And (quality >= 192)
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
+' An unassociated XObject property yields Nothing (or an object that cannot be read),
+' which is how an unused redundant relay / missing SBO tag is detected.
+Function IsTagLinked(tag)
+
+	IsTagLinked = False
+
+	If tag Is Nothing Then
+		Exit Function
+	End If
+
+	Dim probe
+	On Error Resume Next
+	probe = tag.Value
+	IsTagLinked = (Err.Number = 0)
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
+Sub WriteLog(message)
+	
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+	
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+	
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+	
+End Sub
+
+<xatm_Disconnector.Data.CommunicationFailure:CommunicationFailure_E_OnChangedOpenPositionQuality()>
+Sub CommunicationFailure_E_OnChangedOpenPositionQuality()
+	
+	SetCommunicationFailure
+		
+End Sub
+
+<xatm_Disconnector.Data.CommunicationFailure:CommunicationFailure_Functions()>
+Sub CommunicationFailure_Functions()
+End Sub
+
+
+Function IsCommunicationHealthy()
+	
+	IsCommunicationHealthy = False
+
+	If xatm_Disconnector.UseDoublePoints Then
+
+		' ======================
+		' Double Point
+		' ======================
+		
+		Dim tags
+		tags = Array(xatm_Disconnector.PositionClosed, _
+					xatm_Disconnector.PositionOpen, _
+					xatm_Disconnector.PositionClosedAlt, _
+					xatm_Disconnector.PositionOpenAlt)
+		
+		Dim i
+		
+		For i = 0 To UBound(tags)
+        	
+			Dim tag
+			Set tag = Nothing
+			
+			On Error Resume Next
+			Set tag = tags(i)
+			On Error GoTo 0
+        	
+			If Not tag Is Nothing Then
+				If tag.Quality >= 192 Then
+				
+					IsCommunicationHealthy = True
+					Exit For
+					
+				End If
+        	End If
+
+    	Next			
+	
+	Else
+	
+		' ======================
+		' Single Point
+		' ======================
+		
+		Dim mainHealthy
+		mainHealthy = (xatm_Disconnector.PositionOpen.Quality >= 192) And (xatm_Disconnector.PositionClosed.Quality >= 192)
+		
+		Dim altHealthy
+		altHealthy  = (xatm_Disconnector.PositionOpenAlt.Quality >= 192) And (xatm_Disconnector.PositionClosedAlt.Quality >= 192)
+		
+		IsCommunicationHealthy = mainHealthy Or altHealthy
+
+	End If
+	
+End Function
+
+
+Sub SetCommunicationFailure()
+	
+	Dim communicationFailure
+	communicationFailure = Not IsCommunicationHealthy()
+	
+	WriteEx communicationFailure 
+	
+End Sub
+
+<xatm_Disconnector.Data.CommunicationFailure:CommunicationFailure_OnChangedSimMode()>
+Sub CommunicationFailure_OnChangedSimMode()
+	
+	If CBool(Parent.Item("SimulationModeEnabled").Value) Then
+	
+		WriteEx False
+	
+	Else 
+	
+		SetCommunicationFailure
+	
+	End If
+		
+End Sub
+
+<xatm_Disconnector.Data.CommunicationFailure:CommunicationFailure_OnStartRunning()>
+Sub CommunicationFailure_OnStartRunning()
+	
+	SetCommunicationFailure
+		
+End Sub
+
+<xatm_Disconnector.Data.MemorizedPosition:MemorizedPosition_OnChangedPosition()>
+Sub MemorizedPosition_OnChangedPosition()
+
+	If Value = 0 Then
+		
+		Value = Parent.Item("Position").Value
+		
+	Else
+		
+		' Init timer
+		DocString = 120
+		
+	End If
+	
+End Sub
+
+<xatm_Disconnector.Data.MemorizedPosition:MemorizedPosition_Timer()>
+Sub MemorizedPosition_Timer()
+	
+	Dim currentPosition
+	currentPosition = Parent.Item("Position").Value
+	
+	If DocString = "0" Then
+		
+		If currentPosition = 1 Or currentPosition = 2 Then
+		
+			Value = currentPosition
+			DocString = "-1"
+			
+		End If
+		
+		Exit Sub
+		
+	End If
+	
+	If Value = currentPosition Then
+		
+		DocString = "-1"
+		Exit Sub
+		
+	End If	
+	
+	DocString = CStr(CInt(DocString) - 1)
+	
+End Sub
+
+<xatm_Disconnector.Data.Position:Position_E_OnChangedClosedPosition()>
+Sub Position_E_OnChangedClosedPosition()
+
+	CalculatePosition
+	
+End Sub
+
+<xatm_Disconnector.Data.Position:Position_E_OnChangedClosedQuality()>
+Sub Position_E_OnChangedClosedQuality()
+	
+	CalculatePosition
+	
+End Sub
+
+<xatm_Disconnector.Data.Position:Position_E_OnChangedOpenPosition()>
+Sub Position_E_OnChangedOpenPosition()
+	
+	CalculatePosition
+	
+End Sub
+
+<xatm_Disconnector.Data.Position:Position_E_OnChangedOpenPositionQuality()>
+Sub Position_E_OnChangedOpenPositionQuality()
+	
+	CalculatePosition
+	
+End Sub
+
+<xatm_Disconnector.Data.Position:Position_Functions()>
+Sub Position_Functions()
+
+End Sub
+
+Sub CalculatePosition()
+
+	Dim resolved
+	resolved = ResolvePosition()
+	
+	If Value <> resolved Then
+
+		WriteEx resolved
+		
+		On Error Resume Next
+		Application.Trace "[" & xatm_Disconnector.Name & "] - Position changed to: " & resolved
+		On Error Goto 0
+		
+	End If
+
+End Sub
+
+Function ResolvePosition()
+
+	ResolvePosition = 0
+
+	If xatm_Disconnector.UseDoublePoints Then
+
+		' ======================
+		' Double Point
+		' ======================
+	
+		tags = Array(xatm_Disconnector.PositionClosed, _
+					xatm_Disconnector.PositionOpen, _
+					xatm_Disconnector.PositionClosedAlt, _
+					xatm_Disconnector.PositionOpenAlt)
+    
+		For i = LBound(tags) To UBound(tags)
+
+			If IsObjectExists(tags(i)) Then
+			
+				If tags(i).Quality >= 192 Then
+					ResolvePosition = CalculateDoublePointState(tags(i).Value)
+					Exit Function
+				End If
+
+			End If
+
+		Next
+		
+		'On Error Resume Next
+		'Application.Trace Me.PathName & ": No valid positions found with sufficient quality."
+		'On Error Goto 0
+
+	Else
+
+		' ======================
+		' Single Point
+		' ======================
+
+		If IsObjectExists(xatm_Disconnector.PositionClosed) And IsObjectExists(xatm_Disconnector.PositionOpen) Then
+			
+			If xatm_Disconnector.PositionClosed.Quality >= 192 And xatm_Disconnector.PositionOpen.Quality >= 192 Then
+				
+				ResolvePosition = CalculateSinglePointState(xatm_Disconnector.PositionOpen.Value, _
+						xatm_Disconnector.PositionClosed.Value)
+				Exit Function
+
+			End If
+
+		End If
+		
+		If IsObjectExists(xatm_Disconnector.PositionClosedAlt) And IsObjectExists(xatm_Disconnector.PositionOpenAlt) Then
+			
+			If xatm_Disconnector.PositionClosedAlt.Quality >= 192 And xatm_Disconnector.PositionOpenAlt.Quality >= 192 Then
+				
+				ResolvePosition = CalculateSinglePointState(xatm_Disconnector.PositionOpenAlt.Value, _
+						xatm_Disconnector.PositionClosedAlt.Value)
+				Exit Function
+
+			End If
+
+		Else
+
+			On Error Resume Next
+			Application.Trace Me.PathName & ": No valid pair of positions found with sufficient quality."
+			On Error Goto 0
+
+		End If
+	End If
+
+End Function
+
+Function IsObjectExists(obj)
+
+	Dim value
+	Dim quality
+	On Error Resume Next
+	value = obj.Value
+	quality = obj.Quality
+	IsObjectExists = (Err = 0)
+	On Error Goto 0
+
+End Function
+
+Function CalculateDoublePointState(currentRawValue)
+	
+	Select Case currentRawValue
+		
+		Case xatm_Disconnector.RawValueOpen
+			CalculateDoublePointState = 1
+		
+		Case xatm_Disconnector.RawValueClosed
+			CalculateDoublePointState = 2
+		
+		Case Else
+			CalculateDoublePointState = 0
+
+	End Select
+
+End Function
+
+Function CalculateSinglePointState(rawValueOpen, rawValueClosed)
+	
+	If rawValueOpen = xatm_Disconnector.RawValueOpen And rawValueClosed <> xatm_Disconnector.RawValueClosed Then
+		
+		CalculateSinglePointState = 1
+	
+	ElseIf rawValueOpen <> xatm_Disconnector.RawValueOpen And rawValueClosed = xatm_Disconnector.RawValueClosed Then
+		
+		CalculateSinglePointState = 2
+	
+	Else
+	
+		CalculateSinglePointState = 0
+	
+	End If
+
+End Function
+
+Sub Foo()	
+End Sub
+
+<xatm_Disconnector.Data.Position:Position_OnChangedSimMode()>
+Sub Position_OnChangedSimMode()
+
+	If CBool(Parent.Item("SimulationModeEnabled").Value) Then
+		
+		WriteEx (xatm_Disconnector.NormalState + 1)
+		
+	Else
+		
+		WriteEx 0
+		
+		CalculatePosition
+	
+	End If
+	
+End Sub
+
+<xatm_Disconnector.Data.Position:Position_OnStartRunning()>
+Sub Position_OnStartRunning()
+
+	CalculatePosition
+	
+End Sub
+
+<xatm_Disconnector.Data.Reset:Reset_OnChangedTimeStamp()>
+Sub Reset_OnChangedTimeStamp()
+
+	If Not CBool(Value) Then
+		Exit Sub
+	End If
+	
+	Parent.Item("MemorizedPosition").Value = Parent.Item("Position").Value
+	Parent.Item("MemorizedPosition").DocString = "-1"
+	
+	Parent.Item("CommandInProgress").WriteEx Empty, 0
+	
+	' ================
+	' RESET TIMERS
+	' ================
+	Dim child
+	For Each child In Parent.Item("Timers")
+		
+		If TypeName(child) = "InternalTag" Then
+			Child.WriteEx -1, 0
+		End If
+		
+	Next
+	
+	' ================
+	' RESET COMMAND FAILURES
+	' ================
+	' The two latches CommandTimer sets on a timeout. Here is the only
+	' place they are cleared - a failure that cleared itself on the next
+	' command would be gone before anybody saw it.
+	xatm_Disconnector.CommandOpenFailed  = False
+	xatm_Disconnector.CommandCloseFailed = False
+	
+End Sub
+
+<xatm_Disconnector.Data.Timers.CommandTimer:CommandTimer_Counter()>
+Sub CommandTimer_Counter()
+
+	' Counts DOWN from CommandTimeout (seeded when CommandInProgress = 2).
+	' Runs every second while Value >= 0.
+
+	Dim command
+	command = Parent.Parent.Item("CommandOpenClose").Value     ' 1 = open, 2 = close
+
+	Dim position
+	position = Parent.Parent.Item("Position").Value            ' 1 = open, 2 = closed
+
+	' --- Completed: position reached the commanded target ---
+	If position = command Then
+		Parent.Parent.Item("CommandInProgress").WriteEx 3
+		Value = -1
+		Exit Sub
+	End If
+
+	' --- Timeout: target not reached in time -> failed ---
+	If Value <= 0 Then
+
+		Parent.Parent.Item("CommandInProgress").WriteEx 1
+		Value = -1
+
+		' Which of the two it was, latched for whoever looks later - the
+		' automation goes to global lockout on CommandInProgress alone,
+		' and by the time anybody reads a screen the timer has stopped
+		' counting and CommandOpenClose says nothing about what failed.
+		'
+		' Set after the stop above and not before it, so a disconnector whose
+		' class has not been given these properties yet still stops its
+		' timer and still tells the automation the command failed.
+		If command = 1 Then
+			xatm_Disconnector.CommandOpenFailed = True
+		ElseIf command = 2 Then
+			xatm_Disconnector.CommandCloseFailed = True
+		End If
+
+		Exit Sub
+
+	End If
+
+	' --- Retry once, at half the timeout ---
+	If Value = Int(xatm_Disconnector.CommandTimeout / 2) Then
+		
+		WriteLog "Command not confirmed, resending (retry)."
+		Parent.Parent.Item("CommandOpenClose").WriteEx command
+		
+	End If
+
+	Value = Value - 1
+
+End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Parent.Name & "] - " & message
+	End If
+
 End Sub
 
 <xatm_RASEAT.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
@@ -3652,11 +4503,11 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
-
+	
 End Sub
 
-<xatm_RASEAT.Commands.Reset:Reset_OnChangedTimeStamp()>
-Sub Reset_OnChangedTimeStamp()
+<xatm_RASEAT.Commands.Reset:Reset_OnChangedValue()>
+Sub Reset_OnChangedValue()
 
 	If CBool(Value) Then Reset()
 
@@ -3710,7 +4561,7 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
-
+	
 End Sub
 
 <xatm_RASEAT.Commands.Reset:Reset_Reset()>
@@ -3719,7 +4570,7 @@ Sub Reset_Reset()
 	If xatm_RASEAT.CommandReset.Value = 0 Then Exit Sub
 
 	WriteEx True
-
+	
 End Sub
 
 <xatm_RASEAT.Commands.Start:Start_OnChangedValue()>
@@ -3935,7 +4786,7 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
-
+	
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Completed()>
@@ -3948,7 +4799,7 @@ Sub Main_Completed()
 
 	xatm_RASEAT.Running = False
 	WriteLog "Reclosing completed."
-
+		
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Functions()>
@@ -4204,7 +5055,7 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
-
+	
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_GlobalLockout()>
@@ -4223,8 +5074,8 @@ Sub Main_GlobalLockout()
 		Case 6 : xatm_RASEAT.StepExecutionFailed6 = True
 	End Select
 
-	WriteLog "General block - the reclosing did not complete."
-
+	WriteLog "General block - the reclosing did not complete."	
+	
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Main()>
@@ -4276,10 +5127,9 @@ Const BREAKER_TIMEOUT   = 5     ' a breaker confirming a position
 Const ISOLATION_TIMEOUT = 25    ' every transformer with CR reporting Isolated
 Const CURRENT_TIMEOUT   = 5     ' load current vouching for a close
 Const LATCH_DELAY       = 2     ' the bistable mechanism settling
+Const RESET_DELAY       = 5     ' the results standing before they are cleared
 
-
-' A scope may not end on a Function, and E3 says nothing when one does.
-Sub MainConstants()
+Sub Foo()	
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Step00()>
@@ -4430,6 +5280,7 @@ End Function
 
 ' A scope may not end on a Function, and E3 says nothing when one does.
 Sub Step00Functions()
+	
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Step01()>
@@ -4483,12 +5334,12 @@ Sub Main_Step01()
 		Main_GlobalLockout()
 
 	End If
-
+		
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Step02()>
 Sub Main_Step02()
-
+	
 	' Every transformer whose CR operated, not one of them.
 	'
 	' Several can trip together, and that is not an ambiguity to resolve:
@@ -4540,7 +5391,7 @@ Sub Main_Step02()
 		Exit Sub
 
 	End If
-
+	
 	' Indicates what the step is waiting for after 3 seconds
 	If Elapsed() = 3 Then
 
@@ -4597,12 +5448,12 @@ Function NotIsolated()
 End Function
 
 ' A scope may not end on a Function, and E3 says nothing when one does.
-Sub Step02Functions()
+Sub Step02Functions()	
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Step03()>
 Sub Main_Step03()
-
+	
 	' A dwell, and the only step that succeeds by running out of time.
 	'
 	' The breaker's mechanism has to settle before it is asked to close
@@ -4614,12 +5465,12 @@ Sub Main_Step03()
 		Advance 4
 
 	End If
-
+		
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Step04()>
 Sub Main_Step04()
-
+	
 	' Close the incomer that was carrying the station.
 	'
 	' Expiring here is not a failure. It means the position contacts have
@@ -4645,7 +5496,7 @@ Sub Main_Step04()
 	End If
 
 	If TimedOut(BREAKER_TIMEOUT) Then
-
+		
 		' The breaker is told to drop the command before this step lets go
 		' of it.
 		'
@@ -4663,7 +5514,7 @@ Sub Main_Step04()
 	End If
 
 	IssueClose breaker
-
+		
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Step05()>
@@ -4706,7 +5557,7 @@ Sub Main_Step05()
 		Advance 6
 
 	End If
-
+	
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Step06()>
@@ -4755,12 +5606,6 @@ Sub Main_Step06()
 
 	If TimedOut(BREAKER_TIMEOUT) Then
 
-		' Dropped here for step 4's reason, and one more of its own: the
-		' automation is about to call this maneuver unsuccessful, and a
-		' breaker that closes itself fifteen seconds later would leave
-		' the control room holding a failure alarm and a closed breaker.
-		breaker.Item("Data").Item("Reset").WriteEx True
-
 		WriteLog "Step 6: " & breaker.Name & " did not close - general block"
 		Main_GlobalLockout()
 		Exit Sub
@@ -4805,7 +5650,7 @@ Sub Succeed()
 
 	xatm_RASEAT.Successful = True
 	Advance 99
-
+	
 End Sub
 
 <xatm_Transformer.Data.Timers.UndervoltageRelay:UndervoltageRelay_Counter()>
@@ -5006,13 +5851,13 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
-
+	
 End Sub
 
 <xatm_Transformer.Data.Triggers.RASEAT:RASEAT_OnCRTrip()>
 Sub RASEAT_OnCRTrip()
-
+	
 	RequestRASEAT()
-
+	
 End Sub
 
