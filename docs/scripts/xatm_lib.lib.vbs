@@ -3614,6 +3614,854 @@ Sub xatm_ConsoleLogEngine_OnWriteLineChanged()
 	
 End Sub
 
+<xatm_RASEAT.FSM.Main:Main_Completed()>
+Sub Main_Completed()
+
+	Parent.Item("PrimaryBreakerId").WriteEx    Empty, 0
+	Parent.Item("TriggerTransformers").WriteEx Empty, 0
+	Parent.Item("StepTimer").WriteEx           Empty, 0
+	WriteEx Empty, 0
+
+	xatm_RASEAT.Running = False
+	WriteLog "Reclosing completed."
+
+End Sub
+
+<xatm_RASEAT.FSM.Main:Main_Functions()>
+Sub Main_Functions()
+End Sub
+
+
+Function GetDeviceById(id, ByRef exists)
+
+	exists = False
+	Set GetDeviceById = FindInFolder(Application.GetObject("XATM_Data.Substation"), id, exists)
+
+End Function
+
+Function FindInFolder(folder, id, ByRef exists)
+
+	Set FindInFolder = Nothing
+
+	Dim obj
+	For Each obj In folder
+
+		Select Case UCase(TypeName(obj))
+
+			Case "XATM_BREAKER", "XATM_TRANSFORMER", "XATM_DISCONNECTOR"
+				If obj.Id = id Then
+					Set FindInFolder = obj
+					exists = True
+					Exit Function
+				End If
+
+			Case Else
+				Dim found
+				On Error Resume Next
+				Set found = FindInFolder(obj, id, exists)
+				On Error GoTo 0
+
+				If exists Then
+					Set FindInFolder = found
+					Exit Function
+				End If
+
+		End Select
+
+	Next
+
+End Function
+
+
+' The incomer axis on its own, which is the one this automation answers to.
+' The transfer concatenates Transformer and Busbar because its step tables
+' turn on both; no step here operates a busbar tie.
+Function GetIncomerLayout()
+
+	GetIncomerLayout = ""
+
+	On Error Resume Next
+	GetIncomerLayout = Application.GetObject("XATM_Data.Automation.Layout.Incomer").Value
+	On Error Goto 0
+
+End Function
+
+
+' The incomer breakers, in the order the layout declares them.
+'
+' Ids and not names: the tenth and twentieth of the reserved 10-99 band are
+' the two entry bays, and the layout document is what says so.
+Function IncomerIds()
+
+	Select Case UCase(GetIncomerLayout() & "")
+		Case "2BR2BB" : IncomerIds = Array(10, 20)
+		Case Else     : IncomerIds = Array()
+	End Select
+
+End Function
+
+
+' Every transformer the substation has, as a comma separated list of Ids.
+' Walked rather than assumed, so a layout with two transformers answers
+' with two.
+Function TransformerIds()
+
+	Dim acc
+	acc = ""
+
+	On Error Resume Next
+	CollectTransformers Application.GetObject("XATM_Data.Substation"), acc
+	On Error Goto 0
+
+	TransformerIds = acc
+
+End Function
+
+Sub CollectTransformers(folder, ByRef acc)
+
+	Dim obj
+	For Each obj In folder
+
+		Select Case UCase(TypeName(obj))
+
+			Case "XATM_TRANSFORMER"
+
+				Dim id
+				id = Empty
+
+				On Error Resume Next
+				id = obj.Id
+				On Error Goto 0
+
+				If IsNumeric(id) Then
+					If acc <> "" Then acc = acc & ","
+					acc = acc & CInt(id)
+				End If
+
+			Case "XATM_BREAKER", "XATM_DISCONNECTOR"
+
+				' a device, and not one this is looking for
+
+			Case Else
+
+				On Error Resume Next
+				CollectTransformers obj, acc
+				On Error Goto 0
+
+		End Select
+
+	Next
+
+End Sub
+
+
+' Which incomer was carrying the station when the relay operated, and the
+' other one. Both are snapshotted at Step 0 and held for the run.
+Function ReadPrimaryId()
+
+	ReadPrimaryId = 0
+
+	Dim id
+	id = Empty
+
+	On Error Resume Next
+	id = Parent.Item("PrimaryBreakerId").Value
+	On Error Goto 0
+
+	If IsNumeric(id) Then ReadPrimaryId = CInt(id)
+
+End Function
+
+Function ReadBackupId()
+
+	ReadBackupId = 0
+
+	Dim ids, i, primary
+	ids = IncomerIds()
+	primary = ReadPrimaryId()
+
+	For i = 0 To UBound(ids)
+		If ids(i) <> primary Then
+			ReadBackupId = ids(i)
+			Exit Function
+		End If
+	Next
+
+End Function
+
+
+' The transformers whose CR operated, as the run is treating them.
+'
+' Snapshotted rather than re-read, because a CR resets on its own and the
+' sequence would otherwise stop waiting for a transformer half way through
+' isolating - the same reason the reference logic memorises it.
+Function ReadTriggerTransformers()
+
+	Dim s
+	s = ""
+
+	On Error Resume Next
+	s = Parent.Item("TriggerTransformers").Value
+	On Error Goto 0
+
+	If IsEmpty(s) Or IsNull(s) Then s = ""
+
+	If s = "" Then
+		ReadTriggerTransformers = Array()
+	Else
+		ReadTriggerTransformers = Split(s, ",")
+	End If
+
+End Function
+
+
+Sub ResetTimer()
+
+	Parent.Item("StepTimer").Value = 0
+
+End Sub
+
+Sub IncrementTimer()
+
+	Parent.Item("StepTimer").Value = Parent.Item("StepTimer").Value + 1
+
+End Sub
+
+Function Elapsed()
+
+	Elapsed = Parent.Item("StepTimer").Value
+
+End Function
+
+
+' True when the step is done with, so the caller can advance. Written as a
+' question rather than a command because three of the steps answer it by
+' expiring and three by being answered.
+Function TimedOut(seconds)
+
+	TimedOut = (Elapsed() >= seconds)
+
+End Function
+
+
+Function OperationName(operation)
+
+	If operation = 2 Then
+		OperationName = "closed"
+	ElseIf operation = 1 Then
+		OperationName = "opened"
+	Else
+		OperationName = "operated"
+	End If
+
+End Function
+
+
+' Moves to the next step and starts its clock. Every step ends this way, so
+' no step can advance and leave the previous step's elapsed time behind it.
+Sub Advance(nextStep)
+
+	ResetTimer()
+	Value = nextStep
+
+End Sub
+
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_RASEAT.FSM.Main:Main_GlobalLockout()>
+Sub Main_GlobalLockout()
+
+	xatm_RASEAT.Running        = False
+	xatm_RASEAT.GeneralBlock   = True
+	xatm_RASEAT.Unsuccessful   = True
+
+	Select Case Value
+		Case 1 : xatm_RASEAT.StepExecutionFailed1 = True
+		Case 2 : xatm_RASEAT.StepExecutionFailed2 = True
+		Case 3 : xatm_RASEAT.StepExecutionFailed3 = True
+		Case 4 : xatm_RASEAT.StepExecutionFailed4 = True
+		Case 5 : xatm_RASEAT.StepExecutionFailed5 = True
+		Case 6 : xatm_RASEAT.StepExecutionFailed6 = True
+	End Select
+
+	WriteLog "General block - the reclosing did not complete."
+
+End Sub
+
+<xatm_RASEAT.FSM.Main:Main_Main()>
+Sub Main_Main()
+
+	If Not xatm_RASEAT.Enabled Then
+
+		WriteLog "Automation not enabled."
+		xatm_RASEAT.Running = False
+		Exit Sub
+
+	End If
+
+	If Not xatm_RASEAT.Running Then Exit Sub
+
+	' Dispatch and nothing else.
+	'
+	' The transfer checks one timeout here before calling any step, because
+	' every one of its steps fails when its timer runs out. Half of these do
+	' not: step 3 is a dwell that succeeds by expiring, and steps 4 and 5
+	' fall through to the next way of confirming the same close. Only 1, 2
+	' and 6 end the maneuver, so what expiry means is the step's to say.
+	Select Case Value
+
+		Case 0  : Main_Step00()
+		Case 1  : Main_Step01()
+		Case 2  : Main_Step02()
+		Case 3  : Main_Step03()
+		Case 4  : Main_Step04()
+		Case 5  : Main_Step05()
+		Case 6  : Main_Step06()
+		Case 99 : Main_Completed()
+
+	End Select
+
+	IncrementTimer()
+
+End Sub
+
+
+' The step timings, in seconds.
+'
+' Declared here rather than configured: they are numbers this sequence is
+' written around, not dials a panel offers. ISOLATION_TIMEOUT is the one to
+' watch - it has to cover the slowest transformer carrying CR finishing its
+' isolation, two motorised disconnectors travelling included, and 25 is the
+' figure the reference logic used for a different station.
+Const BREAKER_TIMEOUT   = 5     ' a breaker confirming a position
+Const ISOLATION_TIMEOUT = 25    ' every transformer with CR reporting Isolated
+Const CURRENT_TIMEOUT   = 5     ' load current vouching for a close
+Const LATCH_DELAY       = 2     ' the bistable mechanism settling
+Const RESET_DELAY       = 5     ' the results standing before they are cleared
+
+
+' A scope may not end on a Function, and E3 says nothing when one does.
+Sub MainConstants()
+End Sub
+
+<xatm_RASEAT.FSM.Main:Main_Step00()>
+Sub Main_Step00()
+
+	' Everything the run is decided by, read once.
+	'
+	' Both of these change under a running sequence if they are re-read: a
+	' CR resets on its own, and MemorizedPosition adopts the new position
+	' once its own countdown expires. Snapshotting is what keeps step 6
+	' operating the breaker step 4 was talking about.
+	StoreTriggerTransformers()
+	StorePrimaryBreaker()
+
+	If ReadPrimaryId() = 0 Then
+
+		WriteLog "Step 0: neither incomer was carrying the station - nothing to reclose."
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	WriteLog "Starting " & DescribeReclosing()
+
+	Advance 1
+
+End Sub
+
+
+' Which transformers had their CR operate, written down as a list.
+'
+' Taken from the live signal at trigger time. A transformer whose relay has
+' already reset by the time step 2 runs is still waited on, because this is
+' what step 2 reads - which is the whole of what the reference logic's
+' 28 second memory was for.
+Sub StoreTriggerTransformers()
+
+	Dim ids, i, id, transformer, exists, acc
+	ids = Split(TransformerIds(), ",")
+	acc = ""
+
+	For i = 0 To UBound(ids)
+
+		If ids(i) <> "" Then
+
+			id = CInt(ids(i))
+			Set transformer = GetDeviceById(id, exists)
+
+			If exists Then
+
+				Dim operated
+				operated = False
+
+				On Error Resume Next
+				operated = CBool(transformer.CR)
+				On Error Goto 0
+
+				If operated Then
+					If acc <> "" Then acc = acc & ","
+					acc = acc & id
+				End If
+
+			End If
+
+		End If
+
+	Next
+
+	Parent.Item("TriggerTransformers").WriteEx acc
+
+End Sub
+
+
+' Which incomer was carrying the station.
+'
+' MemorizedPosition and not Position: by the time this runs the breaker may
+' already have tripped, and the memorised value is the one that still says
+' what the topology was. It holds the pre-change position until its own
+' countdown expires, which is longer than this sequence takes - but only
+' if nobody re-reads it later, which is why this is written down.
+Sub StorePrimaryBreaker()
+
+	Dim ids, i, breaker, exists, primary
+	ids = IncomerIds()
+	primary = 0
+
+	For i = 0 To UBound(ids)
+
+		Set breaker = GetDeviceById(ids(i), exists)
+
+		If exists Then
+
+			Dim memorized
+			memorized = 0
+
+			On Error Resume Next
+			memorized = breaker.Item("Data").Item("MemorizedPosition").Value
+			On Error Goto 0
+
+			' 2 is closed. The first one found carrying is taken, which is
+			' the only answer when the station is running normally - and a
+			' defined one for the abnormal case where both were closed.
+			If memorized = 2 And primary = 0 Then primary = ids(i)
+
+		End If
+
+	Next
+
+	Parent.Item("PrimaryBreakerId").WriteEx primary
+
+End Sub
+
+
+' What the log says a run is, in the words the control room uses.
+Function DescribeReclosing()
+
+	Dim trs, i, list
+	trs = ReadTriggerTransformers()
+	list = ""
+
+	For i = 0 To UBound(trs)
+		If list <> "" Then list = list & ", "
+		list = list & DeviceName(CInt(trs(i)))
+	Next
+
+	If list = "" Then list = "no transformer"
+
+	DescribeReclosing = "reclosing on " & DeviceName(ReadPrimaryId()) & _
+	                    ", with CR on " & list
+
+End Function
+
+
+' A device's name for the log, falling back to its Id when the project has
+' no such device.
+Function DeviceName(id)
+
+	Dim device, exists
+	Set device = GetDeviceById(id, exists)
+
+	If exists Then
+		DeviceName = device.Name
+	Else
+		DeviceName = "ID " & id
+	End If
+
+End Function
+
+' A scope may not end on a Function, and E3 says nothing when one does.
+Sub Step00Functions()
+End Sub
+
+<xatm_RASEAT.FSM.Main:Main_Step01()>
+Sub Main_Step01()
+
+	' The whole entry has to be dead before anything is reclosed.
+	'
+	' Both incomers, not just the one that was carrying: the relay trips
+	' them together, and a station with one still closed is not a station
+	' waiting to be restored - it is one nobody understands yet.
+	Dim ids, i, breaker, exists, allOpen
+	ids = IncomerIds()
+
+	If UBound(ids) < 0 Then
+
+		WriteLog "Step 1: the incomer layout declares no entry bays - nothing to reclose."
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	allOpen = True
+
+	For i = 0 To UBound(ids)
+
+		Set breaker = GetDeviceById(ids(i), exists)
+
+		If Not exists Then
+
+			WriteLog "Step 1: incomer with ID=" & ids(i) & " was not found. Please check the configuration - general block"
+			Main_GlobalLockout()
+			Exit Sub
+
+		End If
+
+		If breaker.Item("Data").Item("Position").Value <> 1 Then allOpen = False
+
+	Next
+
+	If allOpen Then
+
+		WriteLog "Step 1: both incomers open - proceeding to the next step."
+		Advance 2
+		Exit Sub
+
+	End If
+
+	If TimedOut(BREAKER_TIMEOUT) Then
+
+		WriteLog "Step 1: an incomer did not open inside " & BREAKER_TIMEOUT & "s - general block"
+		Main_GlobalLockout()
+
+	End If
+
+End Sub
+
+<xatm_RASEAT.FSM.Main:Main_Step02()>
+Sub Main_Step02()
+
+	' Every transformer whose CR operated, not one of them.
+	'
+	' Several can trip together, and that is not an ambiguity to resolve:
+	' the entry may not be re-energised while any of them is still tied to
+	' it, so the step waits for the slowest.
+	Dim trs, i, id, transformer, exists, allIsolated
+	trs = ReadTriggerTransformers()
+
+	' No CR anywhere means the trigger was withdrawn before this ran. There
+	' is nothing to isolate, and nothing to wait for.
+	If UBound(trs) < 0 Then
+
+		WriteLog "Step 2: no transformer is carrying CR - proceeding to the next step."
+		Advance 3
+		Exit Sub
+
+	End If
+
+	allIsolated = True
+
+	For i = 0 To UBound(trs)
+
+		id = CInt(trs(i))
+		Set transformer = GetDeviceById(id, exists)
+
+		If Not exists Then
+
+			WriteLog "Step 2: transformer with ID=" & id & " was not found. Please check the configuration - general block"
+			Main_GlobalLockout()
+			Exit Sub
+
+		End If
+
+		Dim isolated
+		isolated = False
+
+		On Error Resume Next
+		isolated = CBool(transformer.Isolated)
+		On Error Goto 0
+
+		If Not isolated Then allIsolated = False
+
+	Next
+
+	If allIsolated Then
+
+		WriteLog "Step 2: every transformer carrying CR is isolated - proceeding to the next step."
+		Advance 3
+		Exit Sub
+
+	End If
+
+	If TimedOut(ISOLATION_TIMEOUT) Then
+
+		WriteLog "Step 2: " & NotIsolated() & " did not isolate inside " & ISOLATION_TIMEOUT & "s - general block"
+		Main_GlobalLockout()
+
+	End If
+
+End Sub
+
+
+' The transformers still holding step 2 up, named for the log. Worth the
+' walk: the step waits on all of them, and being told which one refused is
+' the difference between a fault to chase and a message to shrug at.
+Function NotIsolated()
+
+	Dim trs, i, id, transformer, exists, list
+	trs = ReadTriggerTransformers()
+	list = ""
+
+	For i = 0 To UBound(trs)
+
+		id = CInt(trs(i))
+		Set transformer = GetDeviceById(id, exists)
+
+		If exists Then
+
+			Dim isolated
+			isolated = False
+
+			On Error Resume Next
+			isolated = CBool(transformer.Isolated)
+			On Error Goto 0
+
+			If Not isolated Then
+				If list <> "" Then list = list & ", "
+				list = list & transformer.Name
+			End If
+
+		End If
+
+	Next
+
+	If list = "" Then list = "a transformer"
+
+	NotIsolated = list
+
+End Function
+
+' A scope may not end on a Function, and E3 says nothing when one does.
+Sub Step02Functions()
+End Sub
+
+<xatm_RASEAT.FSM.Main:Main_Step03()>
+Sub Main_Step03()
+
+	' A dwell, and the only step that succeeds by running out of time.
+	'
+	' The breaker's mechanism has to settle before it is asked to close
+	' again; closing into an unlatched bistable is how a close is lost
+	' without anything reporting a failure.
+	If TimedOut(LATCH_DELAY) Then
+
+		WriteLog "Step 3: waited " & LATCH_DELAY & "s for the mechanism - proceeding to the next step."
+		Advance 4
+
+	End If
+
+End Sub
+
+<xatm_RASEAT.FSM.Main:Main_Step04()>
+Sub Main_Step04()
+
+	' Close the incomer that was carrying the station.
+	'
+	' Expiring here is not a failure. It means the position contacts have
+	' not vouched for the close, and step 5 asks the current instead - the
+	' breaker may well be closed and only saying so slowly.
+	Dim breaker, exists
+	Set breaker = GetDeviceById(ReadPrimaryId(), exists)
+
+	If Not exists Then
+
+		WriteLog "Step 4: incomer with ID=" & ReadPrimaryId() & " was not found. Please check the configuration - general block"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = 2 Then
+
+		WriteLog "Step 4: " & breaker.Name & " closed - the reclosing succeeded."
+		Succeed()
+		Exit Sub
+
+	End If
+
+	If TimedOut(BREAKER_TIMEOUT) Then
+
+		WriteLog "Step 4: " & breaker.Name & " has not confirmed closed - asking the current."
+		Advance 5
+		Exit Sub
+
+	End If
+
+	IssueClose breaker
+
+End Sub
+
+<xatm_RASEAT.FSM.Main:Main_Step05()>
+Sub Main_Step05()
+
+	' The same close, vouched for by the current instead of the contacts.
+	'
+	' A breaker carrying load is closed whatever its auxiliary contacts
+	' say, and saying so here is what keeps a sticking contact from
+	' sending the station to its second incomer for no reason.
+	Dim breaker, exists
+	Set breaker = GetDeviceById(ReadPrimaryId(), exists)
+
+	If Not exists Then
+
+		WriteLog "Step 5: incomer with ID=" & ReadPrimaryId() & " was not found. Please check the configuration - general block"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	Dim carrying
+	carrying = False
+
+	On Error Resume Next
+	carrying = CBool(breaker.HasLoadCurrent)
+	On Error Goto 0
+
+	If carrying Then
+
+		WriteLog "Step 5: " & breaker.Name & " is carrying load - the reclosing succeeded."
+		Succeed()
+		Exit Sub
+
+	End If
+
+	If TimedOut(CURRENT_TIMEOUT) Then
+
+		WriteLog "Step 5: " & breaker.Name & " is not carrying load - trying the other incomer."
+		Advance 6
+
+	End If
+
+End Sub
+
+<xatm_RASEAT.FSM.Main:Main_Step06()>
+Sub Main_Step06()
+
+	' The other incomer, and the last thing tried.
+	'
+	' Expiring here does end the maneuver: there is no third entry to fall
+	' back to.
+	Dim breaker, exists
+	Set breaker = GetDeviceById(ReadBackupId(), exists)
+
+	If Not exists Then
+
+		WriteLog "Step 6: there is no second incomer to fall back to - general block"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = 2 Then
+
+		WriteLog "Step 6: " & breaker.Name & " closed - the reclosing succeeded."
+		Succeed()
+		Exit Sub
+
+	End If
+
+	' Asked before the command and not once at the start: the backup sat
+	' unused through five steps, and whether it may be closed is a question
+	' about now rather than about then.
+	Dim defective
+	defective = False
+
+	On Error Resume Next
+	defective = CBool(breaker.Defective)
+	On Error Goto 0
+
+	If defective Then
+
+		WriteLog "Step 6: " & breaker.Name & " is defective and must not be operated - general block"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If TimedOut(BREAKER_TIMEOUT) Then
+
+		WriteLog "Step 6: " & breaker.Name & " did not close - general block"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	IssueClose breaker
+
+End Sub
+
+
+' Sends the close, once, and reads what the breaker says about the one it
+' is already carrying out. The same three answers the transfer reads, and
+' for the same reasons.
+Sub IssueClose(breaker)
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx 2
+
+		Case 1
+
+			' The breaker reported the command failed. Nothing is retried
+			' here: the step's own clock decides what happens next, and on
+			' step 4 that is to ask the current rather than to give up.
+
+		Case 2
+
+			' In progress
+
+	End Select
+
+End Sub
+
+
+' What every successful ending does. Held rather than cleared, so the
+' control room sees the result before Main_Completed takes it away.
+Sub Succeed()
+
+	xatm_RASEAT.Successful = True
+	Advance 99
+
+End Sub
+
 <xatm_Transformer.Data.Timers.UndervoltageRelay:UndervoltageRelay_Counter()>
 Sub UndervoltageRelay_Counter()
 	
