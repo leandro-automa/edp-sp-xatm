@@ -9794,17 +9794,17 @@ Sub AddArrayContentToList()
     
 End Sub
 
-<xatm_config_screens.Menu.btnVersion:btnVersion_Click()>
-Sub btnVersion_Click()
+<xatm_config_screens.Menu.lblVersion:lblVersion_Click()>
+Sub lblVersion_Click()
 
 	' What is installed, and then the notes if they are wanted.
 	'
 	' The version is read off the object rather than written down here: it
 	' comes from a constant inside xatm_lib.lib and is published as a
 	' property, so a screen keeping its own copy would be one more thing to
-	' remember on a release. The demo flag is not read at all - the blinking
-	' label on this same screen is what says that, and says it without being
-	' asked.
+	' remember on a release. The demo flag is not put in the dialogue at all
+	' - the blinking label on this same screen is what says that, and says
+	' it without being asked.
 	Dim versionObject
 	Set versionObject = Nothing
 
@@ -9821,13 +9821,7 @@ Sub btnVersion_Click()
 
 	If MsgBox(AskText(VersionOf(versionObject)), vbInformation + vbYesNo, DialogTitle()) <> vbYes Then Exit Sub
 
-	' The notes are written out and opened by the object itself, because the
-	' text of them lives in the library and one E3 object cannot call a
-	' procedure in another's scope. Writing the tag is the whole of the ask;
-	' the object clears it again once it has acted.
-	On Error Resume Next
-	versionObject.Item("Data").Item("Version").WriteEx True
-	On Error Goto 0
+	ShowReport versionObject
 
 End Sub
 
@@ -9842,6 +9836,204 @@ Const VERSION_OBJECT = "xatm_config_data.Version"
 ' object cannot read another's constants - the same copy the Config screen
 ' and the demo label each keep.
 Const HELP_LANG = "pt-BR"
+
+
+' What is installed, written out and put in front of whoever asked for it.
+'
+' Done here in the screen rather than in the library object, which is where
+' it started. An E3 data server runs as a service: its %TEMP% is
+' C:\Windows\Temp and not the operator's own, and a process in session 0
+' has no desktop to put a Notepad window on - it starts and nobody ever
+' sees it. The viewer runs as the person at the keyboard, so both problems
+' go away by moving the work rather than by working around them.
+'
+' A dictionary rather than a built-up string: the report is a list of
+' facts, and keeping it as one until the moment it is rendered means the
+' order is the order it was filled in, and adding a line is one line.
+Sub ShowReport(obj)
+
+	Dim info
+	Set info = CreateObject("Scripting.Dictionary")
+
+	info.Add "Library",       "xatm_lib"
+	info.Add "Version",       VersionOf(obj)
+	info.Add "Edition",       EditionText()
+	info.Add "Generated",     Now
+	info.Add "Release notes", NotesOf(obj)
+
+	Dim failed
+	failed = ""
+
+	Dim path
+	path = WriteReport(info, failed)
+
+	If path = "" Then
+		MsgBox WriteFailedText(failed), vbExclamation, DialogTitle()
+		Exit Sub
+	End If
+
+	failed = OpenFile(path)
+
+	If failed <> "" Then
+		MsgBox OpenFailedText(path, failed), vbExclamation, DialogTitle()
+	End If
+
+End Sub
+
+
+' Renders the dictionary into %TEMP% and returns where it went - "" when it
+' went nowhere, with why in the second argument.
+Function WriteReport(info, ByRef failed)
+
+	WriteReport = ""
+	failed      = ""
+
+	Dim fso
+	Set fso = Nothing
+
+	On Error Resume Next
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	On Error Goto 0
+
+	If fso Is Nothing Then
+		failed = "Scripting.FileSystemObject"
+		Exit Function
+	End If
+
+	Dim folder
+	folder = ReportFolder(fso)
+
+	If Trim(folder & "") = "" Then
+		failed = "%TEMP%"
+		Exit Function
+	End If
+
+	Dim path
+	path = fso.BuildPath(folder, REPORT_FILE_NAME)
+
+	On Error Resume Next
+	Err.Clear
+
+	Dim stream
+	Set stream = fso.CreateTextFile(path, True)
+	stream.Write Rendered(info)
+	stream.Close
+
+	If Err.Number <> 0 Then failed = Err.Description
+	On Error Goto 0
+
+	If failed <> "" Then Exit Function
+
+	WriteReport = path
+
+End Function
+
+
+' The operator's own temporary folder, and the scripting object's idea of
+' one only if %TEMP% will not answer.
+'
+' Read from this process on purpose. In the viewer that is the account of
+' the person who logged in, which is the whole reason the report is written
+' here: the data server's answer to the same question is C:\Windows\Temp,
+' a folder they cannot so much as cd into.
+Function ReportFolder(fso)
+
+	ReportFolder = ""
+
+	Dim shell
+	Set shell = NewShell()
+
+	Dim expanded
+	expanded = ""
+
+	If Not shell Is Nothing Then
+
+		On Error Resume Next
+		expanded = shell.ExpandEnvironmentStrings("%TEMP%")
+		On Error Goto 0
+
+	End If
+
+	' An unset variable comes back as the name it was written as, so an
+	' answer still carrying a per cent sign is not a folder.
+	If InStr(expanded & "", "%") = 0 And Trim(expanded & "") <> "" Then
+
+		If fso.FolderExists(expanded) Then
+			ReportFolder = expanded
+			Exit Function
+		End If
+
+	End If
+
+	On Error Resume Next
+	ReportFolder = fso.GetSpecialFolder(TEMPORARY_FOLDER).Path
+	On Error Goto 0
+
+End Function
+
+
+' The dictionary as text: one fact per line, the keys padded so the values
+' line up and the thing can be read down rather than across.
+Function Rendered(info)
+
+	Dim width, k
+	width = 0
+
+	For Each k In info.Keys
+		If Len(k) > width Then width = Len(k)
+	Next
+
+	Dim out
+	out = "xatm_lib" & vbCrLf & String(40, "-") & vbCrLf & vbCrLf
+
+	For Each k In info.Keys
+		out = out & k & String(width - Len(k) + 2, " ") & info(k) & vbCrLf
+	Next
+
+	Rendered = out
+
+End Function
+
+
+' A WScript.Shell, or Nothing. Two things want one - the folder to write in
+' and the editor to open it - and neither is worth failing the whole report
+' over on its own.
+Function NewShell()
+
+	Set NewShell = Nothing
+
+	On Error Resume Next
+	Set NewShell = CreateObject("WScript.Shell")
+	On Error Goto 0
+
+End Function
+
+
+' Puts the report on the screen. Returns "" when it opened, and why not
+' when it did not.
+'
+' Notepad by name rather than handing the path to whatever the machine
+' opens a .txt with: it is on every Windows there is and takes a path and
+' nothing else.
+Function OpenFile(path)
+
+	OpenFile = ""
+
+	Dim shell
+	Set shell = NewShell()
+
+	If shell Is Nothing Then
+		OpenFile = "WScript.Shell"
+		Exit Function
+	End If
+
+	On Error Resume Next
+	Err.Clear
+	shell.Run "notepad.exe """ & path & """", 1, False
+	If Err.Number <> 0 Then OpenFile = Err.Description
+	On Error Goto 0
+
+End Function
 
 
 ' The version as the object publishes it, falling back to the three numbers
@@ -9875,6 +10067,84 @@ Function VersionOf(obj)
 	VersionOf = major & "." & minor & "." & patch
 
 End Function
+
+
+Function NotesOf(obj)
+
+	NotesOf = ""
+
+	On Error Resume Next
+	NotesOf = Trim(obj.ReleaseNotes & "")
+	On Error Goto 0
+
+	If NotesOf = "" Then NotesOf = "(none published)"
+
+End Function
+
+
+' Which build is driving this station, for the report to carry - and said
+' as unknown rather than guessed at when nothing answers.
+'
+' Asked of the equipment: every breaker and disconnector carries an
+' xatm_Build, all of them come from the same library file, so the first one
+' found answers for the rest. The walk is written out again here because
+' one E3 object cannot call a procedure in another's scope - the demo label
+' on this same screen keeps its own copy for the same reason.
+Function EditionText()
+
+	EditionText = "unknown - no device has reported its build"
+
+	Dim substation
+	Set substation = Nothing
+
+	On Error Resume Next
+	Set substation = Application.GetObject(SUBSTATION)
+	On Error Goto 0
+
+	If substation Is Nothing Then Exit Function
+
+	Dim found
+	found = ""
+
+	FindEdition substation, found
+
+	If found <> "" Then EditionText = found
+
+End Function
+
+Sub FindEdition(folder, ByRef found)
+
+	If found <> "" Then Exit Sub
+
+	Dim obj
+	For Each obj In folder
+
+		If found <> "" Then Exit Sub
+
+		Dim build
+		Set build = Nothing
+
+		On Error Resume Next
+		Set build = obj.Item("Build")
+		On Error Goto 0
+
+		If Not build Is Nothing Then
+
+			On Error Resume Next
+			found = Trim(build.Edition & "")
+			On Error Goto 0
+
+			If found <> "" Then Exit Sub
+
+		End If
+
+		On Error Resume Next
+		FindEdition obj, found
+		On Error Goto 0
+
+	Next
+
+End Sub
 
 
 Function DialogTitle()
@@ -9928,6 +10198,51 @@ Function MissingText()
 	End If
 
 End Function
+
+
+Function WriteFailedText(reason)
+
+	If HELP_LANG = "pt-BR" Then
+
+		WriteFailedText = "Não foi possível gravar o arquivo com as notas desta versão." & vbCrLf & vbCrLf & _
+		                  reason
+
+	Else
+
+		WriteFailedText = "The file with the release notes could not be written." & vbCrLf & vbCrLf & _
+		                  reason
+
+	End If
+
+End Function
+
+
+' The path is given even so. The file is written and only the opening
+' failed, so telling somebody where it is leaves them able to go and read
+' it themselves.
+Function OpenFailedText(path, reason)
+
+	If HELP_LANG = "pt-BR" Then
+
+		OpenFailedText = "As notas foram gravadas, mas o Bloco de Notas não abriu." & vbCrLf & vbCrLf & _
+		                 path & vbCrLf & vbCrLf & reason
+
+	Else
+
+		OpenFailedText = "The notes were written, but Notepad would not open." & vbCrLf & vbCrLf & _
+		                 path & vbCrLf & vbCrLf & reason
+
+	End If
+
+End Function
+
+
+' Where the equipment lives, Scripting's own number for the temporary
+' folder that ReportFolder falls back on, and what the report is called
+' once it is written.
+Const SUBSTATION        = "XATM_Data.Substation"
+Const TEMPORARY_FOLDER  = 2
+Const REPORT_FILE_NAME  = "xatm_lib.txt"
 
 
 ' A scope may not end on a Function - E3 takes the script without complaint
