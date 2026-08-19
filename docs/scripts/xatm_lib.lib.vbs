@@ -3614,6 +3614,324 @@ Sub xatm_ConsoleLogEngine_OnWriteLineChanged()
 	
 End Sub
 
+<xatm_RASEAT.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
+Sub OperatorBlock_CommandOperatorBlock()
+
+	Dim v
+	v = False
+
+	On Error Resume Next
+	v = CBool(xatm_RASEAT.CommandOperatorBlock.Value)
+	On Error Goto 0
+
+	xatm_RASEAT.OperatorBlock = v
+
+End Sub
+
+<xatm_RASEAT.Commands.OperatorBlock:OperatorBlock_OnChangedValue()>
+Sub OperatorBlock_OnChangedValue()
+
+	If xatm_RASEAT.OperatorBlock Then
+		WriteLog "Blocked by operator."
+	Else
+		WriteLog "Released by operator."
+	End If
+
+End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_RASEAT.Commands.Reset:Reset_OnChangedTimeStamp()>
+Sub Reset_OnChangedTimeStamp()
+
+	If CBool(Value) Then Reset()
+
+End Sub
+
+Sub Reset()
+
+	xatm_RASEAT.Running      = False
+	xatm_RASEAT.GeneralBlock = False
+	xatm_RASEAT.Successful   = False
+	xatm_RASEAT.Unsuccessful = False
+
+	Dim i
+	For i = 1 To 6
+
+		Dim propName
+		propName = "StepExecutionFailed" & i
+
+		On Error Resume Next
+		Execute("xatm_RASEAT." & propName & " = False")
+		On Error Goto 0
+
+	Next
+
+	' The state the run was carrying, cleared with it. A step number left
+	' behind would be read by the next start as a maneuver already under
+	' way.
+	Dim tag
+	For Each tag In xatm_RASEAT.Item("FSM")
+
+		If TypeName(tag) = "InternalTag" Then
+			tag.WriteEx Empty, tag.TimeStamp
+		End If
+
+	Next
+
+	WriteLog "Reset"
+
+End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_RASEAT.Commands.Reset:Reset_Reset()>
+Sub Reset_Reset()
+
+	If xatm_RASEAT.CommandReset.Value = 0 Then Exit Sub
+
+	WriteEx True
+
+End Sub
+
+<xatm_RASEAT.Commands.Start:Start_OnChangedValue()>
+Sub Start_OnChangedValue()
+
+	' Asked for by a transformer whose CR operated, and by nothing else.
+	' There is no operator command for this: the entry is already dark by
+	' the time anybody could press one.
+	'
+	' The value carries the Id of the transformer that asked, which is for
+	' the log alone - Step 0 reads the CR of every transformer for itself,
+	' because more than one can have operated and the sequence has to wait
+	' for all of them.
+
+	If Trim(Value) = "" Then Exit Sub      ' self-cleared write, ignore
+
+	Dim ts
+	ts = TimeStamp	' preserve for the silent clear
+
+	Dim askedBy
+	askedBy = 0
+	If IsNumeric(Value) Then askedBy = CInt(Value)
+
+	' ================
+	' GATE CHECKS
+	' ================
+
+	If Not xatm_RASEAT.Enabled Then
+
+		Reject "Automation disabled.", ts
+		Exit Sub
+
+	End If
+
+	' Not a rejection worth logging as a fault. A second transformer's CR
+	' arriving while the first one's sequence runs is the ordinary case,
+	' not a competing request - and Step 0 already took the whole set.
+	If xatm_RASEAT.Running Then
+
+		WriteEx "", ts
+		Exit Sub
+
+	End If
+
+	If xatm_RASEAT.OperatorBlock Then
+
+		Reject "Blocked by operator.", ts
+		Exit Sub
+
+	End If
+
+	If xatm_RASEAT.GeneralBlock Then
+
+		Reject "General interlock active.", ts
+		Exit Sub
+
+	End If
+
+	If xatm_RASEAT.AutomaticBlock Then
+
+		Reject "Blocked by field conditions.", ts
+		Exit Sub
+
+	End If
+
+	' Reads the other way round - the expression says when the maneuver may
+	' go ahead, so it is the absence of it that rejects.
+	If Not xatm_RASEAT.Preconditions Then
+
+		Reject "Preconditions are not met.", ts
+		Exit Sub
+
+	End If
+
+	If AnyOtherAutomationRunning() Then
+
+		Reject "Another automation is in progress.", ts
+		Exit Sub
+
+	End If
+
+	' ================
+	' START
+	' ================
+	'
+	' The results of the last run are cleared here rather than at the end
+	' of it, so the control room keeps seeing how the previous reclosing
+	' went until a new one actually begins.
+	xatm_RASEAT.Successful   = False
+	xatm_RASEAT.Unsuccessful = False
+
+	xatm_RASEAT.Item("FSM").Item("StepTimer").WriteEx 0
+	xatm_RASEAT.Item("FSM").Item("Main").WriteEx 0
+	xatm_RASEAT.Running = True
+
+	WriteLog "Start - asked by " & TransformerName(askedBy)
+
+	WriteEx "", ts ' clear without re-firing
+
+End Sub
+
+
+' True if any OTHER automation object is currently running.
+'
+' The transfer keeps the same check, and the two of them share the folder,
+' so a reclosing and a transfer cannot run at once. Which matters here:
+' a CR takes the entry down and the medium-voltage busbars with it, so an
+' undervoltage transfer may well be asking to run at the same moment.
+Function AnyOtherAutomationRunning()
+
+	AnyOtherAutomationRunning = False
+
+	Dim obj
+	For Each obj In Application.GetObject("XATM_Data.Automation")
+
+		If Not (obj Is xatm_RASEAT) Then
+
+			Dim running
+			running = False
+			On Error Resume Next
+			running = obj.Running
+			On Error GoTo 0
+
+			If running Then
+				AnyOtherAutomationRunning = True
+				Exit Function
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+
+' The name of the transformer that asked, for the log. Its own scope's
+' copy: E3 gives no way to call the one the state machine keeps.
+Function TransformerName(id)
+
+	TransformerName = "ID " & id
+
+	Dim obj
+	For Each obj In Application.GetObject("XATM_Data.Substation")
+
+		Dim found
+		Set found = FindTransformer(obj, id)
+
+		If Not found Is Nothing Then
+			TransformerName = found.Name
+			Exit Function
+		End If
+
+	Next
+
+End Function
+
+Function FindTransformer(folder, id)
+
+	Set FindTransformer = Nothing
+
+	If UCase(TypeName(folder)) = "XATM_TRANSFORMER" Then
+
+		On Error Resume Next
+		If folder.Id = id Then Set FindTransformer = folder
+		On Error Goto 0
+
+		Exit Function
+
+	End If
+
+	Dim obj
+	On Error Resume Next
+	For Each obj In folder
+
+		Dim found
+		Set found = FindTransformer(obj, id)
+
+		If Not found Is Nothing Then
+			Set FindTransformer = found
+			Exit Function
+		End If
+
+	Next
+	On Error Goto 0
+
+End Function
+
+
+' Logs the rejection and clears the trigger without re-firing.
+Sub Reject(reason, ts)
+
+	WriteLog "Not started - " & reason
+	WriteEx "", ts
+
+End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
 <xatm_RASEAT.FSM.Main:Main_Completed()>
 Sub Main_Completed()
 
@@ -3952,7 +4270,6 @@ Const BREAKER_TIMEOUT   = 5     ' a breaker confirming a position
 Const ISOLATION_TIMEOUT = 25    ' every transformer with CR reporting Isolated
 Const CURRENT_TIMEOUT   = 5     ' load current vouching for a close
 Const LATCH_DELAY       = 2     ' the bistable mechanism settling
-Const RESET_DELAY       = 5     ' the results standing before they are cleared
 
 
 ' A scope may not end on a Function, and E3 says nothing when one does.
@@ -4600,5 +4917,73 @@ Sub BTC_OnUndervoltageTrip()
 
 	RequestBTC "TA"
 	
+End Sub
+
+<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_Functions()>
+Sub RASEAT_Functions()
+End Sub
+
+
+' Asks the high-voltage reclosing to run, because this transformer's busbar
+' relay operated.
+'
+' Found rather than configured. There is one reclosing automation in a
+' station and it holds no references to equipment, so the transformer looks
+' for it by class - the same way RequestBTC looks for the transfer bound to
+' this transformer, and for the same reason: E3 gives no way to call across
+' objects, so the only way to ask for work is to write to a tag on the
+' object that does it.
+'
+' A station whose incomer layout declares no entry bays has no reclosing to
+' find, and says so once rather than failing quietly.
+Sub RequestRASEAT()
+
+	Dim obj, bound
+	Set bound = Nothing
+
+	For Each obj In Application.GetObject("XATM_Data.Automation")
+
+		If TypeName(obj) = "xatm_RASEAT" Then
+			Set bound = obj
+			Exit For
+		End If
+
+	Next
+
+	If bound Is Nothing Then
+		WriteLog "No RASEAT in this substation - reclosing request ignored."
+		Exit Sub
+	End If
+
+	WriteLog "CR operated - reclosing requested via " & bound.Name & "."
+
+	' The Id travels so the reclosing can name who asked. It reads the CR
+	' of every transformer for itself: more than one can operate together,
+	' and the sequence has to wait for all of them to isolate.
+	bound.Item("Commands").Item("Start").WriteEx xatm_Transformer.Id
+
+End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_OnCRTrip()>
+Sub RASEAT_OnCRTrip()
+
+	RequestRASEAT()
+
 End Sub
 
