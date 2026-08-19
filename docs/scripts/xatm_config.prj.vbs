@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Wed Aug 19 16:18:37 2026
+Wed Aug 19 17:22:57 2026
 -----------------------
 
 <xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
@@ -3838,8 +3838,23 @@ Class PropertyInfo
 	' The digital state that raises the alarm - DigitalLimit. It travels
 	' inside the pair rather than beside it, so the words and the state
 	' they describe cannot be changed independently of one another.
+	'
+	' The pair carries 1 or 0, meaning raises-when-true or
+	' raises-when-false, and this turns that into the number the tag will
+	' actually be holding. VBScript True is -1, every tag these alarms
+	' watch is a Boolean, and a DigitalAlarmSource compares its value
+	' against DigitalLimit as a number - so a limit of 1 never matches a
+	' reading of -1, and the alarm never raises. Writing 1 in the pair is
+	' still right: whoever adds one should say which state is the alarming
+	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-		AlarmLimit = CLng("0" & PairPart(2))
+
+		If CLng("0" & PairPart(2)) <> 0 Then
+			AlarmLimit = -1
+		Else
+			AlarmLimit = 0
+		End If
+
 	End Function
 
 	Private Function PairPart(i)
@@ -4248,8 +4263,23 @@ Class PropertyInfo
 	' The digital state that raises the alarm - DigitalLimit. It travels
 	' inside the pair rather than beside it, so the words and the state
 	' they describe cannot be changed independently of one another.
+	'
+	' The pair carries 1 or 0, meaning raises-when-true or
+	' raises-when-false, and this turns that into the number the tag will
+	' actually be holding. VBScript True is -1, every tag these alarms
+	' watch is a Boolean, and a DigitalAlarmSource compares its value
+	' against DigitalLimit as a number - so a limit of 1 never matches a
+	' reading of -1, and the alarm never raises. Writing 1 in the pair is
+	' still right: whoever adds one should say which state is the alarming
+	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-		AlarmLimit = CLng("0" & PairPart(2))
+
+		If CLng("0" & PairPart(2)) <> 0 Then
+			AlarmLimit = -1
+		Else
+			AlarmLimit = 0
+		End If
+
 	End Function
 
 	Private Function PairPart(i)
@@ -4649,8 +4679,23 @@ Class PropertyInfo
 	' The digital state that raises the alarm - DigitalLimit. It travels
 	' inside the pair rather than beside it, so the words and the state
 	' they describe cannot be changed independently of one another.
+	'
+	' The pair carries 1 or 0, meaning raises-when-true or
+	' raises-when-false, and this turns that into the number the tag will
+	' actually be holding. VBScript True is -1, every tag these alarms
+	' watch is a Boolean, and a DigitalAlarmSource compares its value
+	' against DigitalLimit as a number - so a limit of 1 never matches a
+	' reading of -1, and the alarm never raises. Writing 1 in the pair is
+	' still right: whoever adds one should say which state is the alarming
+	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-		AlarmLimit = CLng("0" & PairPart(2))
+
+		If CLng("0" & PairPart(2)) <> 0 Then
+			AlarmLimit = -1
+		Else
+			AlarmLimit = 0
+		End If
+
 	End Function
 
 	Private Function PairPart(i)
@@ -4973,8 +5018,23 @@ Class PropertyInfo
 	' The digital state that raises the alarm - DigitalLimit. It travels
 	' inside the pair rather than beside it, so the words and the state
 	' they describe cannot be changed independently of one another.
+	'
+	' The pair carries 1 or 0, meaning raises-when-true or
+	' raises-when-false, and this turns that into the number the tag will
+	' actually be holding. VBScript True is -1, every tag these alarms
+	' watch is a Boolean, and a DigitalAlarmSource compares its value
+	' against DigitalLimit as a number - so a limit of 1 never matches a
+	' reading of -1, and the alarm never raises. Writing 1 in the pair is
+	' still right: whoever adds one should say which state is the alarming
+	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-		AlarmLimit = CLng("0" & PairPart(2))
+
+		If CLng("0" & PairPart(2)) <> 0 Then
+			AlarmLimit = -1
+		Else
+			AlarmLimit = 0
+		End If
+
 	End Function
 
 	Private Function PairPart(i)
@@ -5099,7 +5159,7 @@ Sub xatm_Transformer_OnStartRunning()
 		"Transformer is electrically isolated from the high-voltage busbars. Bound to an expression - the GOOSE its IED publishes, and that IED not having failed.", _
 		"Transformador isolado eletricamente das barras de alta tensão. Vinculada a uma expressão - a mensagem GOOSE publicada pelo seu IED, e esse IED sem defeito."
 
-	AddProperty bag, "UnderMaintenance", "Boolean", False, _
+	AddProperty bag, "Maintenance", "Boolean", False, _
 		"Transformer is under maintenance - isolated, and with the command locks applied so it stays that way. Bound to an expression.", _
 		"Transformador em manutenção - isolado e com os bloqueios de comando aplicados para que assim permaneça. Vinculada a uma expressão."
 
@@ -5117,7 +5177,7 @@ Sub xatm_Transformer_OnStartRunning()
 	SetExposure bag, "UndervoltageRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "CR",                EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "Isolated",          EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
-	SetExposure bag, "UnderMaintenance",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "Maintenance",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 
 	Set Value = bag
 
@@ -5255,8 +5315,23 @@ Class PropertyInfo
 	' The digital state that raises the alarm - DigitalLimit. It travels
 	' inside the pair rather than beside it, so the words and the state
 	' they describe cannot be changed independently of one another.
+	'
+	' The pair carries 1 or 0, meaning raises-when-true or
+	' raises-when-false, and this turns that into the number the tag will
+	' actually be holding. VBScript True is -1, every tag these alarms
+	' watch is a Boolean, and a DigitalAlarmSource compares its value
+	' against DigitalLimit as a number - so a limit of 1 never matches a
+	' reading of -1, and the alarm never raises. Writing 1 in the pair is
+	' still right: whoever adds one should say which state is the alarming
+	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-		AlarmLimit = CLng("0" & PairPart(2))
+
+		If CLng("0" & PairPart(2)) <> 0 Then
+			AlarmLimit = -1
+		Else
+			AlarmLimit = 0
+		End If
+
 	End Function
 
 	Private Function PairPart(i)

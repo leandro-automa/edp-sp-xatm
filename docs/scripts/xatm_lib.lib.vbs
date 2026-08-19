@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Wed Aug 19 16:18:13 2026
+Wed Aug 19 17:23:19 2026
 -----------------------
 
 <xatm_BTC.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
@@ -3564,7 +3564,7 @@ End Sub
 ' Building the pair is: flip DEMO_BUILD, export, protect the runtime one.
 Const LIBRARY_VERSION = "1.0.0"
 Const RELEASE_NOTES   = "Initial commit."
-Const DEMO_BUILD      = False
+Const DEMO_BUILD      = True
 
 
 ' Whether this copy is the one that talks.
