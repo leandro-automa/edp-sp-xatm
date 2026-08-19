@@ -3754,12 +3754,13 @@ Sub Start_OnChangedValue()
 
 	End If
 
-	' Not a rejection worth logging as a fault. A second transformer's CR
-	' arriving while the first one's sequence runs is the ordinary case,
-	' not a competing request - and Step 0 already took the whole set.
+	' Refused and logged, like any other. Two transformers losing their CR
+	' together, or one shortly after the other, is unusual enough to be
+	' worth a line - and Step 0 already took whichever were carrying it
+	' when the sequence began, so the second request has nothing to add.
 	If xatm_RASEAT.Running Then
 
-		WriteEx "", ts
+		Reject "Already running.", ts
 		Exit Sub
 
 	End If
@@ -3824,10 +3825,15 @@ End Sub
 
 ' True if any OTHER automation object is currently running.
 '
-' The transfer keeps the same check, and the two of them share the folder,
-' so a reclosing and a transfer cannot run at once. Which matters here:
-' a CR takes the entry down and the medium-voltage busbars with it, so an
-' undervoltage transfer may well be asking to run at the same moment.
+' The transfer keeps the same check and the two share the folder, so a
+' reclosing and a transfer cannot run at once - which is the intent, in
+' both directions.
+'
+' A CR takes the medium-voltage busbars down with it, so an undervoltage
+' transfer will be asking to start moments later and must not; and a
+' transfer already under way is not something a reclosing should cut
+' across either. Whichever was asked for first runs, and the other is
+' refused and says why.
 Function AnyOtherAutomationRunning()
 
 	AnyOtherAutomationRunning = False
