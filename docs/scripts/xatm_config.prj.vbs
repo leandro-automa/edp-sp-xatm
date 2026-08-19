@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Wed Aug 19 17:22:57 2026
+Wed Aug 19 17:54:19 2026
 -----------------------
 
 <xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
@@ -5403,6 +5403,281 @@ Sub SetExposure(bag, name, exposure)
 		
 End Sub
 
+<xatm_config_data.PropertiesHelper.xatm_Version:xatm_Version_OnStartRunning()>
+Sub xatm_Version_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	' Which library is running, published so it can be asked from outside.
+	'
+	' Nothing here is configuration. Every one is written by the class at
+	' start from constants inside xatm_lib.lib, so none is saved and none is
+	' edited - swapping the library file is what changes them.
+	'
+	' Whether the build is a demo lives elsewhere, on xatm_Build, which sits
+	' inside every device because that is where the command gate needs it.
+	' Two different facts, two different homes.
+	AddProperty bag, "Version", "String", "", _
+		"Library version as it is written, for a person to read.", _
+		"Versão da biblioteca como é escrita, para uma pessoa ler."
+
+	' The same version as three numbers, which is what travels. An interface
+	' tag and a 104 point carry a value rather than a sentence, and an
+	' operation centre auditing a fleet wants to compare numbers instead of
+	' parsing text at the far end.
+	AddProperty bag, "Major", "Integer", 0, _
+		"Major part of the library version.", _
+		"Parte maior da versão da biblioteca."
+
+	AddProperty bag, "Minor", "Integer", 0, _
+		"Minor part of the library version.", _
+		"Parte menor da versão da biblioteca."
+
+	AddProperty bag, "Patch", "Integer", 0, _
+		"Patch part of the library version.", _
+		"Parte de correção da versão da biblioteca."
+
+	AddProperty bag, "ReleaseNotes", "String", "", _
+		"What changed in this release.", _
+		"O que mudou nesta versão."
+
+	' Shown and never edited, and only the three numbers leave the station.
+	' The written version and the notes are for the panel: a sentence and a
+	' page of notes are not what a 104 point is for.
+	SetExposure bag, "Version",      EXPOSE_VIEW + EXPOSE_VALUE
+	SetExposure bag, "ReleaseNotes", EXPOSE_VIEW + EXPOSE_VALUE
+
+	SetExposure bag, "Major", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "Minor", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "Patch", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	' Not alarmed. A version is not an event.
+
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
+Const EXPOSE_IOTAG      = 128   ' level 3 is given a point for it, over 104
+
+
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "CONCLUÍDO|EM ANDAMENTO|1"
+
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
+
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
+	
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+	
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
+	End Function
+
+	' Whether level 3 is given a point for it.
+	'
+	' A separate question from IsInterfaced, and asked separately. The
+	' interface is where the Elipse application meets the automation; the
+	' distribution is what leaves the station. Everything distributed is
+	' interfaced - the distribution reads off the interface - but not
+	' everything interfaced is distributed, and conflating the two left no
+	' way to say so except a list of names kept somewhere else.
+	Public Function IsIOTagged()
+		IsIOTagged = Has(EXPOSE_IOTAG)
+	End Function
+
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	' The digital state that raises the alarm - DigitalLimit. It travels
+	' inside the pair rather than beside it, so the words and the state
+	' they describe cannot be changed independently of one another.
+	'
+	' The pair carries 1 or 0, meaning raises-when-true or
+	' raises-when-false, and this turns that into the number the tag will
+	' actually be holding. VBScript True is -1, every tag these alarms
+	' watch is a Boolean, and a DigitalAlarmSource compares its value
+	' against DigitalLimit as a number - so a limit of 1 never matches a
+	' reading of -1, and the alarm never raises. Writing 1 in the pair is
+	' still right: whoever adds one should say which state is the alarming
+	' one, not have to know what VBScript numbers True as.
+	Public Function AlarmLimit()
+
+		If CLng("0" & PairPart(2)) <> 0 Then
+			AlarmLimit = -1
+		Else
+			AlarmLimit = 0
+		End If
+
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
+	
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+			
+End Sub
+
 <xatm_config_data.SimulationMode:SimulationMode_OnChangedValue()>
 Sub SimulationMode_OnChangedValue()
 
@@ -9517,6 +9792,147 @@ Sub AddArrayContentToList()
         'End If
     Next
     
+End Sub
+
+<xatm_config_screens.Menu.btnVersion:btnVersion_Click()>
+Sub btnVersion_Click()
+
+	' What is installed, and then the notes if they are wanted.
+	'
+	' The version is read off the object rather than written down here: it
+	' comes from a constant inside xatm_lib.lib and is published as a
+	' property, so a screen keeping its own copy would be one more thing to
+	' remember on a release. The demo flag is not read at all - the blinking
+	' label on this same screen is what says that, and says it without being
+	' asked.
+	Dim versionObject
+	Set versionObject = Nothing
+
+	On Error Resume Next
+	Set versionObject = Application.GetObject(VERSION_OBJECT)
+	On Error Goto 0
+
+	If versionObject Is Nothing Then
+
+		MsgBox MissingText(), vbExclamation, DialogTitle()
+		Exit Sub
+
+	End If
+
+	If MsgBox(AskText(VersionOf(versionObject)), vbInformation + vbYesNo, DialogTitle()) <> vbYes Then Exit Sub
+
+	' The notes are written out and opened by the object itself, because the
+	' text of them lives in the library and one E3 object cannot call a
+	' procedure in another's scope. Writing the tag is the whole of the ask;
+	' the object clears it again once it has acted.
+	On Error Resume Next
+	versionObject.Item("Data").Item("Version").WriteEx True
+	On Error Goto 0
+
+End Sub
+
+
+' Where the one version object lives. One for the library and not one per
+' device: what it publishes is true of the file rather than of any piece of
+' equipment, which is the opposite of how the demo flag is carried.
+Const VERSION_OBJECT = "xatm_config_data.Version"
+
+
+' Which language the panel speaks. Written out again here because one E3
+' object cannot read another's constants - the same copy the Config screen
+' and the demo label each keep.
+Const HELP_LANG = "pt-BR"
+
+
+' The version as the object publishes it, falling back to the three numbers
+' when the written form is blank. Both are set at start from the same
+' constant, so either one answers.
+Function VersionOf(obj)
+
+	Dim written
+	written = ""
+
+	On Error Resume Next
+	written = Trim(obj.Version & "")
+	On Error Goto 0
+
+	If written <> "" Then
+		VersionOf = written
+		Exit Function
+	End If
+
+	Dim major, minor, patch
+	major = 0
+	minor = 0
+	patch = 0
+
+	On Error Resume Next
+	major = CLng(obj.Major)
+	minor = CLng(obj.Minor)
+	patch = CLng(obj.Patch)
+	On Error Goto 0
+
+	VersionOf = major & "." & minor & "." & patch
+
+End Function
+
+
+Function DialogTitle()
+
+	If HELP_LANG = "pt-BR" Then
+		DialogTitle = "Versão da biblioteca"
+	Else
+		DialogTitle = "Library version"
+	End If
+
+End Function
+
+
+' What the dialogue says, and the question it ends on.
+'
+' The notes themselves are not put in here. They are a page rather than a
+' line, they grow with every release, and a MsgBox that has to be scrolled
+' is a worse way to read them than the text file this offers instead.
+Function AskText(versionText)
+
+	If HELP_LANG = "pt-BR" Then
+
+		AskText = "Biblioteca de automatismos xatm_lib, versão " & versionText & "." & vbCrLf & vbCrLf & _
+		          "Deseja abrir as notas desta versão em um arquivo de texto?"
+
+	Else
+
+		AskText = "Automation library xatm_lib, version " & versionText & "." & vbCrLf & vbCrLf & _
+		          "Open the release notes in a text file?"
+
+	End If
+
+End Function
+
+
+' Said plainly rather than as a failed read. The object is created by hand,
+' once, and a station that never had it done reads exactly like one where
+' the name was mistyped - so the name is what the message carries.
+Function MissingText()
+
+	If HELP_LANG = "pt-BR" Then
+
+		MissingText = "Não foi possível ler a versão da biblioteca." & vbCrLf & vbCrLf & _
+		              "O objeto " & VERSION_OBJECT & " não foi encontrado no projeto."
+
+	Else
+
+		MissingText = "The library version could not be read." & vbCrLf & vbCrLf & _
+		              "The object " & VERSION_OBJECT & " was not found in the project."
+
+	End If
+
+End Function
+
+
+' A scope may not end on a Function - E3 takes the script without complaint
+' and then behaves as though the last one were not there.
+Sub EndOfScope()
 End Sub
 
 <xatm_config_screens.Menu.btnBTC:btnBTC_Click()>
