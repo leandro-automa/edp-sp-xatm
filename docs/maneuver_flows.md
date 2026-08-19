@@ -1,4 +1,4 @@
-# Maneuver Step Flows — TM / NM / TA
+# Maneuver Step Flows — TM / NM / TA / RASEAT
 
 Step sequences for each automation type and layout.
 Each step executes only after the previous breaker position is confirmed.
@@ -378,6 +378,111 @@ flowchart TD
 
 ---
 
+## Incomer 88/138 kV — RASEAT  *(automatic reclosing)*
+
+```
+   BA-2 ─────────────┬──────────────────────┬─────────────
+   BA-1 ────────┬────┼─────────────────┬────┼─────────────
+                │    │                 │    │
+             BA1A0  BA1B0           BA2A0  BA2B0
+                └─┬──┘                 └─┬──┘
+              RM01DISJ (10)          RM02DISJ (20)
+```
+
+The station runs with **one incomer closed and the other open**. A busbar
+`CR` on any transformer trips the incomer that was carrying the station *and*
+that transformer's secondary breaker, so the whole entry goes dark — RASEAT
+is what brings it back.
+
+`DJ[p]` is whichever incomer was carrying the station, `DJ[b]` the other.
+Both are worked out at Step 0 from `MemorizedPosition`; neither is
+configured, and the sequence never re-reads them, so no step can be handed a
+different answer than the step before it.
+
+### RASEAT — reclosing the entry
+
+```mermaid
+flowchart TD
+    subgraph G0["Step 0"]
+        P0["Init — snapshot the CR set,\nand DJ[p] from MemorizedPosition"]
+    end
+
+    subgraph G1["Step 1"]
+        P1["WAIT both incomers OPEN"]
+    end
+
+    subgraph G2["Step 2"]
+        P2["WAIT every TR with CR → Isolated"]
+    end
+
+    subgraph G3["Step 3"]
+        P3["DWELL LatchDelay"]
+    end
+
+    subgraph G4["Step 4"]
+        P4["CLOSE DJ[p]"]
+    end
+
+    subgraph G5["Step 5"]
+        P5["WAIT DJ[p] HasLoadCurrent"]
+    end
+
+    subgraph G6["Step 6"]
+        P6["CLOSE DJ[b]"]
+    end
+
+    G0 --> P1
+
+    P1 -->|"both open"| P2
+    P1 -->|"BreakerTimeout"| BAD
+
+    P2 -->|"all isolated"| P3
+    P2 -->|"IsolationTimeout"| BAD
+
+    P3 --> P4
+
+    P4 -->|"position closed"| OK
+    P4 -->|"BreakerTimeout"| P5
+
+    P5 -->|"current flowing"| OK
+    P5 -->|"CurrentTimeout"| P6
+
+    P6 -->|"position closed"| OK
+    P6 -->|"BreakerTimeout\nor DJ[b] not permitted"| BAD
+
+    OK(["Successful"])
+    BAD(["Unsuccessful\nGeneralBlock"])
+```
+
+| Step | Waits for | Timeout | On timeout |
+|------|-----------|---------|------------|
+| 1 | both incomers open | `BreakerTimeout` | fail |
+| 2 | every TR carrying `CR` reports `Isolated` | `IsolationTimeout` | fail |
+| 3 | dwell for the bistable mechanism | `LatchDelay` | — |
+| 4 | `DJ[p]` position closed | `BreakerTimeout` | → Step 5 |
+| 5 | `DJ[p]` load current | `CurrentTimeout` | → Step 6 |
+| 6 | `DJ[b]` position closed | `BreakerTimeout` | fail |
+
+**Why this one carries timeouts and the diagrams above do not.** A TM/NM/TA
+path is a fixed run of commands once the trigger and contingency are known,
+so the only branch worth drawing is the path choice. Three of RASEAT's steps
+are *waits* instead, and what happens when the wait expires is part of the
+maneuver rather than an error case — Step 4 falling through to Step 5, and
+Step 5 to Step 6, are the scheme working as designed.
+
+**Step 2 is a fan-out drawn as one node.** It waits on *every* transformer
+carrying `CR`, not one. Several transformers can trip together, and that is
+not an ambiguity to resolve but simply a longer step — which is also why
+`IsolationTimeout` has to cover the slowest of them, including two motorised
+disconnectors travelling before a transformer can call itself isolated.
+
+**Steps 4 and 5 are one close, confirmed two ways.** A breaker that reached
+position and one only load current can vouch for are different outcomes, and
+the log says which — so each gets a step of its own and its own
+`StepExecutionFailed` latch.
+
+---
+
 ## Step Count Summary
 
 | Layout | Mode | Trigger | Path | Steps |
@@ -390,3 +495,6 @@ flowchart TD
 | 4T Ring | NM | TR3 / TR4 | — | 2 |
 | 4T Ring | TA | TR1 | A (no contingency) | 6 |
 | 4T Ring | TA | TR1 | B or C (1 contingency) | 4 |
+| 2BR2BB | RASEAT | any TR `CR` | primary confirms on position | 4 |
+| 2BR2BB | RASEAT | any TR `CR` | primary confirms on current | 5 |
+| 2BR2BB | RASEAT | any TR `CR` | falls back to the other incomer | 6 |

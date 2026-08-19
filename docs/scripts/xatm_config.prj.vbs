@@ -662,6 +662,7 @@ Sub AlarmTag(folder, interfacePath, obj, p, problem)
 	Dim where
 	where = obj.Name & "." & p.Name
 
+	SetMember alarm, "Digital",                  True,                where, problem
 	SetMember alarm, "DigitalLimit",             p.AlarmLimit(),      where, problem
 	SetMember alarm, "DigitalMessageText",       p.AlarmActiveText(), where, problem
 	SetMember alarm, "DigitalReturnMessageText", p.AlarmNormalText(), where, problem
@@ -4007,6 +4008,18 @@ Sub xatm_Breaker_OnStartRunning()
 		"Equipment is defective and must not be operated. Bound to an expression - not in remote, spring discharged, whatever the panel reports.", _
 		"Equipamento com defeito e que não deve ser operado. Vinculada a uma expressão - fora de remoto, mola descarregada, o que o painel indicar."
 
+	' Whether the bay is carrying load, which is how a reclosing scheme
+	' confirms a close that the position contacts did not report.
+	'
+	' A boolean and not three currents: the only question ever asked of it
+	' is whether the sum is above a threshold, and the specification and the
+	' reference logic disagree on that threshold - 0,1 pu against 1 A. Left
+	' as an expression, that stays a site decision instead of one the
+	' library has to arbitrate.
+	AddProperty bag, "HasLoadCurrent", "Boolean", False, _
+		"Load current is flowing through this breaker. Bound to an expression - the sum of the phase currents above whatever threshold the substation uses.", _
+		"Há corrente de carga neste disjuntor. Vinculada a uma expressão - a soma das correntes de fase acima do limiar que a subestação usar."
+
 	AddProperty bag, "Position", "Integer", 0, _
 		"Position as the automation reads it: 1 open, 2 closed, 0 neither. Always these three, whatever raw values the protocol carries - the raw ones are configured above and translated into this.", _
 		"Posição como o automatismo a lê: 1 aberto, 2 fechado, 0 indefinido. Sempre estes três, quaisquer que sejam os valores brutos do protocolo - os brutos são configurados acima e traduzidos para esta."
@@ -4072,6 +4085,13 @@ Sub xatm_Breaker_OnStartRunning()
 	' how an engineer sees that the raw values above were configured the
 	' right way round, which is worth a row of its own; forcing it would
 	' only make the panel lie about the switchyard.
+	' Exposed the way Defective is: an expression is the configuration, a
+	' force is how it gets tested without a real trip, and it is not saved.
+	'
+	' No EXPOSE_IOTAG, for Defective's reason: it is derived, and level 3
+	' is already told the raw currents it is derived from.
+	SetExposure bag, "HasLoadCurrent", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
+
 	SetExposure bag, "Position", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE
 
 	' The two command failures are latches the automation sets and Reset
@@ -4708,6 +4728,331 @@ Sub SetExposure(bag, name, exposure)
 		
 End Sub
 
+<xatm_config_data.PropertiesHelper.xatm_RASEAT:xatm_RASEAT_OnStartRunning()>
+Sub xatm_RASEAT_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	Dim i
+
+	' One automation for the whole high-voltage entry, holding no
+	' equipment of its own.
+	'
+	' The station runs with one incomer closed and the other open, so a
+	' busbar relay takes down whichever was carrying it - and the steps
+	' work out which that was from the memorised positions, resolving the
+	' equipment the way every other sequence here does: GetDeviceById
+	' against what the layout declares. A reference property would only be
+	' a second place for the same fact to be written down, and a second
+	' place to get it wrong.
+	AddProperty bag, "Enabled", "Boolean", True, _
+		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
+		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
+
+	AddProperty bag, "Running", "Boolean", False, _
+		"True while a sequence is in progress - the specification's religamento em curso.", _
+		"True enquanto uma sequência está em andamento - o religamento em curso da especificação."
+
+	' --- what holds a start back ------------------------------------------
+	'
+	' The same four the transfer answers to, and for the same reasons: a
+	' person withholding it, a failure withholding it, the switchyard
+	' withholding it, and the switchyard permitting it.
+	AddProperty bag, "Preconditions", "Boolean", True, _
+		"Field conditions that have to hold before a reclosing may start. Bound to an expression - True while the maneuver is permitted.", _
+		"Condições de campo que devem valer antes de um religamento partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
+
+	AddProperty bag, "AutomaticBlock", "Boolean", False, _
+		"Field conditions that block the reclosing. Bound to an expression - True keeps a sequence from starting, alongside OperatorBlock and GeneralBlock.", _
+		"Condições de campo que bloqueiam o religamento. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
+
+	AddProperty bag, "OperatorBlock", "Boolean", False, _
+		"Operator lock. Blocks the start until the operator releases it - the specification's RA blocked against RA in service.", _
+		"Bloqueio do operador. Impede a partida até que o operador libere - o RA bloqueado contra RA em serviço da especificação."
+
+	AddProperty bag, "GeneralBlock", "Boolean", False, _
+		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
+		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
+
+	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
+		"Operator lock command. Written by the operator from level 1, 2 or 3 to set or release OperatorBlock.", _
+		"Comando de bloqueio do operador. Escrito pelo operador do nível 1, 2 ou 3 para marcar ou liberar o OperatorBlock."
+
+	AddProperty bag, "CommandReset", "InternalTag", Empty, _
+		"Reset command. Clears the latched step failures and the general block, so that a sequence can be started again.", _
+		"Comando de reset. Apaga as falhas seladas de passo e o bloqueio geral, para que uma sequência possa partir novamente."
+
+	' --- what the sequence did --------------------------------------------
+	'
+	' The two results the specification asks to be supervised, alongside
+	' the religamento em curso that Running carries. Which step failed is
+	' StepExecutionFailed's to say, and which breaker or transformer it
+	' was is named in the log - the steps know both, having resolved them
+	' themselves, so a property per failure would only repeat it.
+	AddProperty bag, "Successful", "Boolean", False, _
+		"The reclosing succeeded - the breaker confirmed closed, or load current confirmed it.", _
+		"O religamento foi bem-sucedido - o disjuntor confirmou fechado, ou a corrente de carga o confirmou."
+
+	AddProperty bag, "Unsuccessful", "Boolean", False, _
+		"The reclosing failed.", _
+		"O religamento foi malsucedido."
+
+	For i = 1 To 6
+
+		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
+			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to general block, cleared by Reset.", _
+			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
+
+	Next
+
+	' The step timings are not properties. They are Consts in Main_Main,
+	' the way the transfer keeps its own: numbers the sequence is written
+	' around rather than dials a panel offers.
+
+	' --- what the screen may do, and what leaves the station ---------------
+
+	SetExposure bag, "Enabled", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	SetExposure bag, "Successful",   EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "Unsuccessful", EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	For i = 1 To 6
+		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
+	Next
+
+	' --- what the operator is alarmed on -----------------------------------
+
+	SetAlarm bag, "GeneralBlock",   "BLOQUEIO GERAL RA",           PAIR_BLOCKED,      SEV_HIGH
+	SetAlarm bag, "OperatorBlock",  "BLOQUEIO OPERADOR RA",        PAIR_BLOCKED,      SEV_MEDIUM
+	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO RA",   PAIR_BLOCKED,      SEV_MEDIUM
+	SetAlarm bag, "Preconditions",  "PRECONDIÇÕES RA",       PAIR_PRECONDITION, SEV_MEDIUM
+	SetAlarm bag, "Running",        "RELIGAMENTO AT",              PAIR_RUNNING,      SEV_LOW
+	SetAlarm bag, "Successful",     "RELIGAMENTO AT BEM SUCEDIDO", PAIR_ACTUATED,     SEV_LOW
+	SetAlarm bag, "Unsuccessful",   "RELIGAMENTO AT MAL SUCEDIDO", PAIR_ACTUATED,     SEV_HIGH
+
+	For i = 1 To 6
+		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
+	Next
+
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
+Const EXPOSE_IOTAG      = 128   ' level 3 is given a point for it, over 104
+
+
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "CONCLUÍDO|EM ANDAMENTO|1"
+
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
+
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+	
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
+	End Function
+
+	' Whether level 3 is given a point for it.
+	'
+	' A separate question from IsInterfaced, and asked separately. The
+	' interface is where the Elipse application meets the automation; the
+	' distribution is what leaves the station. Everything distributed is
+	' interfaced - the distribution reads off the interface - but not
+	' everything interfaced is distributed, and conflating the two left no
+	' way to say so except a list of names kept somewhere else.
+	Public Function IsIOTagged()
+		IsIOTagged = Has(EXPOSE_IOTAG)
+	End Function
+
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	' The digital state that raises the alarm - DigitalLimit. It travels
+	' inside the pair rather than beside it, so the words and the state
+	' they describe cannot be changed independently of one another.
+	Public Function AlarmLimit()
+		AlarmLimit = CLng("0" & PairPart(2))
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
+	
+	
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+	
+End Sub
+
 <xatm_config_data.PropertiesHelper.xatm_Transformer:xatm_Transformer_OnStartRunning()>
 Sub xatm_Transformer_OnStartRunning()
 
@@ -4730,6 +5075,41 @@ Sub xatm_Transformer_OnStartRunning()
 		"Undervoltage relay (27) of the transformer is actuated.", _
 		"Relé de subtensão (27) do transformador atuado."
 
+	' What the transformer's own IED publishes about it, received rather
+	' than worked out here. The specification is explicit that the IED is
+	' the emitter and this controller a receiver, so the five conditions
+	' behind each one - the secondary breaker off, both high-voltage
+	' disconnectors open, ANSI 27 actuated, the currents at zero - stay in
+	' the IED and arrive as one bit.
+	'
+	' The relay-failure check the specification asks for goes into the
+	' expression rather than into a property of its own: what is wanted is
+	' the message AND the messenger being healthy, which is one fact.
+	' The busbar chave rele for this transformer, and what starts the
+	' high-voltage reclosing.
+	'
+	' Not the LockingOutRelay above. That one is the transformer's own 86
+	' and trips its secondary breaker alone; this one trips the incomer as
+	' well, which is what takes the station down and what there is to
+	' reclose from.
+	'
+	' One property and not CR-1 and CR-2 apart. They differ in what they do
+	' to the medium-voltage transfer - one starts it, the other bars it -
+	' but that difference is written into the transfer's own AutomaticBlock
+	' rather than read here. All this has to say is that this transformer
+	' took the entry down, so the reclosing knows to wait for it to isolate.
+	AddProperty bag, "CR", "Boolean", False, _
+		"Busbar lockout relay of this transformer. Bound to an expression - CR-1 or CR-2, whichever the panel reports. Starts the high-voltage reclosing.", _
+		"Chave relé de barra deste transformador. Vinculada a uma expressão - CR-1 ou CR-2, o que o painel indicar. Inicia o religamento de alta tensão."
+
+	AddProperty bag, "Isolated", "Boolean", False, _
+		"Transformer is electrically isolated from the high-voltage busbars. Bound to an expression - the GOOSE its IED publishes, and that IED not having failed.", _
+		"Transformador isolado eletricamente das barras de alta tensão. Vinculada a uma expressão - a mensagem GOOSE publicada pelo seu IED, e esse IED sem defeito."
+
+	AddProperty bag, "Maintenance", "Boolean", False, _
+		"Transformer is under maintenance - isolated, and with the command locks applied so it stays that way. Bound to an expression.", _
+		"Transformador em manutenção - isolado e com os bloqueios de comando aplicados para que assim permaneça. Vinculada a uma expressão."
+
 	AddProperty bag, "UndervoltageDelay", "Integer", 25, _
 		"Time in seconds the undervoltage (27) condition has to persist before the automation acts on it.", _
 		"Tempo em segundos que a condição de subtensão (27) deve permanecer antes que o automatismo atue."
@@ -4742,6 +5122,9 @@ Sub xatm_Transformer_OnStartRunning()
 	SetExposure bag, "OutOfService",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "LockingOutRelay",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "UndervoltageRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "CR",                EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "Isolated",          EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "Maintenance",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 
 	Set Value = bag
 
@@ -6361,6 +6744,12 @@ Sub btnApply_Click()
 
 	SyncAutomation doc, AutomationCount(transformerType), removed, added, failed
 
+	' After the incomer folder above, so the breakers a reclosing will
+	' operate are already in the document by the time it appears - and
+	' after SyncAutomation, which shares the folder and prunes only its
+	' own class.
+	SyncRASEAT doc, RASEATCount(incomerType), removed, added, failed
+
 	SetLayoutTag doc, "Transformer", transformerType
 	SetLayoutTag doc, "Busbar", busbarType
 	SetLayoutTag doc, "Incomer", incomerType
@@ -6382,6 +6771,7 @@ Const BUSBAR_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='
 Const INCOMER_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Incomer']"
 
 Const BTC_CLASS         = "xatm_BTC"
+Const RASEAT_CLASS      = "xatm_RASEAT"
 Const TRANSFORMER_CLASS = "xatm_Transformer"
 
 Const NODE_ELEMENT = 1
@@ -6593,6 +6983,25 @@ End Function
 
 ' One BTC automation per transformer, so the transformer layout sets
 ' the count.
+' How many high-voltage reclosing automations the incomer layout wants.
+'
+' One for the pair, not one per incomer: the station runs with a single
+' incomer closed, and the sequence works out which that was rather than
+' a second instance racing it for the answer.
+'
+' Asked of the incomer layout and not the transformer one, because it is
+' the incomer axis that decides whether there are entry bays at all - and
+' with NONE there is nothing to reclose.
+Function RASEATCount(incomerType)
+
+	Select Case UCase(incomerType)
+		Case "2BR2BB" : RASEATCount = 1
+		Case Else     : RASEATCount = 0
+	End Select
+
+End Function
+
+
 Function AutomationCount(layoutType)
 
 	Select Case UCase(layoutType)
@@ -6876,6 +7285,80 @@ Sub SyncAutomation(doc, keepCount, removed, added, failed)
 				added = added & vbCrLf & "  " & name & " in Automation, with no transformer to bind to"
 			Else
 				added = added & vbCrLf & "  " & name & " in Automation, bound to " & path
+			End If
+
+		End If
+
+	Next
+
+End Sub
+
+
+' Brings the Automation folder to the number of reclosing automations the
+' incomer layout wants - which is one, or none.
+'
+' The same shape as SyncAutomation above and deliberately not folded into
+' it: that one binds each BTC to a transformer it has to go and find,
+' and this one binds nothing. RASEAT holds no equipment; its steps
+' resolve breakers through GetDeviceById and the layout when they run.
+'
+' Selecting by type is what lets the two live in one folder without
+' either pruning the other: SyncAutomation sees only xatm_BTC nodes, and
+' this sees only xatm_RASEAT ones.
+Sub SyncRASEAT(doc, keepCount, removed, added, failed)
+
+	Dim folder
+	Set folder = doc.selectSingleNode(AUTOMATION_PATH)
+
+	If folder Is Nothing Then
+		failed = failed & vbCrLf & "  the Automation folder is not in the document"
+		Exit Sub
+	End If
+
+	Dim kept
+	Set kept = CreateObject("Scripting.Dictionary")
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim nodes, node, n, num
+	Set nodes = folder.selectNodes("object[@type='" & RASEAT_CLASS & "']")
+
+	For n = 0 To nodes.length - 1
+
+		Set node = nodes.item(n)
+		num = TrailingNumber(node.getAttribute("name"))
+
+		If num >= 1 And num <= keepCount Then
+			kept(num) = True
+		Else
+			removed = removed & vbCrLf & "  " & node.getAttribute("name") & " from Automation"
+			doomed.Add n, node
+		End If
+
+	Next
+
+	For Each n In doomed.Keys
+		Set node = doomed(n)
+		DropNode node
+	Next
+
+	Dim name
+	For n = 1 To keepCount
+
+		If Not kept.Exists(n) Then
+
+			name = "RASEAT" & n
+
+			' Numbered even though there is only ever one, so the object is
+			' keyed the way a BTC is: it carries no Id, and both the import
+			' and the loop above go by the number on the end of the name.
+			Set node = NewObject(folder, RASEAT_CLASS, name, Array())
+
+			If node Is Nothing Then
+				failed = failed & vbCrLf & "  " & name & " in Automation - no manifest for " & RASEAT_CLASS
+			Else
+				added = added & vbCrLf & "  " & name & " in Automation"
 			End If
 
 		End If
@@ -9191,6 +9674,75 @@ Sub btnConfig_Click()
 	Set fr = Application.GetFrame("Superior")
 	fr.OpenScreen "xatm_config_screens.Config?4?0", 0
 		
+End Sub
+
+<xatm_config_screens.Menu.btnRASEAT:btnRASEAT_Click()>
+Sub btnRASEAT_Click()
+
+	Dim autos
+	Set autos = Application.GetObject("XATM_Data.Automation")
+
+	' There is one of these in a station, so there is no list to order and
+	' no instance to choose between - unlike the transfers, which get a
+	' submenu each.
+	Dim obj, target
+	Set target = Nothing
+
+	For Each obj In autos
+		If TypeName(obj) = "xatm_RASEAT" Then
+			Set target = obj
+			Exit For
+		End If
+	Next
+
+	If target Is Nothing Then
+		MsgBox "No RASEAT automation found!"
+		Exit Sub
+	End If
+
+	' --- the menu -------------------------------------------------------
+	Dim menu
+	menu = target.Name & "{Force reclosing||" & _
+	       IIf(target.OperatorBlock, "*", "") & "Operator Block|Reset}"
+
+	Dim lOption
+	lOption = Application.SelectMenu(menu)
+	If lOption <= 0 Then Exit Sub
+
+	Select Case lOption
+
+		Case 1
+
+			' Asked for the way a transformer's CR asks, so every gate that
+			' Start keeps is kept for this too - enabled, not already
+			' running, the three blocks, the preconditions, no other
+			' automation in progress. A refusal is logged there and says why.
+			'
+			' Zero as the asker, because nobody's CR did this. What the
+			' sequence acts on is read in Step 0 from the field either way,
+			' so a forced start on a healthy station finds nothing to
+			' isolate and goes straight to the reclose.
+			If MsgBox("Force a reclosing on " & target.Name & "?" & vbCrLf & vbCrLf & _
+			          "The switchyard is operated for real.", _
+			          vbYesNo + vbExclamation + vbDefaultButton2, "Confirm") = vbYes Then
+
+				target.Item("Commands").Item("Start").WriteEx 0
+
+			End If
+
+		Case 2
+
+			' Operator Block toggle
+			target.OperatorBlock = Not target.OperatorBlock
+
+		Case 3
+
+			' Reset - clears the latched step failures, the general block
+			' and the result of the last run.
+			target.Item("Commands").Item("Reset").WriteEx True
+
+	End Select
+
 End Sub
 
 <xatm_config_screens.Menu.btnSimulationMode:btnSimulationMode_Click()>

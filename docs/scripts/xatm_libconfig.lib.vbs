@@ -1125,6 +1125,7 @@ Sub objButton_Click()
 	options = IIf(source.OutOfService,      "*", "") & "Out Of Service|" & _
 	          IIf(source.UndervoltageRelay, "*", "") & "Undervoltage (27)|" & _
 	          IIf(source.LockingOutRelay,   "*", "") & "Locking Out Relay (86)|" & _
+	          IIf(source.CR,                "*", "") & "CR|" & _
 	          "|Reset|Cancel"
 
 	Dim userOption
@@ -1137,11 +1138,14 @@ Sub objButton_Click()
 
 		Case 2
 			source.UndervoltageRelay = Not source.UndervoltageRelay
-
+		
 		Case 3
 			source.LockingOutRelay = Not source.LockingOutRelay
-
+		
 		Case 4
+			source.CR = Not source.CR
+			
+		Case 5
 			' TODO: Reset
 
 	End Select
