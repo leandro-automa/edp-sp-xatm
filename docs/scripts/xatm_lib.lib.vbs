@@ -4541,6 +4541,13 @@ Sub Main_Step02()
 
 	End If
 
+	' Indicates what the step is waiting for after 3 seconds
+	If Elapsed() = 3 Then
+
+		WriteLog "Step 2: waiting for " & NotIsolated() & " to isolate."
+
+	End If
+
 	If TimedOut(ISOLATION_TIMEOUT) Then
 
 		WriteLog "Step 2: " & NotIsolated() & " did not isolate inside " & ISOLATION_TIMEOUT & "s - general block"
@@ -4638,6 +4645,16 @@ Sub Main_Step04()
 	End If
 
 	If TimedOut(BREAKER_TIMEOUT) Then
+
+		' The breaker is told to drop the command before this step lets go
+		' of it.
+		'
+		' Its own timer is still running: a command it has not confirmed is
+		' resent once, at half of CommandTimeout, which is far longer than
+		' this step waited. Left alone it would close this incomer long
+		' after step 6 had closed the other, and the station would find
+		' itself with both.
+		breaker.Item("Data").Item("Reset").WriteEx True
 
 		WriteLog "Step 4: " & breaker.Name & " has not confirmed closed - asking the current."
 		Advance 5
@@ -4737,6 +4754,12 @@ Sub Main_Step06()
 	End If
 
 	If TimedOut(BREAKER_TIMEOUT) Then
+
+		' Dropped here for step 4's reason, and one more of its own: the
+		' automation is about to call this maneuver unsuccessful, and a
+		' breaker that closes itself fifteen seconds later would leave
+		' the control room holding a failure alarm and a closed breaker.
+		breaker.Item("Data").Item("Reset").WriteEx True
 
 		WriteLog "Step 6: " & breaker.Name & " did not close - general block"
 		Main_GlobalLockout()
