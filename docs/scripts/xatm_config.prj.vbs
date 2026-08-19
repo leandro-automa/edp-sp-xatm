@@ -9676,6 +9676,75 @@ Sub btnConfig_Click()
 		
 End Sub
 
+<xatm_config_screens.Menu.btnRASEAT:btnRASEAT_Click()>
+Sub btnRASEAT_Click()
+
+	Dim autos
+	Set autos = Application.GetObject("XATM_Data.Automation")
+
+	' There is one of these in a station, so there is no list to order and
+	' no instance to choose between - unlike the transfers, which get a
+	' submenu each.
+	Dim obj, target
+	Set target = Nothing
+
+	For Each obj In autos
+		If TypeName(obj) = "xatm_RASEAT" Then
+			Set target = obj
+			Exit For
+		End If
+	Next
+
+	If target Is Nothing Then
+		MsgBox "No RASEAT automation found!"
+		Exit Sub
+	End If
+
+	' --- the menu -------------------------------------------------------
+	Dim menu
+	menu = target.Name & "{Force reclosing||" & _
+	       IIf(target.OperatorBlock, "*", "") & "Operator Block|Reset}"
+
+	Dim lOption
+	lOption = Application.SelectMenu(menu)
+	If lOption <= 0 Then Exit Sub
+
+	Select Case lOption
+
+		Case 1
+
+			' Asked for the way a transformer's CR asks, so every gate that
+			' Start keeps is kept for this too - enabled, not already
+			' running, the three blocks, the preconditions, no other
+			' automation in progress. A refusal is logged there and says why.
+			'
+			' Zero as the asker, because nobody's CR did this. What the
+			' sequence acts on is read in Step 0 from the field either way,
+			' so a forced start on a healthy station finds nothing to
+			' isolate and goes straight to the reclose.
+			If MsgBox("Force a reclosing on " & target.Name & "?" & vbCrLf & vbCrLf & _
+			          "The switchyard is operated for real.", _
+			          vbYesNo + vbExclamation + vbDefaultButton2, "Confirm") = vbYes Then
+
+				target.Item("Commands").Item("Start").WriteEx 0
+
+			End If
+
+		Case 2
+
+			' Operator Block toggle
+			target.OperatorBlock = Not target.OperatorBlock
+
+		Case 3
+
+			' Reset - clears the latched step failures, the general block
+			' and the result of the last run.
+			target.Item("Commands").Item("Reset").WriteEx True
+
+	End Select
+
+End Sub
+
 <xatm_config_screens.Menu.btnSimulationMode:btnSimulationMode_Click()>
 Sub btnSimulationMode_Click()
 	
