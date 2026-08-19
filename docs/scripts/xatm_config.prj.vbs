@@ -4008,19 +4008,6 @@ Sub xatm_Breaker_OnStartRunning()
 		"Equipment is defective and must not be operated. Bound to an expression - not in remote, spring discharged, whatever the panel reports.", _
 		"Equipamento com defeito e que não deve ser operado. Vinculada a uma expressão - fora de remoto, mola descarregada, o que o painel indicar."
 
-	' What the busbar protection did to this breaker. On an incomer it is
-	' what starts the high-voltage reclosing; on a transformer's secondary
-	' breaker it is how that automation learns which transformer has to be
-	' isolated before it may reclose.
-	'
-	' One property and not two. CR-1 and CR-2 differ in what they do to the
-	' medium-voltage transfer - one starts it, the other bars it - but that
-	' difference is written into the transfer's own AutomaticBlock, not read
-	' here. All this has to say is that the bay went down.
-	AddProperty bag, "LockingOutRelay", "Boolean", False, _
-		"Busbar lockout relay acting on this breaker. Bound to an expression - CR-1 or CR-2, whichever the panel reports.", _
-		"Chave relé de barra atuando sobre este disjuntor. Vinculada a uma expressão - CR-1 ou CR-2, o que o painel indicar."
-
 	' Whether the bay is carrying load, which is how a reclosing scheme
 	' confirms a close that the position contacts did not report.
 	'
@@ -4098,14 +4085,12 @@ Sub xatm_Breaker_OnStartRunning()
 	' how an engineer sees that the raw values above were configured the
 	' right way round, which is worth a row of its own; forcing it would
 	' only make the panel lie about the switchyard.
-	' The two readings the high-voltage reclosing needs, exposed the way
-	' Defective is: an expression is the configuration, a force is how it
-	' gets tested without a real trip, and neither is saved.
+	' Exposed the way Defective is: an expression is the configuration, a
+	' force is how it gets tested without a real trip, and it is not saved.
 	'
-	' No EXPOSE_IOTAG on either, for Defective's reason: both are derived,
-	' and level 3 is already told the raw conditions they are derived from.
-	SetExposure bag, "LockingOutRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
-	SetExposure bag, "HasLoadCurrent",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
+	' No EXPOSE_IOTAG, for Defective's reason: it is derived, and level 3
+	' is already told the raw currents it is derived from.
+	SetExposure bag, "HasLoadCurrent", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
 
 	SetExposure bag, "Position", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE
 
@@ -4769,168 +4754,91 @@ Sub xatm_RASEAT_OnStartRunning()
 		"True while a sequence is in progress - the specification's religamento em curso.", _
 		"True enquanto uma sequência está em andamento - o religamento em curso da especificação."
 
-	' --- in service, and what puts it there ------------------------------
+	' --- what holds a start back ------------------------------------------
 	'
-	' The specification puts the function in service only by an operator's
-	' command, from level 1, 2 or 3. It comes out again by command, by the
-	' field conditions failing, or by a maneuver that did not succeed.
-	AddProperty bag, "InService", "Boolean", False, _
-		"Reclosing is in service. Set by CommandActivate while Preconditions hold; cleared by CommandBlock, by AutomaticBlock, or by an unsuccessful maneuver.", _
-		"Religamento em serviço. Marcado por CommandActivate enquanto as Preconditions valerem; apagado por CommandBlock, por AutomaticBlock ou por uma manobra malsucedida."
-
+	' The same four the transfer answers to, and for the same reasons: a
+	' person withholding it, a failure withholding it, the switchyard
+	' withholding it, and the switchyard permitting it.
 	AddProperty bag, "Preconditions", "Boolean", True, _
-		"Field conditions that have to hold before the reclosing may be put in service or start. Bound to an expression - CBTL in service, IED in remote, SF6 second stage normal, no busbar relay operated.", _
-		"Condições de campo que devem valer para que o religamento entre em serviço ou parta. Vinculada a uma expressão - CBTL em serviço, IED em remoto, SF6 segundo estágio normal, sem chave relé de barra operada."
+		"Field conditions that have to hold before a reclosing may start. Bound to an expression - True while the maneuver is permitted.", _
+		"Condições de campo que devem valer antes de um religamento partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
 
 	AddProperty bag, "AutomaticBlock", "Boolean", False, _
-		"Field conditions that bar the reclosing. Bound to an expression - True takes it out of service once BlockingDelay has elapsed.", _
-		"Condições de campo que impedem o religamento. Vinculada a uma expressão - True o tira de serviço depois de decorrido o BlockingDelay."
+		"Field conditions that block the reclosing. Bound to an expression - True keeps a sequence from starting, alongside OperatorBlock and GeneralBlock.", _
+		"Condições de campo que bloqueiam o religamento. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
 
-	AddProperty bag, "AutoBlocked", "Boolean", False, _
-		"The reclosing was taken out of service automatically rather than by the operator.", _
-		"O religamento foi tirado de serviço automaticamente, e não pelo operador."
+	AddProperty bag, "OperatorBlock", "Boolean", False, _
+		"Operator lock. Blocks the start until the operator releases it - the specification's RA blocked against RA in service.", _
+		"Bloqueio do operador. Impede a partida até que o operador libere - o RA bloqueado contra RA em serviço da especificação."
 
-	AddProperty bag, "CommandActivate", "InternalTag", Empty, _
-		"Puts the reclosing in service. Written by the operator from level 1, 2 or 3.", _
-		"Põe o religamento em serviço. Escrito pelo operador do nível 1, 2 ou 3."
+	AddProperty bag, "GeneralBlock", "Boolean", False, _
+		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
+		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
 
-	AddProperty bag, "CommandBlock", "InternalTag", Empty, _
-		"Takes the reclosing out of service.", _
-		"Tira o religamento de serviço."
+	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
+		"Operator lock command. Written by the operator from level 1, 2 or 3 to set or release OperatorBlock.", _
+		"Comando de bloqueio do operador. Escrito pelo operador do nível 1, 2 ou 3 para marcar ou liberar o OperatorBlock."
 
 	AddProperty bag, "CommandReset", "InternalTag", Empty, _
-		"Reset command. Clears the latched failures and results so a sequence can run again.", _
-		"Comando de reset. Apaga as falhas e os resultados selados para que uma sequência possa correr novamente."
+		"Reset command. Clears the latched step failures and the general block, so that a sequence can be started again.", _
+		"Comando de reset. Apaga as falhas seladas de passo e o bloqueio geral, para que uma sequência possa partir novamente."
 
-	' --- what the sequence did -------------------------------------------
+	' --- what the sequence did --------------------------------------------
 	'
-	' The three the specification asks to be supervised - atuado, bem
-	' sucedido, mal sucedido - and then what went wrong, kept apart so the
-	' control room is told which part failed rather than only that
-	' something did. Which breaker it was is named in the log: the steps
-	' know it, having resolved it themselves.
+	' The two results the specification asks to be supervised, alongside
+	' the religamento em curso that Running carries. Which step failed is
+	' StepExecutionFailed's to say, and which breaker or transformer it
+	' was is named in the log - the steps know both, having resolved them
+	' themselves, so a property per failure would only repeat it.
 	AddProperty bag, "Successful", "Boolean", False, _
 		"The reclosing succeeded - the breaker confirmed closed, or load current confirmed it.", _
 		"O religamento foi bem-sucedido - o disjuntor confirmou fechado, ou a corrente de carga o confirmou."
 
 	AddProperty bag, "Unsuccessful", "Boolean", False, _
-		"The reclosing failed, and the function is taken out of service.", _
-		"O religamento foi malsucedido, e a função é tirada de serviço."
-
-	AddProperty bag, "OpenFailed", "Boolean", False, _
-		"The incomer carrying the station did not confirm open, so nothing was reclosed.", _
-		"O disjuntor que alimentava a estação não confirmou aberto, e nada foi religado."
-
-	AddProperty bag, "CloseFailed", "Boolean", False, _
-		"An incomer did not confirm closed, and no load current confirmed it either.", _
-		"Um disjuntor de entrada não confirmou fechado, e também não houve corrente de carga que o confirmasse."
-
-	' One per transformer rather than one for the step, because the step
-	' waits on all of them and the control room needs to know which one
-	' would not isolate.
-	For i = 1 To 4
-
-		AddProperty bag, "IsolationFailed" & i, "Boolean", False, _
-			"Transformer " & (i * 100) & " had its busbar relay operate and did not isolate in time.", _
-			"O transformador " & (i * 100) & " teve a chave relé de barra operada e não isolou a tempo."
-
-	Next
+		"The reclosing failed.", _
+		"O religamento foi malsucedido."
 
 	For i = 1 To 6
 
 		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
-			"Latched failure of step " & i & ", cleared by Reset.", _
-			"Falha selada do passo " & i & ", apagada pelo Reset."
+			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to general block, cleared by Reset.", _
+			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
 
 	Next
 
-	' --- timings ----------------------------------------------------------
-	'
-	' Seconds, all of them, and every one configurable. The reference logic
-	' fixed these; the plant they were fixed for is not necessarily this
-	' one - IsolationTimeout above all, which has to cover two motorised
-	' disconnectors travelling before a transformer can declare itself
-	' isolated.
-	AddProperty bag, "BreakerTimeout", "Integer", 5, _
-		"Seconds allowed for a breaker to confirm a position.", _
-		"Segundos permitidos para um disjuntor confirmar uma posição."
+	' The step timings are not properties. They are Consts in Main_Main,
+	' the way the transfer keeps its own: numbers the sequence is written
+	' around rather than dials a panel offers.
 
-	AddProperty bag, "IsolationTimeout", "Integer", 25, _
-		"Seconds allowed for a transformer to isolate itself after its busbar relay operated.", _
-		"Segundos permitidos para um transformador se isolar depois de operada a sua chave relé de barra."
-
-	AddProperty bag, "CurrentTimeout", "Integer", 5, _
-		"Seconds allowed for load current to confirm a close the position contacts did not report.", _
-		"Segundos permitidos para a corrente de carga confirmar um fechamento que os contatos de posição não reportaram."
-
-	AddProperty bag, "RelayMemory", "Integer", 28, _
-		"Seconds a busbar relay actuation is remembered for, so a transformer that has already reset is still waited on.", _
-		"Segundos durante os quais a atuação de uma chave relé de barra é lembrada, para que um transformador já rearmado ainda seja aguardado."
-
-	AddProperty bag, "LatchDelay", "Integer", 2, _
-		"Seconds waited before reclosing, for the breaker's bistable mechanism to latch.", _
-		"Segundos aguardados antes de religar, para que o mecanismo biestável do disjuntor atrace."
-
-	AddProperty bag, "ResetDelay", "Integer", 5, _
-		"Seconds the results are held after a sequence ends, before they are cleared.", _
-		"Segundos durante os quais os resultados são mantidos ao fim de uma sequência, antes de serem apagados."
-
-	AddProperty bag, "BlockingDelay", "Integer", 10, _
-		"Seconds AutomaticBlock must hold before it takes the reclosing out of service, so a communications transient does not block it.", _
-		"Segundos durante os quais o AutomaticBlock deve valer antes de tirar o religamento de serviço, para que um transitório de comunicação não o bloqueie."
-
-	' --- what the screen may do, and what leaves the station --------------
+	' --- what the screen may do, and what leaves the station ---------------
 
 	SetExposure bag, "Enabled", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
 
-	SetExposure bag, "InService",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "AutoBlocked",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 
-	SetExposure bag, "CommandActivate", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "CommandBlock",    EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "CommandReset",    EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
 
 	SetExposure bag, "Successful",   EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Unsuccessful", EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "OpenFailed",   EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "CloseFailed",  EXPOSE_INTERFACE + EXPOSE_IOTAG
-
-	For i = 1 To 4
-		SetExposure bag, "IsolationFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
-	Next
 
 	For i = 1 To 6
 		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
 	Next
 
-	Dim setting
-	For Each setting In Array("BreakerTimeout", "IsolationTimeout", "CurrentTimeout", _
-	                          "RelayMemory", "LatchDelay", "ResetDelay", "BlockingDelay")
-		SetExposure bag, setting, EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-	Next
+	' --- what the operator is alarmed on -----------------------------------
 
-	' --- what the operator is alarmed on ----------------------------------
-	'
-	' The three the specification names - atuado, bem sucedido, mal
-	' sucedido - and then each way it can fail, separately. There is one
-	' instance of this automation in a station, so naming every failure
-	' costs the alarm list far less here than the same habit would on a
-	' per transformer object.
+	SetAlarm bag, "GeneralBlock",   "BLOQUEIO GERAL RA",           PAIR_BLOCKED,      SEV_HIGH
+	SetAlarm bag, "OperatorBlock",  "BLOQUEIO OPERADOR RA",        PAIR_BLOCKED,      SEV_MEDIUM
+	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO RA",   PAIR_BLOCKED,      SEV_MEDIUM
+	SetAlarm bag, "Preconditions",  "PRECONDIÇÕES RA",       PAIR_PRECONDITION, SEV_MEDIUM
 	SetAlarm bag, "Running",        "RELIGAMENTO AT",              PAIR_RUNNING,      SEV_LOW
 	SetAlarm bag, "Successful",     "RELIGAMENTO AT BEM SUCEDIDO", PAIR_ACTUATED,     SEV_LOW
 	SetAlarm bag, "Unsuccessful",   "RELIGAMENTO AT MAL SUCEDIDO", PAIR_ACTUATED,     SEV_HIGH
-	SetAlarm bag, "OpenFailed",     "FALHA ABERTURA ENTRADA",      PAIR_ACTUATED,     SEV_HIGH
-	SetAlarm bag, "CloseFailed",    "FALHA FECHAMENTO ENTRADA",    PAIR_ACTUATED,     SEV_HIGH
-	SetAlarm bag, "AutoBlocked",    "BLOQUEIO AUTOMÁTICO RA",   PAIR_BLOCKED,      SEV_MEDIUM
-	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO",      PAIR_BLOCKED,      SEV_MEDIUM
-	SetAlarm bag, "Preconditions",  "PRECONDIÇÕES RA",       PAIR_PRECONDITION, SEV_MEDIUM
-
-	For i = 1 To 4
-		SetAlarm bag, "IsolationFailed" & i, "FALHA ISOLAMENTO TR" & i, PAIR_ACTUATED, SEV_HIGH
-	Next
 
 	For i = 1 To 6
 		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
@@ -5177,11 +5085,28 @@ Sub xatm_Transformer_OnStartRunning()
 	' The relay-failure check the specification asks for goes into the
 	' expression rather than into a property of its own: what is wanted is
 	' the message AND the messenger being healthy, which is one fact.
+	' The busbar chave rele for this transformer, and what starts the
+	' high-voltage reclosing.
+	'
+	' Not the LockingOutRelay above. That one is the transformer's own 86
+	' and trips its secondary breaker alone; this one trips the incomer as
+	' well, which is what takes the station down and what there is to
+	' reclose from.
+	'
+	' One property and not CR-1 and CR-2 apart. They differ in what they do
+	' to the medium-voltage transfer - one starts it, the other bars it -
+	' but that difference is written into the transfer's own AutomaticBlock
+	' rather than read here. All this has to say is that this transformer
+	' took the entry down, so the reclosing knows to wait for it to isolate.
+	AddProperty bag, "CR", "Boolean", False, _
+		"Busbar lockout relay of this transformer. Bound to an expression - CR-1 or CR-2, whichever the panel reports. Starts the high-voltage reclosing.", _
+		"Chave relé de barra deste transformador. Vinculada a uma expressão - CR-1 ou CR-2, o que o painel indicar. Inicia o religamento de alta tensão."
+
 	AddProperty bag, "Isolated", "Boolean", False, _
 		"Transformer is electrically isolated from the high-voltage busbars. Bound to an expression - the GOOSE its IED publishes, and that IED not having failed.", _
 		"Transformador isolado eletricamente das barras de alta tensão. Vinculada a uma expressão - a mensagem GOOSE publicada pelo seu IED, e esse IED sem defeito."
 
-	AddProperty bag, "UnderMaintenance", "Boolean", False, _
+	AddProperty bag, "Maintenance", "Boolean", False, _
 		"Transformer is under maintenance - isolated, and with the command locks applied so it stays that way. Bound to an expression.", _
 		"Transformador em manutenção - isolado e com os bloqueios de comando aplicados para que assim permaneça. Vinculada a uma expressão."
 
@@ -5197,8 +5122,9 @@ Sub xatm_Transformer_OnStartRunning()
 	SetExposure bag, "OutOfService",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "LockingOutRelay",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "UndervoltageRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "CR",                EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "Isolated",          EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
-	SetExposure bag, "UnderMaintenance",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "Maintenance",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 
 	Set Value = bag
 
@@ -6818,6 +6744,12 @@ Sub btnApply_Click()
 
 	SyncAutomation doc, AutomationCount(transformerType), removed, added, failed
 
+	' After the incomer folder above, so the breakers a reclosing will
+	' operate are already in the document by the time it appears - and
+	' after SyncAutomation, which shares the folder and prunes only its
+	' own class.
+	SyncRASEAT doc, RASEATCount(incomerType), removed, added, failed
+
 	SetLayoutTag doc, "Transformer", transformerType
 	SetLayoutTag doc, "Busbar", busbarType
 	SetLayoutTag doc, "Incomer", incomerType
@@ -6839,6 +6771,7 @@ Const BUSBAR_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='
 Const INCOMER_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Incomer']"
 
 Const BTC_CLASS         = "xatm_BTC"
+Const RASEAT_CLASS      = "xatm_RASEAT"
 Const TRANSFORMER_CLASS = "xatm_Transformer"
 
 Const NODE_ELEMENT = 1
@@ -7050,6 +6983,25 @@ End Function
 
 ' One BTC automation per transformer, so the transformer layout sets
 ' the count.
+' How many high-voltage reclosing automations the incomer layout wants.
+'
+' One for the pair, not one per incomer: the station runs with a single
+' incomer closed, and the sequence works out which that was rather than
+' a second instance racing it for the answer.
+'
+' Asked of the incomer layout and not the transformer one, because it is
+' the incomer axis that decides whether there are entry bays at all - and
+' with NONE there is nothing to reclose.
+Function RASEATCount(incomerType)
+
+	Select Case UCase(incomerType)
+		Case "2BR2BB" : RASEATCount = 1
+		Case Else     : RASEATCount = 0
+	End Select
+
+End Function
+
+
 Function AutomationCount(layoutType)
 
 	Select Case UCase(layoutType)
@@ -7333,6 +7285,80 @@ Sub SyncAutomation(doc, keepCount, removed, added, failed)
 				added = added & vbCrLf & "  " & name & " in Automation, with no transformer to bind to"
 			Else
 				added = added & vbCrLf & "  " & name & " in Automation, bound to " & path
+			End If
+
+		End If
+
+	Next
+
+End Sub
+
+
+' Brings the Automation folder to the number of reclosing automations the
+' incomer layout wants - which is one, or none.
+'
+' The same shape as SyncAutomation above and deliberately not folded into
+' it: that one binds each BTC to a transformer it has to go and find,
+' and this one binds nothing. RASEAT holds no equipment; its steps
+' resolve breakers through GetDeviceById and the layout when they run.
+'
+' Selecting by type is what lets the two live in one folder without
+' either pruning the other: SyncAutomation sees only xatm_BTC nodes, and
+' this sees only xatm_RASEAT ones.
+Sub SyncRASEAT(doc, keepCount, removed, added, failed)
+
+	Dim folder
+	Set folder = doc.selectSingleNode(AUTOMATION_PATH)
+
+	If folder Is Nothing Then
+		failed = failed & vbCrLf & "  the Automation folder is not in the document"
+		Exit Sub
+	End If
+
+	Dim kept
+	Set kept = CreateObject("Scripting.Dictionary")
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim nodes, node, n, num
+	Set nodes = folder.selectNodes("object[@type='" & RASEAT_CLASS & "']")
+
+	For n = 0 To nodes.length - 1
+
+		Set node = nodes.item(n)
+		num = TrailingNumber(node.getAttribute("name"))
+
+		If num >= 1 And num <= keepCount Then
+			kept(num) = True
+		Else
+			removed = removed & vbCrLf & "  " & node.getAttribute("name") & " from Automation"
+			doomed.Add n, node
+		End If
+
+	Next
+
+	For Each n In doomed.Keys
+		Set node = doomed(n)
+		DropNode node
+	Next
+
+	Dim name
+	For n = 1 To keepCount
+
+		If Not kept.Exists(n) Then
+
+			name = "RASEAT" & n
+
+			' Numbered even though there is only ever one, so the object is
+			' keyed the way a BTC is: it carries no Id, and both the import
+			' and the loop above go by the number on the end of the name.
+			Set node = NewObject(folder, RASEAT_CLASS, name, Array())
+
+			If node Is Nothing Then
+				failed = failed & vbCrLf & "  " & name & " in Automation - no manifest for " & RASEAT_CLASS
+			Else
+				added = added & vbCrLf & "  " & name & " in Automation"
 			End If
 
 		End If
