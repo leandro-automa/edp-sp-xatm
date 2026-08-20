@@ -483,6 +483,108 @@ the log says which — so each gets a step of its own and its own
 
 ---
 
+## 4T Ring — busbar transfers  *(spec §1.4.1.9–§1.4.1.12)*
+
+A different kind of maneuver from everything above. The transformer sequences move
+a **transformer's** load off itself and leave the busbars where they are; these move
+a **busbar's** supply to the far side of the ring and leave every transformer where
+it is. Two ties, no contingency, one fixed path.
+
+Only two busbars have somewhere else to go, so there are only two of them — and each
+is a pair, out and back:
+
+| Maneuver | Spec | Busbar | Fed by, before | Fed by, after | Step 1 — close | Step 2 — open |
+|----------|------|--------|----------------|---------------|----------------|---------------|
+| TM B1A-B4A | §1.4.1.9  | B1A | TR1, through `TIE[1B,1A]` | **TR4**, through the ring closer | `TIE[1A,4A]` DJ10 · 900 | `TIE[1B,1A]` DJ20 · 700 |
+| NM B1A-B4A | §1.4.1.10 | B1A | TR4 | **TR1** again | `TIE[1B,1A]` DJ20 · 700 | `TIE[1A,4A]` DJ10 · 900 |
+| TM B2B-B3A | §1.4.1.11 | B2B | TR2, through `TIE[2B,2A]` | **TR3**, through `TIE[3A,2B]` | `TIE[3A,2B]` DJ50 · 730 | `TIE[2B,2A]` DJ40 · 720 |
+| NM B2B-B3A | §1.4.1.12 | B2B | TR3 | **TR2** again | `TIE[2B,2A]` DJ40 · 720 | `TIE[3A,2B]` DJ50 · 730 |
+
+The state numbers the spec's Tabela 1 gives these are **12** (B1A transferida) and
+**13** (B2B transferida).
+
+```mermaid
+flowchart TD
+    CMD(["CommandStartTM &nbsp; or &nbsp; CommandStartNM<br/>on an instance with a BusbarPair set"])
+    G1{"Layout is<br/>4TR4LV_6BB6TIERING?"}
+    G2{"BusbarPair names a pair<br/>this layout can transfer?"}
+    G3{"Enabled · not running · no block<br/>PreconditionsTM/NM · AutomaticBlockTM/NM<br/>no other automation running"}
+    REJ(["Rejected — logged with the reason"])
+
+    S1["Step 1 — CLOSE the tie that will feed the busbar"]
+    S2["Step 2 — OPEN the tie feeding it now"]
+    OK(["Done"])
+
+    CMD --> G1
+    G1 -- no --> REJ
+    G1 -- yes --> G2
+    G2 -- no --> REJ
+    G2 -- yes --> G3
+    G3 -- no --> REJ
+    G3 -- yes --> S1
+    S1 --> S2 --> OK
+```
+
+Each step waits for the breaker's own `Position` to reach the commanded state before
+moving on, and a step that will not execute goes to global lockout — the same as
+every other maneuver. There is no step 3: step 2 sets the FSM straight to 99.
+
+> **Make before break, both ways round.** The busbar is live throughout and stays
+> live; all that separates a transfer from its normalisation is which of the two ties
+> closes first.
+>
+> This is worth stating because the spec's normalisation tables look like the
+> opposite at a glance. §1.4.1.10 and §1.4.1.12 carry an **upward arrow** in the
+> left-hand column and are read from the bottom row up, so what reads top-down as
+> "DESLIGA DJ10, LIGA DJ20" is really *close DJ20, then open DJ10*. The transfer
+> tables carry a downward arrow and read the ordinary way.
+
+### Which automation runs them
+
+Not a new set of commands — a new *kind of instance*. `xatm_BTC` carries a
+`BusbarPair` property; where it names a pair, that instance moves those busbars
+instead of a transformer's load, and the two commands it already had mean the
+busbar sequences:
+
+| On a normal instance | On one with a `BusbarPair` |
+|---|---|
+| `CommandStartTM` — take the transformer's load off | hand the busbar to the other side of the ring |
+| `CommandStartNM` — bring it back | bring the busbar back |
+| `CommandStartTM100`…`400` — with one transformer out | *rejected* — a busbar transfer has no contingency |
+| `TA`, from the transformer's own trip | *rejected* — and the trigger never routes to it |
+
+Two more instances, created and kept by `SyncAutomation` whenever the busbar layout
+is `6BB6TIERING`, alongside `BTC1`…`BTC4`:
+
+| Instance | `BusbarPair` | `Transformer` | Runs |
+|----------|--------------|---------------|------|
+| `BTC_B1A` | `B1A-B4A` | *unbound* | TM/NM B1A-B4A |
+| `BTC_B2B` | `B2B-B3A` | *unbound* | TM/NM B2B-B3A |
+
+**`Transformer` is left unbound.** A busbar is not an XObject there is anything to
+link to, so which pair the instance moves is carried as text rather than as a link —
+and it is not any transformer's automation, so there is nothing it should be bound to.
+`RequestBTC` inside `xatm_Transformer` passes over any instance carrying a pair, so a
+trip can never be handed to a sequence with no TA in it, and `StartMode` asks for no
+binding before it writes.
+
+**One property, not two.** A flag saying "this is a busbar automation" beside a name
+saying which busbar would be two ways of writing one fact, and two ways of writing one
+fact can be made to disagree. A pair name that is either there or is not answers both
+questions.
+
+The instances are named rather than numbered: there is nothing to count — a layout
+either defines the pair or defines neither — and a trailing number would put them in
+the same series the prune walks by number. **A two-busbar layout defines neither**, and
+`SyncAutomation` creates no such instance there.
+
+The gates are the ordinary ones — `PreconditionsTM` / `AutomaticBlockTM` /
+`PreconditionsNM` / `AutomaticBlockNM` — read off the same string as always, and
+alarmed on the same pairs. Nothing about these four maneuvers is declared on the class
+beyond the one property.
+
+---
+
 ## Step Count Summary
 
 | Layout | Mode | Trigger | Path | Steps |
@@ -495,6 +597,8 @@ the log says which — so each gets a step of its own and its own
 | 4T Ring | NM | TR3 / TR4 | — | 2 |
 | 4T Ring | TA | TR1 | A (no contingency) | 6 |
 | 4T Ring | TA | TR1 | B or C (1 contingency) | 4 |
+| 4T Ring | TM / NM | busbar B1A ↔ B4A | — | 2 |
+| 4T Ring | TM / NM | busbar B2B ↔ B3A | — | 2 |
 | 2BR2BB | RASEAT | any TR `CR` | primary confirms on position | 4 |
 | 2BR2BB | RASEAT | any TR `CR` | primary confirms on current | 5 |
 | 2BR2BB | RASEAT | any TR `CR` | falls back to the other incomer | 6 |

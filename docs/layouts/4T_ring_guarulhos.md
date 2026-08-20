@@ -351,6 +351,87 @@ End Function
 
 ---
 
+## Transferência de Barramento — B1A↔B4A e B2B↔B3A
+
+Manobra de espécie diferente das anteriores. As sequências por transformador tiram a
+carga **de um transformador**; estas passam a alimentação **de um barramento** para o
+outro lado do anel e deixam todos os transformadores onde estão. Dois disjuntores de
+interligação, sem contingência e com caminho único.
+
+Só dois barramentos têm para onde ir — justamente os dois cuja interligação vizinha
+está normalmente aberta:
+
+| Manobra | Seção | Barramento | Alimentado antes | Alimentado depois | Passo 1 — Fechar | Passo 2 — Abrir |
+|---------|-------|------------|------------------|-------------------|------------------|-----------------|
+| TM B1A-B4A | §1.4.1.9  | B1A | TR1, via `TIE[1B,1A]` | **TR4**, pelo fecho do anel | `TIE[1A,4A]` DJ10 · 900 | `TIE[1B,1A]` DJ20 · 700 |
+| NM B1A-B4A | §1.4.1.10 | B1A | TR4 | **TR1** novamente | `TIE[1B,1A]` DJ20 · 700 | `TIE[1A,4A]` DJ10 · 900 |
+| TM B2B-B3A | §1.4.1.11 | B2B | TR2, via `TIE[2B,2A]` | **TR3**, via `TIE[3A,2B]` | `TIE[3A,2B]` DJ50 · 730 | `TIE[2B,2A]` DJ40 · 720 |
+| NM B2B-B3A | §1.4.1.12 | B2B | TR3 | **TR2** novamente | `TIE[2B,2A]` DJ40 · 720 | `TIE[3A,2B]` DJ50 · 730 |
+
+Os estados que a Tabela 1 da especificação dá a estas manobras são **12** (B1A
+transferida) e **13** (B2B transferida).
+
+> **Fechar antes de abrir, nos dois sentidos.** O barramento fica energizado do começo
+> ao fim; o que separa a transferência da normalização é apenas qual das duas
+> interligações fecha primeiro.
+>
+> Vale dizê-lo porque as tabelas de normalização da especificação parecem indicar o
+> contrário à primeira vista. As seções §1.4.1.10 e §1.4.1.12 trazem uma **seta para
+> cima** na coluna da esquerda e são lidas de baixo para cima: o que se lê de cima
+> para baixo como "DESLIGA DJ10, LIGA DJ20" é, na verdade, *fechar DJ20 e depois abrir
+> DJ10*. As tabelas de transferência trazem seta para baixo e são lidas na ordem
+> normal.
+
+### Qual automatismo as executa
+
+Não é um novo conjunto de comandos — é um novo *tipo de instância*. O `xatm_BTC` passou
+a ter a propriedade `BusbarPair`; onde ela nomeia um par, aquela instância transfere
+esses barramentos em vez da carga de um transformador, e os dois comandos que ela já
+tinha passam a significar as sequências de barra:
+
+| Numa instância normal | Numa com `BusbarPair` |
+|---|---|
+| `CommandStartTM` — tirar a carga do transformador | passar o barramento para o outro lado do anel |
+| `CommandStartNM` — devolvê-la | devolver o barramento |
+| `CommandStartTM100`…`400` — com um transformador impedido | *recusado* — a transferência de barra não tem contingência |
+| `TA`, pelo trip do próprio transformador | *recusado* — e o gatilho nunca chega a ela |
+
+Mais duas instâncias, criadas e mantidas pelo `SyncAutomation` sempre que o layout de
+barras for `6BB6TIERING`, ao lado de `BTC1`…`BTC4`:
+
+| Instância | `BusbarPair` | `Transformer` | Executa |
+|-----------|--------------|---------------|---------|
+| `BTC_B1A` | `B1A-B4A` | *sem vínculo* | TM/NM B1A-B4A |
+| `BTC_B2B` | `B2B-B3A` | *sem vínculo* | TM/NM B2B-B3A |
+
+**O `Transformer` fica sem vínculo.** Um barramento não é um XObject ao qual se possa
+vincular nada, então o par que a instância transfere é carregado como texto e não como
+link — e ela não é o automatismo de transformador nenhum, portanto não há a que
+vinculá-la. O `RequestBTC`, dentro do `xatm_Transformer`, ignora qualquer instância que
+carregue um par, para que um trip nunca seja entregue a uma sequência que não tem TA; e
+o `StartMode` não exige vínculo algum antes de escrever.
+
+**Uma propriedade, não duas.** Uma marca dizendo "isto é um automatismo de barra" ao
+lado de um nome dizendo qual barra seriam duas formas de escrever o mesmo fato — e duas
+formas de escrever o mesmo fato podem ser postas a discordar. Um nome de par que está
+lá ou não está responde às duas perguntas.
+
+As instâncias levam nome em vez de número: não há o que contar — um layout ou define o
+par ou não define nenhum — e um número no fim as colocaria na mesma série que a poda
+percorre por número. **O layout de duas barras não define nenhum**, e o
+`SyncAutomation` não cria essas instâncias lá.
+
+Os *gates* são os de sempre — `PreconditionsTM` / `AutomaticBlockTM` /
+`PreconditionsNM` / `AutomaticBlockNM` — lidos da mesma string de sempre e alarmados nos
+mesmos pares. Nada destas quatro manobras é declarado na classe além da única
+propriedade.
+
+Como só existe um caminho, a sequência tem **dois passos** e o passo 2 leva a FSM direto
+para 99. O `Start` recusa a manobra fora do layout `4TR4LV_6BB6TIERING` e recusa um par
+que não seja um dos dois, dizendo em ambos os casos o motivo.
+
+---
+
 ## Referências na Especificação
 
 | trigger | Caminho | Seção |
@@ -363,3 +444,5 @@ End Function
 | TR2 | C (TR3/TR4 imp.) | §1.4.2.9 / §1.4.2.11 |
 | TR3 | A | §1.4.1.5 |
 | TR4 | A | §1.4.1.7 |
+| B1A | TM / NM (barra) | §1.4.1.9 / §1.4.1.10 |
+| B2B | TM / NM (barra) | §1.4.1.11 / §1.4.1.12 |
