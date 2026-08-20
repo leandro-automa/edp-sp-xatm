@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Wed Aug 19 17:23:19 2026
+Wed Aug 19 17:53:51 2026
 -----------------------
 
 <xatm_BTC.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
@@ -2899,7 +2899,7 @@ End Sub
 
 ' Whether the library driving this breaker is the demo build.
 '
-' Read off the xatm_Version the breaker carries, so the answer comes from
+' Read off the xatm_Build the breaker carries, so the answer comes from
 ' the same library file as this code - not from a constant copied into
 ' this scope, which would be a second thing to flip, and not from a
 ' singleton in another project, which a site might not have deployed.
@@ -3531,16 +3531,13 @@ Sub xatm_Build_OnStartRunning()
 	' it without having to know where it came from.
 	'
 	' One of these sits inside every breaker and every disconnector, so the
-	' command gate can ask the device it is already holding. One more stands
-	' alone in xatm_config_data, and that is the one the console line and
-	' the screen label read.
+	' command gate can ask the device it is already holding rather than
+	' reach into another project for the answer.
 	'
 	' Nothing here is configured. The class comes from whichever
 	' xatm_lib.lib the domain has loaded, so swapping the file swaps what
 	' every instance says at once - which is the whole mechanism.
-	Version      = LIBRARY_VERSION
-	ReleaseNotes = RELEASE_NOTES
-	Demo         = DEMO_BUILD
+	Demo = DEMO_BUILD
 
 	' The same fact as a word, for a label to bind to. Derived rather than
 	' declared, so it cannot come to disagree with the flag - and the gate
@@ -3548,81 +3545,26 @@ Sub xatm_Build_OnStartRunning()
 	' a string comparison is not a thing to put in front of a switchyard.
 	Edition = IIf(DEMO_BUILD, "DEMO", "RUNTIME")
 
-	If ShouldAnnounce() Then WriteLog Announcement()
-
 End Sub
 
 
-' The library's identity, and the one line that differs between the two
-' builds that ship.
+' Which of the two builds this is, and the only place it is written down.
 '
-' This is the only place either fact is written down. The command gate does
-' not keep a copy - it reads the instance its own breaker carries - so
-' there is no second constant to fall out of step, and no dependency on a
-' project a site might not deploy.
+' Building the pair is: flip this, export, protect the runtime one. The
+' command gate keeps no copy - it reads the instance its own breaker
+' carries - so there is no second flag to fall out of step with this one.
 '
-' Building the pair is: flip DEMO_BUILD, export, protect the runtime one.
-Const LIBRARY_VERSION = "1.0.0"
-Const RELEASE_NOTES   = "Initial commit."
-Const DEMO_BUILD      = True
+' Which version the library is says nothing about whether it may operate
+' anything, and lives on xatm_Version instead: one object standing in the
+' data project, rather than a copy inside every device. Two facts about
+' the same file, wanted in different places, kept apart.
+Const DEMO_BUILD = True
 
 
-' Whether this copy is the one that talks.
-'
-' A station carries one per breaker and one per disconnector - dozens of
-' them - and none of those should say anything at start. The one that does
-' is the instance standing on its own in a data server rather than inside
-' another object.
-Function ShouldAnnounce()
-
-	Dim parentType
-	parentType = ""
-
-	On Error Resume Next
-	parentType = TypeName(Parent)
-	On Error Goto 0
-
-	ShouldAnnounce = (LCase(Left(parentType & "", 5)) <> "xatm_")
-
-End Function
-
-
-' What goes on the console at start, in the two shapes it can take.
-'
-' The demo line says what is withheld rather than only that something is:
-' an engineer who reads that the build is a demo and nothing more will
-' still expect the switchyard to move.
-Function Announcement()
-
-	If DEMO_BUILD Then
-
-		Announcement = "xatm_lib " & LIBRARY_VERSION & " - DEMO build - " & _
-		               "commands reach simulated equipment only; nothing is sent to the switchyard."
-
-	Else
-
-		Announcement = "xatm_lib " & LIBRARY_VERSION & " - runtime build."
-
-	End If
-
-End Function
-
-
-' The console the automation logs to, and the E3 trace either way.
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
-	End If
-	
+' A scope may not end on a Function - E3 takes the script without
+' complaint and then behaves as though the last one were not there. This
+' one ends on a Const, which is no better a thing to rely on.
+Sub BuildConstants()
 End Sub
 
 <xatm_ConsoleLogEngine.WriteLine:xatm_ConsoleLogEngine_OnWriteLineChanged()>
@@ -3838,14 +3780,14 @@ Sub CommandOpenClose_OnChangedValue()
 
 End Sub
 
-' Whether the library driving this breaker is the demo build.
+' Whether the library driving this disconnector is the demo build.
 '
-' Read off the xatm_Version the breaker carries, so the answer comes from
-' the same library file as this code - not from a constant copied into
-' this scope, which would be a second thing to flip, and not from a
+' Read off the xatm_Build the disconnector carries, so the answer comes
+' from the same library file as this code - not from a constant copied
+' into this scope, which would be a second thing to flip, and not from a
 ' singleton in another project, which a site might not have deployed.
 '
-' Fails closed. A breaker with no Build inside it is one driven by a
+' Fails closed. A disconnector with no Build inside it is one driven by a
 ' library too old to have the class at all, and that is not a library to
 ' let near a switchyard.
 Function IsDemoBuild()
@@ -5859,5 +5801,186 @@ Sub RASEAT_OnCRTrip()
 	
 	RequestRASEAT()
 	
+End Sub
+
+<xatm_Version.Data.Version:Version_Functions()>
+Sub Version_Functions()
+End Sub
+
+
+' The console the automation logs to, and the E3 trace either way.
+'
+' Parent.Parent and not the bare Name: this runs in a tag inside the
+' object, so Name is the tag's own and would put the same word on every
+' line no matter which instance said it.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_Version.Data.Version:Version_OnStartRunning()>
+Sub Version_OnStartRunning()
+
+	' Which library is running, published for anything that wants to know.
+	'
+	' This one stands alone in the data project rather than sitting inside
+	' every device, because what it has to offer - three tags an operation
+	' centre can read, and a report somebody opens - is worth having once.
+	' Whether the build is a demo lives on xatm_Build instead, one per
+	' device, where the command gate needs it.
+	'
+	' Every write is qualified. This runs in a tag inside the object and not
+	' in the object's own scope, so a bare Version = ... would quietly make a
+	' script variable of that name and leave the property empty.
+	xatm_Version.Version      = LIBRARY_VERSION
+	xatm_Version.ReleaseNotes = RELEASE_NOTES
+
+	' The version again as three numbers, split from the one string so that
+	' cutting a release stays a single edit and the parts cannot come to
+	' disagree with the whole.
+	Dim parts
+	parts = Split(LIBRARY_VERSION & "", ".")
+
+	xatm_Version.Major = VersionPart(parts, 0)
+	xatm_Version.Minor = VersionPart(parts, 1)
+	xatm_Version.Patch = VersionPart(parts, 2)
+
+	WriteLog Announcement()
+
+End Sub
+
+
+' What library this is, and what it says it changed.
+'
+' The version lives here and the demo flag lives on xatm_Build. Two facts
+' about the same file, kept apart because they are wanted in different
+' places: the flag has to be inside every device for the command gate, and
+' this has to be somewhere the interface and the distribution can walk to.
+Const LIBRARY_VERSION = "1.0.0"
+Const RELEASE_NOTES   = "Automatic reclosing (RASEAT); per-maneuver preconditions and blocks; one command per contingency."
+
+
+' One number out of the version string, and 0 for anything that is not
+' there or is not a number - a version somebody wrote as "1.0" still
+' publishes a patch, and it is 0.
+Function VersionPart(parts, i)
+
+	VersionPart = 0
+
+	If i > UBound(parts) Then Exit Function
+	If IsNumeric(parts(i)) Then VersionPart = CLng(parts(i))
+
+End Function
+
+
+' The line the console carries at start.
+'
+' The edition comes from the plant rather than from a constant here: the
+' devices carry it, and asking them means this cannot announce one build
+' while the gate enforces the other.
+'
+' Three shapes and not two. Nothing orders the start of one object against
+' another, so this can run before a single xatm_Build has written its flag,
+' and a start line reading "runtime build" on a demo build is the one wrong
+' answer the whole mechanism exists to prevent. With nobody yet answering,
+' it gives the version and stops there.
+Function Announcement()
+
+	Select Case LibraryEdition()
+
+		Case "DEMO"
+
+			Announcement = "xatm_lib " & LIBRARY_VERSION & " - DEMO build - " & _
+			               "commands reach simulated equipment only; nothing is sent to the switchyard."
+
+		Case "RUNTIME"
+
+			Announcement = "xatm_lib " & LIBRARY_VERSION & " - runtime build."
+
+		Case Else
+
+			Announcement = "xatm_lib " & LIBRARY_VERSION & "."
+
+	End Select
+
+End Function
+
+
+' Which build is driving this station, as a word - and "" when nothing has
+' answered.
+'
+' Asked of the equipment: every breaker and disconnector carries a Build,
+' all of them come from the same library file, so the first one found
+' answers for the rest. Nothing answering means a station not yet built, a
+' library too old to have the class, or simply a start that has not reached
+' the switchyard objects - none of which is an edition, and none of which
+' is worth guessing at.
+Function LibraryEdition()
+
+	LibraryEdition = ""
+
+	Dim substation
+	Set substation = Nothing
+
+	On Error Resume Next
+	Set substation = Application.GetObject("XATM_Data.Substation")
+	On Error Goto 0
+
+	If substation Is Nothing Then Exit Function
+
+	Dim found
+	found = Empty
+
+	FindBuild substation, found
+
+	If IsEmpty(found) Then Exit Function
+
+	LibraryEdition = IIf(CBool(found), "DEMO", "RUNTIME")
+
+End Function
+
+Sub FindBuild(folder, ByRef found)
+
+	If Not IsEmpty(found) Then Exit Sub
+
+	Dim obj
+	For Each obj In folder
+
+		If Not IsEmpty(found) Then Exit Sub
+
+		Dim build
+		Set build = Nothing
+
+		On Error Resume Next
+		Set build = obj.Item("Build")
+		On Error Goto 0
+
+		If Not build Is Nothing Then
+
+			On Error Resume Next
+			found = CBool(build.Demo)
+			On Error Goto 0
+
+			If Not IsEmpty(found) Then Exit Sub
+
+		End If
+
+		On Error Resume Next
+		FindBuild obj, found
+		On Error Goto 0
+
+	Next
+
 End Sub
 
