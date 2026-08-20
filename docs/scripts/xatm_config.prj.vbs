@@ -3453,6 +3453,31 @@ Sub xatm_BTC_OnStartRunning()
 		"XObject do transformador ao qual esta instância do automatismo está vinculada."
 	
 
+	' Which pair of busbars this automation moves, and whether it moves one
+	' at all.
+	'
+	' Empty, and this is an ordinary transformer automation: TM takes its
+	' transformer's load off, NM brings it back, and the numbered variants
+	' say which other transformer is out of service.
+	'
+	' Set, and it is a busbar automation instead. TM hands that busbar to
+	' the far side of the ring, NM brings it back, there is no contingency
+	' to declare, and Transformer is left unbound - it is not any
+	' transformer's automation.
+	'
+	' Text and not a link, unlike every other property here that names
+	' equipment, because a busbar is not an XObject there is anything to
+	' bind to. And one property rather than two: a flag reading "this is a
+	' busbar automation" beside a name saying which busbar would be two ways
+	' of writing one fact, and two ways of writing one fact can be made to
+	' disagree.
+	'
+	' The six-busbar ring defines B1A-B4A and B2B-B3A. A two-busbar layout
+	' defines neither, and SyncAutomation creates no such instance there.
+	AddProperty bag, "BusbarPair", "String", "", _
+		"The pair of busbars this automation transfers between, B1A-B4A or B2B-B3A, which makes TM and NM the busbar transfer and its normalisation. Empty on an ordinary transformer automation.", _
+		"O par de barramentos que este automatismo transfere, B1A-B4A ou B2B-B3A, o que faz de TM e NM a transferência de barra e a sua normalização. Vazio num automatismo de transformador comum."
+
 	AddProperty bag, "OperatorBlock", "Boolean", False, _
 		"Operator lock. Blocks the start until the operator releases it.", _
 		"Bloqueio do operador. Impede a partida até que o operador libere."
@@ -3599,6 +3624,11 @@ Sub xatm_BTC_OnStartRunning()
 	' the transformer this instance drives - is not.
 	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	' Interfaced, so a screen can tell an operator what the TM and NM
+	' buttons in front of them actually do, but not carried to level 3: it
+	' is configuration and never changes at runtime, so the point list says
+	' it once rather than the station repeating it forever.
+	SetExposure bag, "BusbarPair",     EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED + EXPOSE_INTERFACE
 	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 
@@ -7086,7 +7116,7 @@ Sub btnApply_Click()
 		SyncFolder doc, INCOMER_PATH, IncomerDevices(incomerType), removed, added, failed
 	End If
 
-	SyncAutomation doc, AutomationCount(transformerType), removed, added, failed
+	SyncAutomation doc, AutomationCount(transformerType), busbarType, removed, added, failed
 	
 	' After the incomer folder above, so the breakers a reclosing will
 	' operate are already in the document by the time it appears - and
@@ -7565,7 +7595,7 @@ End Sub
 ' Id property, so they go by the number in the name - BTC1..BTCn stay,
 ' the rest are dropped, and a missing one is created bound to the
 ' transformer of the same number.
-Sub SyncAutomation(doc, keepCount, removed, added, failed)
+Sub SyncAutomation(doc, keepCount, busbarType, removed, added, failed)
 
 	Dim folder
 	Set folder = doc.selectSingleNode(AUTOMATION_PATH)
@@ -7575,24 +7605,39 @@ Sub SyncAutomation(doc, keepCount, removed, added, failed)
 		Exit Sub
 	End If
 
-	Dim kept
-	Set kept = CreateObject("Scripting.Dictionary")
+	' Two families of BTC share this folder. The transformer ones are
+	' BTC1..BTCn, one per transformer, and are known by the number on the
+	' end of the name; the busbar ones are BTC_B1A and BTC_B2B, exist only
+	' where the busbar layout has somewhere to hand a busbar to, and are
+	' known by name because there is nothing about them to count.
+	Dim busbars
+	busbars = BusbarAutomations(busbarType)
+
+	Dim kept, keptBusbar
+	Set kept       = CreateObject("Scripting.Dictionary")
+	Set keptBusbar = CreateObject("Scripting.Dictionary")
 
 	Dim doomed
 	Set doomed = CreateObject("Scripting.Dictionary")
 
-	Dim nodes, node, n, num
+	Dim nodes, node, n, num, objectName
 	Set nodes = folder.selectNodes("object[@type='" & BTC_CLASS & "']")
 
 	For n = 0 To nodes.length - 1
 
-		Set node = nodes.item(n)
-		num = TrailingNumber(node.getAttribute("name"))
+		Set node   = nodes.item(n)
+		objectName = node.getAttribute("name")
+		num        = TrailingNumber(objectName)
 
-		If num >= 1 And num <= keepCount Then
+		' Asked in this order because a busbar automation has no trailing
+		' number at all - TrailingNumber answers 0 for BTC_B1A - so it
+		' would fall through to the prune and be dropped on the next apply.
+		If BusbarWanted(busbars, objectName) Then
+			keptBusbar(LCase(objectName)) = True
+		ElseIf num >= 1 And num <= keepCount Then
 			kept(num) = True
 		Else
-			removed = removed & vbCrLf & "  " & node.getAttribute("name") & " from Automation"
+			removed = removed & vbCrLf & "  " & objectName & " from Automation"
 			doomed.Add n, node
 		End If
 
@@ -7634,8 +7679,88 @@ Sub SyncAutomation(doc, keepCount, removed, added, failed)
 
 	Next
 
+	' And the busbar ones, which are the same class carrying a pair.
+	'
+	' Nothing to bind. A busbar is not an XObject, so which pair this one
+	' moves is written into a property rather than linked, and Transformer
+	' is left unset - it is not any transformer's automation, and the
+	' trigger inside xatm_Transformer passes it over for that reason.
+	Dim pair
+	For Each pair In busbars
+
+		name = BusbarAutomationName(pair)
+
+		If Not keptBusbar.Exists(LCase(name)) Then
+
+			Set node = NewObject(folder, BTC_CLASS, name, Array("BusbarPair", pair))
+
+			If node Is Nothing Then
+				failed = failed & vbCrLf & "  " & name & " in Automation - no manifest for " & BTC_CLASS
+			Else
+				added = added & vbCrLf & "  " & name & " in Automation, transferring " & pair
+			End If
+
+		End If
+
+	Next
+
 End Sub
 
+
+' The busbar pairs a busbar layout can transfer between.
+'
+' Only on the six-busbar ring, and only two of the six: B1A can be handed
+' across the ring closer to B4A, and B2B to B3A, because those are the two
+' whose neighbouring tie is the one normally left open. A two-busbar layout
+' has nowhere to hand anything to and gets none of these automations.
+Function BusbarAutomations(busbarType)
+
+	Select Case UCase(busbarType)
+
+		Case "6BB6TIERING"
+			BusbarAutomations = Array("B1A-B4A", "B2B-B3A")
+
+		Case Else
+			BusbarAutomations = Array()
+
+	End Select
+
+End Function
+
+
+' What one of them is called: BTC_B1A, BTC_B2B.
+'
+' Named for the busbar that moves rather than numbered, because there is
+' nothing to count - a layout either defines the pair or defines neither -
+' and because a number on the end would put it in the same series as the
+' transformer automations, which the prune above walks by number.
+Function BusbarAutomationName(pair)
+
+	Dim parts
+	parts = Split(pair, "-")
+
+	BusbarAutomationName = "BTC_" & parts(0)
+
+End Function
+
+
+' Whether a name already in the folder is one of the busbar automations
+' this layout asks for.
+Function BusbarWanted(busbars, objectName)
+
+	BusbarWanted = False
+
+	Dim pairName
+	For Each pairName In busbars
+
+		If LCase(objectName) = LCase(BusbarAutomationName(pairName)) Then
+			BusbarWanted = True
+			Exit Function
+		End If
+
+	Next
+
+End Function
 
 
 
@@ -10279,11 +10404,11 @@ Sub btnBTC_Click()
 		End If
 	Next
 
-	' --- Order by transformer Id (stable menu order) ------------------
+	' --- Order: transformers by Id, then the busbar pairs -------------
 	Dim i, j, tmp
 	For i = 0 To total - 2
 		For j = 0 To total - 2 - i
-			If btc(j).Transformer.Id > btc(j + 1).Transformer.Id Then
+			If MenuKey(btc(j)) > MenuKey(btc(j + 1)) Then
 				Set tmp = btc(j)
 				Set btc(j) = btc(j + 1)
 				Set btc(j + 1) = tmp
@@ -10291,37 +10416,48 @@ Sub btnBTC_Click()
 		Next
 	Next
 
-	' --- How many options each transformer contributes ----------------
+	' --- Build the menu, recording what each option does --------------
 	'
-	' A manual maneuver is one option per contingency now, not one option
-	' that reads the field and decides for itself: the plain maneuver,
-	' then the same one with each OTHER transformer out of service. That
-	' is "total" options for TM and "total" again for NM - the same count
-	' on every instance, which is what keeps the mapping below a division.
+	' Recorded as it is built, rather than worked back out afterwards.
+	' The mapping used to be a division, which needed every instance to
+	' contribute the same number of options - true while they were all
+	' transformer automations, and false the moment one of them moves a
+	' busbar instead: that one offers two maneuvers and no contingencies
+	' where its neighbours offer TM and NM for every transformer, plus TA.
 	'
-	' TA gets one. It takes no contingency argument from anybody: Start
-	' reads the field for it, exactly as it does for the protection.
+	' Building the label and registering the command in one pass is also
+	' what keeps them honest. Two passes that agreed today would be two
+	' things to keep in step, and the failure would be silent - a label
+	' naming one maneuver and the command sending another.
 	'
-	' Separators cost nothing here - the empty entry in the original menu
-	' was already not counted - so they are used freely to keep the three
-	' blocks apart.
-	Dim nActions
-	nActions = 2 * total + 3     ' TM* + NM* + TA + Operator Block + Reset
-
-	' --- Build the menu -----------------------------------------------
-	Dim menu, tr
+	' Separators cost nothing: an empty entry takes no option number, which
+	' is why the blocks can be kept apart freely.
+	Dim menu, actions
+	Set actions = CreateObject("Scripting.Dictionary")
 	menu = ""
 
 	For i = 0 To total - 1
 
-		Set tr = btc(i).Transformer
 		If i > 0 Then menu = menu & "|"
 
-		menu = menu & tr.Name & "{" & _
-		       ModeEntries("TM", btc, total, i) & "||" & _
-		       ModeEntries("NM", btc, total, i) & "||" & _
-		       "TA||" & _
-		       IIf(btc(i).OperatorBlock, "*", "") & "Operator Block|Reset}"
+		If BusbarPairOf(btc(i)) <> "" Then
+
+			AddBusbarMenu btc, i, menu, actions
+
+		ElseIf Not TransformerOf(btc(i)) Is Nothing Then
+
+			AddTransformerMenu btc, total, i, menu, actions
+
+		Else
+
+			' Bound to no transformer and moving no busbar. Shown, so that
+			' it is visibly there to be fixed rather than quietly absent
+			' from a menu that looks complete, and with nothing under it
+			' but the reason - there is nothing it could be asked to do.
+			Remember actions, i, "NONE", 0
+			menu = menu & btc(i).Name & "{not configured}"
+
+		End If
 
 	Next
 
@@ -10329,83 +10465,140 @@ Sub btnBTC_Click()
 	lOption = Application.SelectMenu(menu)
 	If lOption <= 0 Then Exit Sub
 
-	' --- Map option -> (instance, action) -----------------------------
-	Dim idx, action
-	idx    = (lOption - 1) \ nActions
-	action = ((lOption - 1) Mod nActions) + 1
+	If Not actions.Exists(CStr(lOption)) Then
+		MsgBox "The menu and the automation list disagree - nothing sent.", _
+		       vbExclamation, "Error"
+		Exit Sub
+	End If
+
+	' --- Do what the chosen option said -------------------------------
+	Dim parts
+	parts = Split(actions(CStr(lOption)), "|")
 
 	Dim target
-	Set target = btc(idx)
-	Set tr = target.Transformer
+	Set target = btc(CLng(parts(0)))
 
-	If action <= 2 * total Then
+	Dim kind, impedeId
+	kind     = parts(1)
+	impedeId = CLng(parts(2))
 
-		' A manual maneuver. The first block of "total" is TM and the
-		' second is NM; within each, the first entry is the plain one and
-		' the rest follow the order OtherTransformer walks them in - the
-		' same order the labels were built from, so a label cannot come to
-		' name a different transformer than the option it maps to.
-		Dim mode, slot
-		If action <= total Then
-			mode = "TM"
-			slot = action
-		Else
-			mode = "NM"
-			slot = action - total
-		End If
+	Select Case kind
 
-		Dim impedeId, impedeName, impeded
-		impedeId   = 0
-		impedeName = ""
+		Case "NONE"
 
-		If slot > 1 Then
+			MsgBox target.Name & " is bound to no transformer and names no " & _
+			       "busbar pair, so there is nothing it can be asked to run.", _
+			       vbExclamation, "Not configured"
 
-			Set impeded = OtherTransformer(btc, total, idx, slot - 1)
+		Case "BLOCK"
 
-			If impeded Is Nothing Then
-				MsgBox "The menu and the automation list disagree - nothing sent.", _
-				       vbExclamation, "Error"
-				Exit Sub
+			target.OperatorBlock = Not target.OperatorBlock
+
+		Case "RESET"
+
+			target.Item("Commands").Item("Reset").WriteEx True
+
+		Case "TA"
+
+			' Written with two fields on purpose. Start reads the field for
+			' the contingency, the way it does for a protection trip.
+			If MsgBox("Force TA on " & target.Transformer.Name & "?", _
+			          vbYesNo + vbQuestion, "Confirm") = vbYes Then
+				target.Item("Commands").Item("Start").WriteEx "TA:" & target.Transformer.Id
 			End If
 
-			impedeId   = impeded.Id
-			impedeName = impeded.Name
+		Case Else
 
-		End If
+			SendManeuver target, btc, total, kind, impedeId
 
-		Dim question
-		If impedeId = 0 Then
-			question = "Force " & mode & " on " & tr.Name & "?"
-		Else
-			question = "Force " & mode & " on " & tr.Name & _
-			           " with " & impedeName & " out of service?"
-		End If
+	End Select
 
-		If MsgBox(question, vbYesNo + vbQuestion, "Confirm") = vbYes Then
-			target.Item("Commands").Item("Start").WriteEx _
-				mode & ":" & tr.Id & ":" & impedeId
-		End If
+End Sub
 
-	ElseIf action = 2 * total + 1 Then
 
-		' TA - written with two fields on purpose. Start reads the field
-		' for the contingency, the way it does for a protection trip.
-		If MsgBox("Force TA on " & tr.Name & "?", _
+' A TM or an NM, asked for the way the instance it is going to expects.
+'
+' A busbar automation is bound to nothing and takes no contingency, so its
+' request names neither: the pair it moves is a property of its own, and
+' Start reads it there. That is the same string StartMode writes when the
+' command comes off a tag instead of this menu.
+Sub SendManeuver(target, btc, total, mode, impedeId)
+
+	Dim pairMoved
+	pairMoved = BusbarPairOf(target)
+
+	If pairMoved <> "" Then
+
+		If MsgBox("Force " & mode & " " & pairMoved & "?", _
 		          vbYesNo + vbQuestion, "Confirm") = vbYes Then
-			target.Item("Commands").Item("Start").WriteEx "TA:" & tr.Id
+			target.Item("Commands").Item("Start").WriteEx mode & ":0:0"
 		End If
 
-	ElseIf action = 2 * total + 2 Then
-
-		' Operator Block toggle
-		target.OperatorBlock = Not target.OperatorBlock
-
-	Else
-
-		' Reset
-		target.Item("Commands").Item("Reset").WriteEx True
+		Exit Sub
 
 	End If
+
+	Dim tr
+	Set tr = target.Transformer
+
+	Dim question
+	If impedeId = 0 Then
+		question = "Force " & mode & " on " & tr.Name & "?"
+	Else
+		question = "Force " & mode & " on " & tr.Name & _
+		           " with " & TransformerNameById(btc, total, impedeId) & " out of service?"
+	End If
+
+	If MsgBox(question, vbYesNo + vbQuestion, "Confirm") = vbYes Then
+		target.Item("Commands").Item("Start").WriteEx _
+			mode & ":" & tr.Id & ":" & impedeId
+	End If
+
+End Sub
+
+
+' One transformer automation's submenu: both manual maneuvers with every
+' contingency, then TA, then the two things done to the automation itself.
+Sub AddTransformerMenu(btc, total, idx, menu, actions)
+
+	menu = menu & btc(idx).Transformer.Name & "{"
+
+	menu = menu & ModeBlock("TM", btc, total, idx, actions) & "||"
+	menu = menu & ModeBlock("NM", btc, total, idx, actions) & "||"
+
+	Remember actions, idx, "TA", 0
+	menu = menu & "TA||"
+
+	Remember actions, idx, "BLOCK", 0
+	menu = menu & IIf(btc(idx).OperatorBlock, "*", "") & "Operator Block|"
+
+	Remember actions, idx, "RESET", 0
+	menu = menu & "Reset}"
+
+End Sub
+
+
+' One busbar automation's submenu, titled with the pair it moves.
+'
+' Two maneuvers and no more. TM hands the busbar to the far side of the
+' ring and NM brings it back; there is no contingency to offer, because the
+' path does not vary, and no TA, because that one answers a trip and is
+' never asked for by a person.
+Sub AddBusbarMenu(btc, idx, menu, actions)
+
+	menu = menu & BusbarPairOf(btc(idx)) & "{"
+
+	Remember actions, idx, "TM", 0
+	menu = menu & "TM|"
+
+	Remember actions, idx, "NM", 0
+	menu = menu & "NM||"
+
+	Remember actions, idx, "BLOCK", 0
+	menu = menu & IIf(btc(idx).OperatorBlock, "*", "") & "Operator Block|"
+
+	Remember actions, idx, "RESET", 0
+	menu = menu & "Reset}"
 
 End Sub
 
@@ -10416,7 +10609,9 @@ End Sub
 ' Labelled the way the spec labels them - "TM-TR3" on TR4's submenu is
 ' section 1.4.2.23's "TM TR4-TR3" - so the menu, the CommandStartTM<n00>
 ' tags and the spec all name the same maneuver.
-Function ModeEntries(mode, btc, total, idx)
+Function ModeBlock(mode, btc, total, idx, actions)
+
+	Remember actions, idx, mode, 0
 
 	Dim out, n, other
 	out = mode
@@ -10426,14 +10621,33 @@ Function ModeEntries(mode, btc, total, idx)
 		Set other = OtherTransformer(btc, total, idx, n)
 
 		If Not other Is Nothing Then
+			Remember actions, idx, mode, other.Id
 			out = out & "|" & mode & "-" & other.Name
 		End If
 
 	Next
 
-	ModeEntries = out
+	ModeBlock = out
 
 End Function
+
+
+' Records what the next option number is to do: which instance, what to
+' ask of it, and which transformer it is to treat as out of service.
+'
+' Keyed by the count so far plus one, because SelectMenu numbers the
+' entries it returns from one and passes over the empty ones. Called
+' immediately before the label it belongs to is appended, which is what
+' keeps the two in step.
+'
+' The key is written as text on both sides. A Dictionary keyed on a
+' number answers Exists only for a lookup of the same subtype, and what
+' SelectMenu hands back is not this script's to choose.
+Sub Remember(actions, idx, kind, impedeId)
+
+	actions.Add CStr(actions.Count + 1), idx & "|" & kind & "|" & impedeId
+
+End Sub
 
 
 ' The nth transformer that is not this instance's own, counting from 1 in
@@ -10443,22 +10657,32 @@ End Function
 ' that agreed today would be two things to keep in step, and the failure
 ' would be silent: a label naming one transformer and the command naming
 ' another.
+'
+' Busbar automations are passed over rather than counted. They are bound to
+' no transformer, so there is nothing about them to declare out of service
+' and nothing to offer as a contingency.
 Function OtherTransformer(btc, total, idx, n)
 
 	Set OtherTransformer = Nothing
 
-	Dim i, seen
+	Dim i, seen, tr
 	seen = 0
 
 	For i = 0 To total - 1
 
 		If i <> idx Then
 
-			seen = seen + 1
+			Set tr = TransformerOf(btc(i))
 
-			If seen = n Then
-				Set OtherTransformer = btc(i).Transformer
-				Exit Function
+			If Not tr Is Nothing Then
+
+				seen = seen + 1
+
+				If seen = n Then
+					Set OtherTransformer = tr
+					Exit Function
+				End If
+
 			End If
 
 		End If
@@ -10467,8 +10691,90 @@ Function OtherTransformer(btc, total, idx, n)
 
 End Function
 
+
+' The name of the transformer carrying an Id, among the ones on this menu,
+' and the Id itself when no instance is bound to it.
+Function TransformerNameById(btc, total, id)
+
+	TransformerNameById = "TR" & id
+
+	Dim i, tr
+	For i = 0 To total - 1
+
+		Set tr = TransformerOf(btc(i))
+
+		If Not tr Is Nothing Then
+			If tr.Id = id Then
+				TransformerNameById = tr.Name
+				Exit Function
+			End If
+		End If
+
+	Next
+
+End Function
+
+
+' The transformer an instance is bound to, or Nothing - which a busbar
+' automation always is, and a half-configured one may be.
+Function TransformerOf(obj)
+
+	Set TransformerOf = Nothing
+
+	On Error Resume Next
+	Set TransformerOf = obj.Transformer
+	On Error Goto 0
+
+End Function
+
+
+' The pair of busbars an instance moves, or "" for one that moves none -
+' and for a library too old to have the property at all.
+Function BusbarPairOf(obj)
+
+	BusbarPairOf = ""
+
+	On Error Resume Next
+	BusbarPairOf = Trim(obj.BusbarPair & "")
+	On Error Goto 0
+
+End Function
+
+
+' What the menu is ordered by: transformer automations first and by Id,
+' then the busbar ones by the pair they move.
+'
+' A string and not a number, because a busbar automation has no Id to sort
+' on - and because the two families should not interleave, which the
+' leading digit settles.
+Function MenuKey(obj)
+
+	Dim pairMoved
+	pairMoved = BusbarPairOf(obj)
+
+	If pairMoved <> "" Then
+		MenuKey = "2" & UCase(pairMoved)
+		Exit Function
+	End If
+
+	Dim id
+	id = 0
+
+	Dim tr
+	Set tr = TransformerOf(obj)
+
+	If Not tr Is Nothing Then
+		On Error Resume Next
+		id = CLng(tr.Id)
+		On Error Goto 0
+	End If
+
+	MenuKey = "1" & Right("00000" & id, 5)
+
+End Function
+
 Sub Foo()
-	
+
 End Sub
 
 <xatm_config_screens.Menu.btnClose:btnClose_Click()>

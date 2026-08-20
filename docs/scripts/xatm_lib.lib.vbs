@@ -319,43 +319,89 @@ Sub Start_OnChangedValue()
 	' rather than that the switchyard is not ready for it. Each one is a
 	' case the step logic cannot express: its Else branch would take a
 	' nonsense argument for "nothing is out" and run a real maneuver.
-
-	If Not IsConfiguredTransformer(triggerId) Then
-
-		Reject "Trigger transformer " & triggerId & " is not configured in this substation.", ts
-		Exit Sub
-
-	End If
-
-	If impedeId <> 0 Then
-
-		If impedeId = triggerId Then
-
-			Reject "Transformer " & triggerId & " cannot be both the trigger and the one out of service.", ts
-			Exit Sub
-
-		End If
-
-		If Not IsConfiguredTransformer(impedeId) Then
-
-			Reject "Impeded transformer " & impedeId & " is not configured in this substation.", ts
-			Exit Sub
-
-		End If
-
-	End If
-
-	' A transfer needs somewhere to put the load. Anything that is neither
-	' the trigger nor out of service can take it; with none left there is
-	' nothing to transfer to and no sequence to run.
 	'
-	' On the four transformer ring one impediment still leaves two, so this
-	' only bites on the small layouts - two transformers with the adjacent
-	' one impeded, which is the case the client asked to have refused.
-	If CountDestinations(triggerId, impedeId) = 0 Then
+	' Two kinds of automation asking for two different things, so they are
+	' checked apart. An instance carrying a BusbarPair moves that pair of
+	' busbars and is bound to no transformer at all - there is no busbar
+	' XObject to bind to, which is why the pair is carried as text. Every
+	' other instance moves its own transformer's load, and answers the
+	' questions that were always asked here.
+	Dim runMode
+	runMode = mode
 
-		Reject "No transformer is left to take the load.", ts
-		Exit Sub
+	If BusbarPair() <> "" Then
+
+		If mode = "TA" Then
+
+			Reject "a busbar automation has no automatic transfer - it is asked for and never triggered.", ts
+			Exit Sub
+
+		End If
+
+		If impedeId <> 0 Then
+
+			Reject "a busbar transfer takes no impediment - it has one path and it does not vary.", ts
+			Exit Sub
+
+		End If
+
+		If GetLayoutType() <> "4TR4LV_6BB6TIERING" Then
+
+			Reject "a busbar transfer is defined only on the 4TR4LV_6BB6TIERING layout.", ts
+			Exit Sub
+
+		End If
+
+		runMode = BusbarMode(mode, BusbarPair())
+
+		If runMode = "" Then
+
+			Reject "'" & BusbarPair() & "' is not a pair of busbars that can be transferred between.", ts
+			Exit Sub
+
+		End If
+
+	Else
+
+		If Not IsConfiguredTransformer(triggerId) Then
+
+			Reject "Trigger transformer " & triggerId & " is not configured in this substation.", ts
+			Exit Sub
+
+		End If
+
+		If impedeId <> 0 Then
+
+			If impedeId = triggerId Then
+
+				Reject "Transformer " & triggerId & " cannot be both the trigger and the one out of service.", ts
+				Exit Sub
+
+			End If
+
+			If Not IsConfiguredTransformer(impedeId) Then
+
+				Reject "Impeded transformer " & impedeId & " is not configured in this substation.", ts
+				Exit Sub
+
+			End If
+
+		End If
+
+		' A transfer needs somewhere to put the load. Anything that is
+		' neither the trigger nor out of service can take it; with none
+		' left there is nothing to transfer to and no sequence to run.
+		'
+		' On the four transformer ring one impediment still leaves two, so
+		' this only bites on the small layouts - two transformers with the
+		' adjacent one impeded, which is the case the client asked to have
+		' refused.
+		If CountDestinations(triggerId, impedeId) = 0 Then
+
+			Reject "No transformer is left to take the load.", ts
+			Exit Sub
+
+		End If
 
 	End If
 
@@ -439,14 +485,19 @@ Sub Start_OnChangedValue()
 	' START
 	' ================
 
-	xatm_BTC.Item("FSM").Item("AutomationType").WriteEx mode
+	' The resolved maneuver and not the command: a busbar instance was
+	' asked for TM and what it runs is TMB1A, which is what every step
+	' from here on reads.
+	xatm_BTC.Item("FSM").Item("AutomationType").WriteEx runMode
 	xatm_BTC.Item("FSM").Item("TriggerTransformerId").WriteEx triggerId
 	xatm_BTC.Item("FSM").Item("ImpededTransformerId").WriteEx impedeId
 	xatm_BTC.Item("FSM").Item("StepTimer").WriteEx 0
 	xatm_BTC.Item("FSM").Item("Main").WriteEx 0
 	xatm_BTC.Running = True
 
-	If impedeId = 0 Then
+	If runMode <> mode Then
+		WriteLog "Start - " & BusbarLabel(runMode)
+	ElseIf impedeId = 0 Then
 		WriteLog "Start - " & mode & " TR" & triggerId
 	Else
 		WriteLog "Start - " & mode & " TR" & triggerId & " with TR" & impedeId & " out of service"
@@ -511,6 +562,16 @@ End Function
 ' person - which is also why TA takes no impediment argument and reads the
 ' field for it instead.
 Sub StartMode(mode, impedeId)
+
+	' A busbar automation is bound to nothing, so there is nothing to
+	' look up and no trigger to name: which pair it moves is a property
+	' of its own, and that pair is the whole of what the maneuver needs.
+	If BusbarPair() <> "" Then
+
+		WriteEx mode & ":0:0"
+		Exit Sub
+
+	End If
 
 	Dim found, id
 	id = BoundTransformerId(found)
@@ -728,6 +789,89 @@ Function FieldImpediment(triggerId, ByRef outCount)
 
 End Function
 
+' The pair of busbars this instance moves, or "" when it moves none.
+'
+' Text and not a link, because a busbar is not an XObject there is anything
+' to bind to - the four other properties that name equipment are links, and
+' this one could not be.
+'
+' One property and not two. A flag reading "this is a busbar automation"
+' beside a name saying which busbar would be two ways of writing one fact,
+' and two ways of writing one fact can be made to disagree; a name that is
+' either there or is not answers both questions and cannot.
+'
+' Empty is the ordinary case and the safe one: an instance nobody
+' configured, or one predating the property, is a transformer automation.
+Function BusbarPair()
+
+	BusbarPair = ""
+
+	On Error Resume Next
+	BusbarPair = Trim(xatm_BTC.BusbarPair & "")
+	On Error Goto 0
+
+End Function
+
+
+' Which of the four busbar sequences a TM or an NM on this instance is, and
+' "" for a pair that names none of them.
+'
+' The mode says which way round - out or back - and the pair says which
+' busbars, so the two together name one sequence: TM on B1A-B4A is TMB1A
+' and NM on B2B-B3A is NMB2B.
+Function BusbarMode(mode, pair)
+
+	BusbarMode = ""
+
+	Select Case UCase(pair)
+
+		Case "B1A-B4A"
+			BusbarMode = mode & "B1A"
+
+		Case "B2B-B3A"
+			BusbarMode = mode & "B2B"
+
+	End Select
+
+End Function
+
+
+' The maneuver as the spec writes it, for anything a person reads.
+Function BusbarLabel(mode)
+
+	Select Case mode
+
+		Case "TMB1A"
+			BusbarLabel = "TM B1A-B4A"
+
+		Case "NMB1A"
+			BusbarLabel = "NM B1A-B4A"
+
+		Case "TMB2B"
+			BusbarLabel = "TM B2B-B3A"
+
+		Case "NMB2B"
+			BusbarLabel = "NM B2B-B3A"
+
+		Case Else
+			BusbarLabel = mode
+
+	End Select
+
+End Function
+
+
+' The layout this substation is configured as, read the way the step logic
+' reads it. Written out again here because one E3 object cannot call a
+' procedure in another's scope.
+Function GetLayoutType()
+
+	GetLayoutType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value & "_" & _
+					Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
+
+End Function
+
+
 ' Which pair of gates a maneuver answers to.
 '
 ' The mode, and the transformer it assumes is out where there is one: TM,
@@ -929,6 +1073,164 @@ Function ReadImpededId()
 
 End Function
 
+' The maneuver as the spec writes it, for anything a person reads. Its own
+' copy, because one E3 object cannot call a procedure in another's scope.
+Function BusbarLabel(mode)
+
+	Select Case mode
+
+		Case "TMB1A"
+			BusbarLabel = "TM B1A-B4A"
+
+		Case "NMB1A"
+			BusbarLabel = "NM B1A-B4A"
+
+		Case "TMB2B"
+			BusbarLabel = "TM B2B-B3A"
+
+		Case "NMB2B"
+			BusbarLabel = "NM B2B-B3A"
+
+		Case Else
+			BusbarLabel = mode
+
+	End Select
+
+End Function
+
+
+' Whether the running maneuver is one of the two busbar ones.
+Function IsBusbarMode(mode)
+
+	Select Case mode
+
+		Case "TMB1A", "NMB1A", "TMB2B", "NMB2B"
+			IsBusbarMode = True
+
+		Case Else
+			IsBusbarMode = False
+
+	End Select
+
+End Function
+
+
+' The two ties a busbar maneuver works, in the order it works them: which
+' = 1 is the one to close, which = 2 the one to open.
+'
+'   TM B1A-B4A   close DJ10 (900), open DJ20 (700)   B1A leaves TR1 for TR4
+'   NM B1A-B4A   close DJ20 (700), open DJ10 (900)   and comes back
+'   TM B2B-B3A   close DJ50 (730), open DJ40 (720)   B2B leaves TR2 for TR3
+'   NM B2B-B3A   close DJ40 (720), open DJ50 (730)   and comes back
+'
+' Make before break both ways round, and that is worth saying because the
+' spec's normalisation tables read the other way at a glance: they carry an
+' upward arrow and are read from the bottom row up, so what looks like an
+' open followed by a close is a close followed by an open. The busbar is
+' live throughout either maneuver and stays live - it is the pair of ties
+' that swaps, and all that separates a transfer from its normalisation is
+' which of the two closes first.
+'
+' 0 for a mode that names no tie, which the step reports rather than acting
+' on: a busbar maneuver that reached a step with nothing to operate is a
+' maneuver this table does not know, not a breaker that failed.
+Function BusbarTie(mode, which)
+
+	BusbarTie = 0
+
+	Select Case mode
+
+		Case "TMB1A"
+			If which = 1 Then BusbarTie = 900 Else BusbarTie = 700
+
+		Case "NMB1A"
+			If which = 1 Then BusbarTie = 700 Else BusbarTie = 900
+
+		Case "TMB2B"
+			If which = 1 Then BusbarTie = 730 Else BusbarTie = 720
+
+		Case "NMB2B"
+			If which = 1 Then BusbarTie = 720 Else BusbarTie = 730
+
+	End Select
+
+End Function
+
+
+' One step of a busbar maneuver: operate the tie this step is for, and go
+' on once it has moved.
+'
+' Both steps in one procedure because both are the same procedure - one
+' breaker taken to one position - where each transformer maneuver picks its
+' path from the trigger and the contingency and so needs a step of its own.
+' Step 1 closes and hands over to step 2; step 2 opens and the sequence is
+' done, which is why nothing beyond step 2 ever sees these modes.
+Sub SBB(stepNumber, mode)
+
+	Dim action, nextStep
+
+	If stepNumber = 1 Then
+		action   = 2
+		nextStep = 2
+	Else
+		action   = 1
+		nextStep = 99
+	End If
+
+	Dim breakerId
+	breakerId = BusbarTie(mode, stepNumber)
+
+	If breakerId = 0 Then
+
+		WriteLog "Step " & stepNumber & ": " & mode & " names no tie breaker for this step. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step " & stepNumber & ": Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step " & stepNumber & ": " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+
 Sub WriteLog(message)
 	
 	Dim consoleLogEngine
@@ -1103,7 +1405,11 @@ Function DescribeAutomation()
 	Dim impedeId
 	impedeId  = ReadImpededId()
 
-	If impedeId = 0 Then
+	' A busbar maneuver is not about the transformer and has no
+	' contingency, so it names itself and stops there.
+	If IsBusbarMode(autoType) Then
+		DescribeAutomation = BusbarLabel(autoType)
+	ElseIf impedeId = 0 Then
 		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - no transformer out of service"
 	Else
 		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - " & TransformerName(impedeId) & " out of service"
@@ -1149,6 +1455,13 @@ Sub Main_Step01()
 		Case "TA"
 
 			S1TA triggerId, impedeId
+
+		' The busbar maneuvers take neither argument: which busbar and
+		' which way round is the whole of what they need, and the mode
+		' carries both.
+		Case "TMB1A", "NMB1A", "TMB2B", "NMB2B"
+
+			SBB 1, Parent.Item("AutomationType").Value
 			
 	End Select
 	
@@ -1382,6 +1695,13 @@ Sub Main_Step02()
 		Case "TA"
 
 			S2TA triggerId, impedeId
+
+		' The busbar maneuvers take neither argument: which busbar and
+		' which way round is the whole of what they need, and the mode
+		' carries both.
+		Case "TMB1A", "NMB1A", "TMB2B", "NMB2B"
+
+			SBB 2, Parent.Item("AutomationType").Value
 			
 	End Select
 	
@@ -5674,22 +5994,37 @@ End Sub
 
 Sub RequestBTC(mode)
 
-	Dim obj, bound, tr
+	Dim obj, bound, tr, isBusbar
 	Set bound = Nothing
 
 	For Each obj In Application.GetObject("XATM_Data.Automation")
 		If TypeName(obj) = "xatm_BTC" Then
 
-			Set tr = Nothing
+			' A busbar automation is bound to a transformer too - the one
+			' whose busbar it moves - but it is not that transformer's
+			' automation and answers no trigger of its own. Passed over
+			' here so that a trip is never handed to a sequence with no
+			' TA in it, which is what one of these would be.
+			isBusbar = False
+
 			On Error Resume Next
-			Set tr = obj.Transformer          ' may be unbound
+			isBusbar = (Trim(obj.BusbarPair & "") <> "")
 			On Error GoTo 0
 
-			If Not tr Is Nothing Then
-				If tr.Id = xatm_Transformer.Id Then
-					Set bound = obj
-					Exit For
+			If Not isBusbar Then
+
+				Set tr = Nothing
+				On Error Resume Next
+				Set tr = obj.Transformer          ' may be unbound
+				On Error GoTo 0
+
+				If Not tr Is Nothing Then
+					If tr.Id = xatm_Transformer.Id Then
+						Set bound = obj
+						Exit For
+					End If
 				End If
+
 			End If
 
 		End If
