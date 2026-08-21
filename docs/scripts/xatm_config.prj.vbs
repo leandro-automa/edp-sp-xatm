@@ -5040,6 +5040,47 @@ Sub xatm_TMTNM_OnStartRunning()
 		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
 		
 	
+	' Whether a failed transfer unwinds itself instead of stopping where it
+	' failed.
+	'
+	' The instance runs the inverse maneuver from its own step 1. Every step
+	' checks the position it is about to command, so the inverse walks its
+	' whole length and operates only what the failed run had moved - which
+	' is why a transfer that died half way needs no record of how far it
+	' got.
+	'
+	' Transfers only, out and back across the ring alike. A normalisation is
+	' already the way home and is never reverted; nor is a failure at step 1,
+	' where nothing has been operated yet.
+	'
+	' False by default. Operating breakers on their own after something has
+	' already gone wrong is not a thing to switch on for a station without
+	' being asked.
+	AddProperty bag, "RevertOnFailure", "Boolean", False, _
+		"True when a failed transfer unwinds itself instead of stopping. The instance runs the inverse maneuver, which puts the substation back the way it was; a normalisation is never reverted.", _
+		"True quando uma transferência que falha se desfaz em vez de parar. A instância executa a manobra inversa, o que devolve a subestação ao estado anterior; uma normalização nunca é revertida."
+
+	' What the last run did, kept until the next one starts.
+	'
+	' Cleared at the start of a maneuver and not at the end of one, so the
+	' control room goes on seeing how the last attempt went for as long as
+	' nothing new has been asked for. The same shape the reclosing uses.
+	'
+	' A revert ends Unsuccessful. It finished its sequence, but the maneuver
+	' somebody asked for did not happen, and that is what these two are for.
+	AddProperty bag, "Successful", "Boolean", False, _
+		"True when the last maneuver completed. Cleared when the next one starts, so what the last attempt did stays readable until then.", _
+		"True quando a última manobra foi concluída. Apagada quando a próxima parte, de modo que o resultado da anterior permaneça legível até lá."
+
+	AddProperty bag, "Unsuccessful", "Boolean", False, _
+		"True when the last maneuver did not complete - it failed and stopped, or it failed and unwound itself.", _
+		"True quando a última manobra não foi concluída - falhou e parou, ou falhou e se desfez."
+
+	AddProperty bag, "Reverting", "Boolean", False, _
+		"True while a failed transfer is unwinding itself. Cleared when the sequence ends, which it ends unsuccessfully.", _
+		"True enquanto uma transferência que falhou está se desfazendo. Apagada quando a sequência termina - e ela termina mal sucedida."
+
+
 	' --- the gates, one pair for each maneuver --------------------------
 	'
 	' A pair for every command, because what has to hold before a transfer
@@ -5191,7 +5232,12 @@ Sub xatm_TMTNM_OnStartRunning()
 	' itself. Neither belongs on the configuration panel - there is
 	' nothing about them to configure - but both are what a screen draws,
 	' so they are interfaced and nothing else.
-	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "RevertOnFailure", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+
+	SetExposure bag, "Running",      EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "Successful",   EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "Unsuccessful", EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "Reverting",    EXPOSE_INTERFACE + EXPOSE_IOTAG
 
 	For i = 1 To 6
 		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
@@ -5232,6 +5278,9 @@ Sub xatm_TMTNM_OnStartRunning()
 	SetAlarm bag, "GeneralBlock",   "BLOQUEIO GERAL",      PAIR_BLOCKED,      SEV_HIGH
 	SetAlarm bag, "OperatorBlock",  "BLOQUEIO OPERADOR",   PAIR_BLOCKED,      SEV_MEDIUM
 	SetAlarm bag, "Running",        "AUTOMATISMO",         PAIR_RUNNING,      SEV_LOW
+	SetAlarm bag, "Successful",    "MANOBRA BEM SUCEDIDA",  PAIR_ACTUATED, SEV_LOW
+	SetAlarm bag, "Unsuccessful",  "MANOBRA MAL SUCEDIDA",  PAIR_ACTUATED, SEV_HIGH
+	SetAlarm bag, "Reverting",     "REVERSÃO DE MANOBRA", PAIR_ACTUATED, SEV_HIGH
 
 	' Every gate raises too, the way the single pair did.
 	'
