@@ -2009,7 +2009,7 @@ End Sub
 
 
 ' What an object answers to across a rename - its Id where it has one,
-' and its name where it has not. A BTC carries no Id, and SyncAutomation
+' and its name where it has not. These carry no Id, and SyncAutomation
 ' already goes by the number on the end of its name.
 Function ObjectKey(id, name)
 
@@ -2666,7 +2666,7 @@ End Function
 ' the last piece of it.
 '
 ' TODO: a property somewhere else in the document may hold the old path -
-' a BTC's Transformer does - and those are not followed yet.
+' an automation's Transformer does - and those are not followed yet.
 Function SetName(objectNode, value)
 
 	SetName = ""
@@ -3029,7 +3029,7 @@ End Function
 
 ' A property whose configuration is an association, not a value. Two of
 ' them: an IOTag is wired to a tag out in the project, an InternalTag to
-' one of the object's own - the BTC's command interface. Both export as a
+' one of the object's own - the automation's command interface. Both export as a
 ' source and neither carries a value, because what is configured is the
 ' tag it points at, and whatever that tag happens to be holding at the
 ' time is not configuration at all.
@@ -3434,8 +3434,360 @@ Sub WriteLog(message)
 	
 End Sub
 
-<xatm_config_data.PropertiesHelper.xatm_BTC:xatm_BTC_OnStartRunning()>
-Sub xatm_BTC_OnStartRunning()
+<xatm_config_data.PropertiesHelper.xatm_TA:xatm_TA_OnStartRunning()>
+Sub xatm_TA_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	' The automatic transfer, and only that.
+	'
+	' Everything an operator asks for lives on xatm_TMTNM. This one is
+	' asked for by a trip, through the transformer's own trigger, and
+	' never by a person - which is why it has no command to start it,
+	' one pair of gates rather than five, and no property naming a
+	' transformer to treat as out of service. The field is read for
+	' that when the sequence starts.
+
+	AddProperty bag, "Enabled", "Boolean", True, _
+		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
+		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
+
+	AddProperty bag, "Running", "Boolean", False, _
+		"True while a sequence is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
+		"True enquanto uma sequência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
+
+	AddProperty bag, "Transformer", "xatm_Transformer", Empty, _
+		"Transformer XObject this automation instance is bound to.", _
+		"XObject do transformador ao qual esta instância do automatismo está vinculada."
+	
+
+	AddProperty bag, "OperatorBlock", "Boolean", False, _
+		"Operator lock. Blocks the start until the operator releases it.", _
+		"Bloqueio do operador. Impede a partida até que o operador libere."
+
+	AddProperty bag, "GeneralBlock", "Boolean", False, _
+		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
+		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
+		
+	
+	' --- the gates, one pair for each maneuver --------------------------
+	'
+	' A pair for every command, because what has to hold before a transfer
+	' may start is not the same from one contingency to the next: TM with
+	' TR2 out closes a different path, over different equipment, from a
+	' different starting state. One expression could not answer for all of
+	' them, and a single pair is what forced the question.
+	'
+	' Preconditions<gate> is True while that maneuver is permitted;
+	' AutomaticBlock<gate> is True while the switchyard bars it. The two
+	' polarities the single pair had, kept.
+	'
+	' The gate name is the mode, and the transformer the maneuver assumes
+	' is out where there is one: TM, TM200, NM, NM400. Exactly the names
+	' the command tags carry, so a command and the gates that let it
+	' through are read off one string and cannot drift apart.
+	'
+	Dim gm, gi, gate, gateLabel, outEN, outPT, whatEN, whatPT
+
+	AddProperty bag, "Preconditions", "Boolean", True, _
+		"Field conditions that have to hold before an automatic transfer may start. Bound to an expression - True while the maneuver is permitted.", _
+		"Condições de campo que devem valer antes que uma transferência automática possa partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
+
+	AddProperty bag, "AutomaticBlock", "Boolean", False, _
+		"Field conditions that block the automatic transfer. Bound to an expression - True keeps it from starting, alongside OperatorBlock and GeneralBlock.", _
+		"Condições de campo que bloqueiam a transferência automática. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
+
+	' --- the command interface ------------------------------------------
+	'
+	' No CommandStart of any kind. Over IEC 60870-5-104 an address means
+	' one maneuver, and there is no maneuver here for a person to ask
+	' for: a point that started an automatic transfer by hand would be a
+	' way to run the restoration scheme on a busbar that is still live.
+
+	AddProperty bag, "CommandReset", "InternalTag", Empty, _
+		"Reset command. Clears the latched step failures and the general block, so that a sequence can be started again.", _
+		"Comando de reset. Apaga as falhas seladas de passo e o bloqueio geral, para que uma sequência possa partir novamente."
+
+	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
+		"Operator lock command. Written by the operator's screen to set or release OperatorBlock.", _
+		"Comando de bloqueio do operador. Escrito pela tela do operador para marcar ou liberar o OperatorBlock."
+
+	Dim i
+	For i = 1 To 6
+
+		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
+			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
+			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
+
+	Next
+
+	' What the screen may do with each of these. Anything left out stays
+	' EXPOSE_NONE.
+	'
+	' The same answers the manual automation gives, for the properties
+	' the two have in common - the reasoning is written out there.
+	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	For i = 1 To 6
+		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
+	Next
+
+	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+
+	' --- what the operator is alarmed on --------------------------------
+	'
+	' The same three the manual automation raises about itself, and the
+	' one pair of gates.
+	SetAlarm bag, "GeneralBlock",   "BLOQUEIO GERAL",      PAIR_BLOCKED,      SEV_HIGH
+	SetAlarm bag, "OperatorBlock",  "BLOQUEIO OPERADOR",   PAIR_BLOCKED,      SEV_MEDIUM
+	SetAlarm bag, "Running",        "AUTOMATISMO",         PAIR_RUNNING,      SEV_LOW
+
+	SetAlarm bag, "Preconditions",  "PRECONDIÇÕES TA",        PAIR_PRECONDITION, SEV_MEDIUM
+	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO TA", PAIR_BLOCKED,      SEV_MEDIUM
+
+	For i = 1 To 6
+		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
+	Next
+
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
+Const EXPOSE_IOTAG      = 128   ' level 3 is given a point for it, over 104
+
+
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "CONCLUÍDO|EM ANDAMENTO|1"
+
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
+
+
+
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
+
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+	
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
+	End Function
+
+	' Whether level 3 is given a point for it.
+	'
+	' A separate question from IsInterfaced, and asked separately. The
+	' interface is where the Elipse application meets the automation; the
+	' distribution is what leaves the station. Everything distributed is
+	' interfaced - the distribution reads off the interface - but not
+	' everything interfaced is distributed, and conflating the two left no
+	' way to say so except a list of names kept somewhere else.
+	Public Function IsIOTagged()
+		IsIOTagged = Has(EXPOSE_IOTAG)
+	End Function
+
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	' The digital state that raises the alarm - DigitalLimit. It travels
+	' inside the pair rather than beside it, so the words and the state
+	' they describe cannot be changed independently of one another.
+	'
+	' The pair carries 1 or 0, meaning raises-when-true or
+	' raises-when-false, and this turns that into the number the tag will
+	' actually be holding. VBScript True is -1, every tag these alarms
+	' watch is a Boolean, and a DigitalAlarmSource compares its value
+	' against DigitalLimit as a number - so a limit of 1 never matches a
+	' reading of -1, and the alarm never raises. Writing 1 in the pair is
+	' still right: whoever adds one should say which state is the alarming
+	' one, not have to know what VBScript numbers True as.
+	Public Function AlarmLimit()
+
+		If CLng("0" & PairPart(2)) <> 0 Then
+			AlarmLimit = -1
+		Else
+			AlarmLimit = 0
+		End If
+
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
+
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+		
+End Sub
+
+<xatm_config_data.PropertiesHelper.xatm_TMTNM:xatm_TMTNM_OnStartRunning()>
+Sub xatm_TMTNM_OnStartRunning()
 
 	Dim bag
 	Set bag = CreateObject("Scripting.Dictionary")
@@ -3504,17 +3856,6 @@ Sub xatm_BTC_OnStartRunning()
 	' the command tags carry, so a command and the gates that let it
 	' through are read off one string and cannot drift apart.
 	'
-	' TA has one pair and not five. Nobody commands it - it answers a trip -
-	' so there is no command for a gate to pair with, and a scheme that
-	' restores a dead busbar should not have five ways to be barred.
-	AddProperty bag, "PreconditionsTA", "Boolean", True, _
-		"Field conditions that have to hold before an automatic transfer may start. Bound to an expression - True while the maneuver is permitted.", _
-		"Condições de campo que devem valer antes que uma transferência automática possa partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
-
-	AddProperty bag, "AutomaticBlockTA", "Boolean", False, _
-		"Field conditions that block the automatic transfer. Bound to an expression - True keeps it from starting, alongside OperatorBlock and GeneralBlock.", _
-		"Condições de campo que bloqueiam a transferência automática. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
-
 	Dim gm, gi, gate, gateLabel, outEN, outPT, whatEN, whatPT
 
 	For Each gm In Array("TM", "NM")
@@ -3636,8 +3977,6 @@ Sub xatm_BTC_OnStartRunning()
 	' interfaced - what the single pair was - and carried to level 3 as
 	' well, so the control centre reads which maneuver is barred and not
 	' merely that one of them is.
-	SetExposure bag, "PreconditionsTA",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "AutomaticBlockTA", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 
 	For Each gm In Array("TM", "NM")
 		For gi = 0 To 4
@@ -3705,8 +4044,6 @@ Sub xatm_BTC_OnStartRunning()
 	' The label names the maneuver the way the control room says it: TM-TR2
 	' is a manual transfer with TR2 impeded, which is the spec's own
 	' "TM TR<trigger>-TR2".
-	SetAlarm bag, "PreconditionsTA",  "PRECONDIÇÕES TA",        PAIR_PRECONDITION, SEV_MEDIUM
-	SetAlarm bag, "AutomaticBlockTA", "BLOQUEIO AUTOMÁTICO TA", PAIR_BLOCKED,      SEV_MEDIUM
 
 	For Each gm In Array("TM", "NM")
 		For gi = 0 To 4
@@ -5991,7 +6328,7 @@ Sub BuildPropertyRows(objectNode, key)
 	' something declared on it, so it is neither a property of the document
 	' nor an entry in the manifest, and its exposure is stated here.
 	'
-	' Not under Automation, though: SyncAutomation finds a BTC by the
+	' Not under Automation, though: SyncAutomation finds an automation by the
 	' number on the end of its name, so the name is structure there and not
 	' the operator's to change.
 	If Not IsAutomation(objectNode) Then
@@ -6430,7 +6767,7 @@ End Sub
 ' An object sorts on its Id where its class declares one and on its name
 ' where it does not. That is what puts the devices in Id order, which
 ' pairs each transformer with its own breaker, and the automations in
-' name order, a BTC having no Id to go by.
+' name order, an automation having no Id to go by.
 Function SortKey(element)
 
 	If element.nodeName = "folder" Then
@@ -7116,7 +7453,14 @@ Sub btnApply_Click()
 		SyncFolder doc, INCOMER_PATH, IncomerDevices(incomerType), removed, added, failed
 	End If
 
+	' TODO: change function names to SyncAutomation
 	SyncAutomation doc, AutomationCount(transformerType), busbarType, removed, added, failed
+
+	' One automatic transfer per transformer, alongside the manual ones.
+	' The count is the same because the question is the same - how many
+	' transformers the layout has - and it is asked again rather than
+	' shared, so that the two families stay free to differ.
+	SyncTA doc, AutomationCount(transformerType), removed, added, failed
 	
 	' After the incomer folder above, so the breakers a reclosing will
 	' operate are already in the document by the time it appears - and
@@ -7144,7 +7488,8 @@ Const TRANSFORMER_PATH = "/xatm-config/folder[@name='Substation']/folder[@name='
 Const BUSBAR_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Busbar']"
 Const INCOMER_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Incomer']"
 
-Const BTC_CLASS         = "xatm_BTC"
+Const TMTNM_CLASS       = "xatm_TMTNM"
+Const TA_CLASS          = "xatm_TA"
 Const RASEAT_CLASS      = "xatm_RASEAT"
 Const TRANSFORMER_CLASS = "xatm_Transformer"
 
@@ -7264,7 +7609,7 @@ Const HV_TO_BAR_B = 80
 
 
 ' How many transformers a layout has. The same count as the automations
-' - one BTC per transformer - but asked as its own question, because the
+' - one manual automation per transformer - but asked as its own question, because the
 ' high-voltage disconnectors are per transformer and not per automation.
 Function TransformerCount(layoutType)
 
@@ -7347,7 +7692,7 @@ End Function
 
 
 ' Transformer n is Id n00, the way the layouts hand the Ids out, so a
-' BTC the layout adds knows which transformer it drives.
+' automation the layout adds knows which transformer it drives.
 Function AutomationTransformerId(n)
 
 	AutomationTransformerId = n * 100
@@ -7355,7 +7700,7 @@ Function AutomationTransformerId(n)
 End Function
 
 
-' One BTC automation per transformer, so the transformer layout sets
+' One manual automation per transformer, so the transformer layout sets
 ' the count.
 ' How many high-voltage reclosing automations the incomer layout wants.
 '
@@ -7591,8 +7936,8 @@ Sub SyncFolder(doc, folderPath, devices, removed, added, failed)
 End Sub
 
 
-' Brings the Automation folder to the layout. The BTC instances carry no
-' Id property, so they go by the number in the name - BTC1..BTCn stay,
+' Brings the Automation folder to the layout. These instances carry no
+' Id property, so they go by the number in the name - TMTNM1..TMTNMn stay,
 ' the rest are dropped, and a missing one is created bound to the
 ' transformer of the same number.
 Sub SyncAutomation(doc, keepCount, busbarType, removed, added, failed)
@@ -7605,9 +7950,9 @@ Sub SyncAutomation(doc, keepCount, busbarType, removed, added, failed)
 		Exit Sub
 	End If
 
-	' Two families of BTC share this folder. The transformer ones are
-	' BTC1..BTCn, one per transformer, and are known by the number on the
-	' end of the name; the busbar ones are BTC_B1A and BTC_B2B, exist only
+	' Two families of manual automation share this folder. The transformer ones are
+	' TMTNM1..TMTNMn, one per transformer, and are known by the number on the
+	' end of the name; the busbar ones are TMTNM_B1A and TMTNM_B2B, exist only
 	' where the busbar layout has somewhere to hand a busbar to, and are
 	' known by name because there is nothing about them to count.
 	Dim busbars
@@ -7621,7 +7966,7 @@ Sub SyncAutomation(doc, keepCount, busbarType, removed, added, failed)
 	Set doomed = CreateObject("Scripting.Dictionary")
 
 	Dim nodes, node, n, num, objectName
-	Set nodes = folder.selectNodes("object[@type='" & BTC_CLASS & "']")
+	Set nodes = folder.selectNodes("object[@type='" & TMTNM_CLASS & "']")
 
 	For n = 0 To nodes.length - 1
 
@@ -7630,7 +7975,7 @@ Sub SyncAutomation(doc, keepCount, busbarType, removed, added, failed)
 		num        = TrailingNumber(objectName)
 
 		' Asked in this order because a busbar automation has no trailing
-		' number at all - TrailingNumber answers 0 for BTC_B1A - so it
+		' number at all - TrailingNumber answers 0 for TMTNM_B1A - so it
 		' would fall through to the prune and be dropped on the next apply.
 		If BusbarWanted(busbars, objectName) Then
 			keptBusbar(LCase(objectName)) = True
@@ -7653,10 +7998,10 @@ Sub SyncAutomation(doc, keepCount, busbarType, removed, added, failed)
 
 		If Not kept.Exists(n) Then
 
-			name = "BTC" & n
+			name = "TMTNM" & n
 
 			' The transformer folder is brought to the layout first, so a
-			' transformer this BTC drives is already there to bind to.
+			' transformer this automation drives is already there to bind to.
 			path = TransformerPath(doc, AutomationTransformerId(n))
 
 			If path = "" Then
@@ -7665,10 +8010,10 @@ Sub SyncAutomation(doc, keepCount, busbarType, removed, added, failed)
 				overrides = Array("Transformer", path)
 			End If
 
-			Set node = NewObject(folder, BTC_CLASS, name, overrides)
+			Set node = NewObject(folder, TMTNM_CLASS, name, overrides)
 
 			If node Is Nothing Then
-				failed = failed & vbCrLf & "  " & name & " in Automation - no manifest for " & BTC_CLASS
+				failed = failed & vbCrLf & "  " & name & " in Automation - no manifest for " & TMTNM_CLASS
 			ElseIf path = "" Then
 				added = added & vbCrLf & "  " & name & " in Automation, with no transformer to bind to"
 			Else
@@ -7692,10 +8037,10 @@ Sub SyncAutomation(doc, keepCount, busbarType, removed, added, failed)
 
 		If Not keptBusbar.Exists(LCase(name)) Then
 
-			Set node = NewObject(folder, BTC_CLASS, name, Array("BusbarPair", pair))
+			Set node = NewObject(folder, TMTNM_CLASS, name, Array("BusbarPair", pair))
 
 			If node Is Nothing Then
-				failed = failed & vbCrLf & "  " & name & " in Automation - no manifest for " & BTC_CLASS
+				failed = failed & vbCrLf & "  " & name & " in Automation - no manifest for " & TMTNM_CLASS
 			Else
 				added = added & vbCrLf & "  " & name & " in Automation, transferring " & pair
 			End If
@@ -7728,7 +8073,7 @@ Function BusbarAutomations(busbarType)
 End Function
 
 
-' What one of them is called: BTC_B1A, BTC_B2B.
+' What one of them is called: TMTNM_B1A, TMTNM_B2B.
 '
 ' Named for the busbar that moves rather than numbered, because there is
 ' nothing to count - a layout either defines the pair or defines neither -
@@ -7739,7 +8084,7 @@ Function BusbarAutomationName(pair)
 	Dim parts
 	parts = Split(pair, "-")
 
-	BusbarAutomationName = "BTC_" & parts(0)
+	BusbarAutomationName = "TMTNM_" & parts(0)
 
 End Function
 
@@ -7764,16 +8109,98 @@ End Function
 
 
 
+' Brings the Automation folder to one automatic transfer per transformer.
+'
+' Shaped like the manual sync above and kept apart from it for the reason
+' SyncRASEAT is kept apart: selecting by type is what lets three classes
+' share one folder without any of them pruning another's objects.
+'
+' Bound to a transformer, and this one really is that transformer's
+' automation - it answers its trip, and the trigger inside xatm_Transformer
+' finds it by the binding. A manual automation bound to the same
+' transformer is a different thing and is no longer looked at there.
+Sub SyncTA(doc, keepCount, removed, added, failed)
+
+	Dim folder
+	Set folder = doc.selectSingleNode(AUTOMATION_PATH)
+
+	If folder Is Nothing Then
+		failed = failed & vbCrLf & "  the Automation folder is not in the document"
+		Exit Sub
+	End If
+
+	Dim kept
+	Set kept = CreateObject("Scripting.Dictionary")
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim nodes, node, n, num
+	Set nodes = folder.selectNodes("object[@type='" & TA_CLASS & "']")
+
+	For n = 0 To nodes.length - 1
+
+		Set node = nodes.item(n)
+		num = TrailingNumber(node.getAttribute("name"))
+
+		If num >= 1 And num <= keepCount Then
+			kept(num) = True
+		Else
+			removed = removed & vbCrLf & "  " & node.getAttribute("name") & " from Automation"
+			doomed.Add n, node
+		End If
+
+	Next
+
+	For Each n In doomed.Keys
+		Set node = doomed(n)
+		DropNode node
+	Next
+
+	Dim objectName, path, overrides
+	For n = 1 To keepCount
+
+		If Not kept.Exists(n) Then
+
+			objectName = "TA" & n
+
+			' The transformer folder is brought to the layout first, so the
+			' transformer this one answers for is already there to bind to.
+			path = TransformerPath(doc, AutomationTransformerId(n))
+
+			If path = "" Then
+				overrides = Array()
+			Else
+				overrides = Array("Transformer", path)
+			End If
+
+			Set node = NewObject(folder, TA_CLASS, objectName, overrides)
+
+			If node Is Nothing Then
+				failed = failed & vbCrLf & "  " & objectName & " in Automation - no manifest for " & TA_CLASS
+			ElseIf path = "" Then
+				added = added & vbCrLf & "  " & objectName & " in Automation, with no transformer to bind to"
+			Else
+				added = added & vbCrLf & "  " & objectName & " in Automation, bound to " & path
+			End If
+
+		End If
+
+	Next
+
+End Sub
+
+
 ' Brings the Automation folder to the number of reclosing automations the
 ' incomer layout wants - which is one, or none.
 '
 ' The same shape as SyncAutomation above and deliberately not folded into
-' it: that one binds each BTC to a transformer it has to go and find,
+' it: that one binds each instance to a transformer it has to go and find,
 ' and this one binds nothing. RASEAT holds no equipment; its steps
 ' resolve breakers through GetDeviceById and the layout when they run.
 '
 ' Selecting by type is what lets the two live in one folder without
-' either pruning the other: SyncAutomation sees only xatm_BTC nodes, and
+' either pruning the other: SyncAutomation sees only xatm_TMTNM nodes, and
 ' this sees only xatm_RASEAT ones.
 Sub SyncRASEAT(doc, keepCount, removed, added, failed)
 
@@ -7821,7 +8248,7 @@ Sub SyncRASEAT(doc, keepCount, removed, added, failed)
 			name = "RASEAT" & n
 
 			' Numbered even though there is only ever one, so the object is
-			' keyed the way a BTC is: it carries no Id, and both the import
+			' keyed the way the manual ones are: they carry no Id, and both the import
 			' and the loop above go by the number on the end of the name.
 			Set node = NewObject(folder, RASEAT_CLASS, name, Array())
 
@@ -8052,7 +8479,7 @@ End Function
 
 ' A property whose configuration is an association, not a value. Two of
 ' them: an IOTag is wired to a tag out in the project, an InternalTag to
-' one of the object's own - the BTC's command interface. Both export as a
+' one of the object's own - the automation's command interface. Both export as a
 ' source and neither carries a value, because what is configured is the
 ' tag it points at, and whatever that tag happens to be holding at the
 ' time is not configuration at all.
@@ -8269,7 +8696,7 @@ Function FolderLabel(folderPath)
 End Function
 
 
-' Trailing digits of a name - BTC12 is 12, a name without them is 0.
+' Trailing digits of a name - TMTNM12 is 12, a name without them is 0.
 Function TrailingNumber(name)
 
 	Dim i, digits
@@ -10381,25 +10808,25 @@ Sub btnBTC_Click()
 	Dim autos
 	Set autos = Application.GetObject("XATM_Data.Automation")
 
-	' --- Collect every BTC instance -----------------------------------
+	' --- Collect every automation instance ----------------------------
 	Dim obj, total
 	total = 0
 	For Each obj In autos
-		If TypeName(obj) = "xatm_BTC" Then total = total + 1
+		If IsAutomationObject(obj) Then total = total + 1
 	Next
 
 	If total = 0 Then
-		MsgBox "No BTC automation found!"
+		MsgBox "No automation found!"
 		Exit Sub
 	End If
 
-	Dim btc()
-	ReDim btc(total - 1)
+	Dim instances()
+	ReDim instances(total - 1)
 	Dim k
 	k = 0
 	For Each obj In autos
-		If TypeName(obj) = "xatm_BTC" Then
-			Set btc(k) = obj
+		If IsAutomationObject(obj) Then
+			Set instances(k) = obj
 			k = k + 1
 		End If
 	Next
@@ -10408,10 +10835,10 @@ Sub btnBTC_Click()
 	Dim i, j, tmp
 	For i = 0 To total - 2
 		For j = 0 To total - 2 - i
-			If MenuKey(btc(j)) > MenuKey(btc(j + 1)) Then
-				Set tmp = btc(j)
-				Set btc(j) = btc(j + 1)
-				Set btc(j + 1) = tmp
+			If MenuKey(instances(j)) > MenuKey(instances(j + 1)) Then
+				Set tmp = instances(j)
+				Set instances(j) = instances(j + 1)
+				Set instances(j + 1) = tmp
 			End If
 		Next
 	Next
@@ -10440,13 +10867,17 @@ Sub btnBTC_Click()
 
 		If i > 0 Then menu = menu & "|"
 
-		If BusbarPairOf(btc(i)) <> "" Then
+		If TypeName(instances(i)) = "xatm_TA" Then
 
-			AddBusbarMenu btc, i, menu, actions
+			AddTAMenu instances, i, menu, actions
 
-		ElseIf Not TransformerOf(btc(i)) Is Nothing Then
+		ElseIf BusbarPairOf(instances(i)) <> "" Then
 
-			AddTransformerMenu btc, total, i, menu, actions
+			AddBusbarMenu instances, i, menu, actions
+
+		ElseIf Not TransformerOf(instances(i)) Is Nothing Then
+
+			AddTransformerMenu instances, total, i, menu, actions
 
 		Else
 
@@ -10455,7 +10886,7 @@ Sub btnBTC_Click()
 			' from a menu that looks complete, and with nothing under it
 			' but the reason - there is nothing it could be asked to do.
 			Remember actions, i, "NONE", 0
-			menu = menu & btc(i).Name & "{not configured}"
+			menu = menu & instances(i).Name & "{not configured}"
 
 		End If
 
@@ -10476,7 +10907,7 @@ Sub btnBTC_Click()
 	parts = Split(actions(CStr(lOption)), "|")
 
 	Dim target
-	Set target = btc(CLng(parts(0)))
+	Set target = instances(CLng(parts(0)))
 
 	Dim kind, impedeId
 	kind     = parts(1)
@@ -10509,7 +10940,7 @@ Sub btnBTC_Click()
 
 		Case Else
 
-			SendManeuver target, btc, total, kind, impedeId
+			SendManeuver target, instances, total, kind, impedeId
 
 	End Select
 
@@ -10522,7 +10953,7 @@ End Sub
 ' request names neither: the pair it moves is a property of its own, and
 ' Start reads it there. That is the same string StartMode writes when the
 ' command comes off a tag instead of this menu.
-Sub SendManeuver(target, btc, total, mode, impedeId)
+Sub SendManeuver(target, instances, total, mode, impedeId)
 
 	Dim pairMoved
 	pairMoved = BusbarPairOf(target)
@@ -10546,7 +10977,7 @@ Sub SendManeuver(target, btc, total, mode, impedeId)
 		question = "Force " & mode & " on " & tr.Name & "?"
 	Else
 		question = "Force " & mode & " on " & tr.Name & _
-		           " with " & TransformerNameById(btc, total, impedeId) & " out of service?"
+		           " with " & TransformerNameById(instances, total, impedeId) & " out of service?"
 	End If
 
 	If MsgBox(question, vbYesNo + vbQuestion, "Confirm") = vbYes Then
@@ -10557,20 +10988,42 @@ Sub SendManeuver(target, btc, total, mode, impedeId)
 End Sub
 
 
-' One transformer automation's submenu: both manual maneuvers with every
-' contingency, then TA, then the two things done to the automation itself.
-Sub AddTransformerMenu(btc, total, idx, menu, actions)
+' One manual automation's submenu: both maneuvers with every contingency,
+' then the two things done to the automation itself.
+'
+' No TA. That one is a class of its own now, and gets a submenu of its
+' own further down.
+Sub AddTransformerMenu(instances, total, idx, menu, actions)
 
-	menu = menu & btc(idx).Transformer.Name & "{"
+	menu = menu & instances(idx).Transformer.Name & "{"
 
-	menu = menu & ModeBlock("TM", btc, total, idx, actions) & "||"
-	menu = menu & ModeBlock("NM", btc, total, idx, actions) & "||"
+	menu = menu & ModeBlock("TM", instances, total, idx, actions) & "||"
+	menu = menu & ModeBlock("NM", instances, total, idx, actions) & "||"
+
+
+	Remember actions, idx, "BLOCK", 0
+	menu = menu & IIf(instances(idx).OperatorBlock, "*", "") & "Operator Block|"
+
+	Remember actions, idx, "RESET", 0
+	menu = menu & "Reset}"
+
+End Sub
+
+
+' One automatic transfer's submenu.
+'
+' One maneuver, and it is not really asked for here at all - a TA answers
+' a trip. The entry is a forcing, kept for the same reason the manual ones
+' are: somebody commissioning the station has to be able to make it run.
+Sub AddTAMenu(instances, idx, menu, actions)
+
+	menu = menu & instances(idx).Transformer.Name & " TA{"
 
 	Remember actions, idx, "TA", 0
 	menu = menu & "TA||"
 
 	Remember actions, idx, "BLOCK", 0
-	menu = menu & IIf(btc(idx).OperatorBlock, "*", "") & "Operator Block|"
+	menu = menu & IIf(instances(idx).OperatorBlock, "*", "") & "Operator Block|"
 
 	Remember actions, idx, "RESET", 0
 	menu = menu & "Reset}"
@@ -10584,9 +11037,9 @@ End Sub
 ' ring and NM brings it back; there is no contingency to offer, because the
 ' path does not vary, and no TA, because that one answers a trip and is
 ' never asked for by a person.
-Sub AddBusbarMenu(btc, idx, menu, actions)
+Sub AddBusbarMenu(instances, idx, menu, actions)
 
-	menu = menu & BusbarPairOf(btc(idx)) & "{"
+	menu = menu & BusbarPairOf(instances(idx)) & "{"
 
 	Remember actions, idx, "TM", 0
 	menu = menu & "TM|"
@@ -10595,7 +11048,7 @@ Sub AddBusbarMenu(btc, idx, menu, actions)
 	menu = menu & "NM||"
 
 	Remember actions, idx, "BLOCK", 0
-	menu = menu & IIf(btc(idx).OperatorBlock, "*", "") & "Operator Block|"
+	menu = menu & IIf(instances(idx).OperatorBlock, "*", "") & "Operator Block|"
 
 	Remember actions, idx, "RESET", 0
 	menu = menu & "Reset}"
@@ -10609,7 +11062,7 @@ End Sub
 ' Labelled the way the spec labels them - "TM-TR3" on TR4's submenu is
 ' section 1.4.2.23's "TM TR4-TR3" - so the menu, the CommandStartTM<n00>
 ' tags and the spec all name the same maneuver.
-Function ModeBlock(mode, btc, total, idx, actions)
+Function ModeBlock(mode, instances, total, idx, actions)
 
 	Remember actions, idx, mode, 0
 
@@ -10618,7 +11071,7 @@ Function ModeBlock(mode, btc, total, idx, actions)
 
 	For n = 1 To total - 1
 
-		Set other = OtherTransformer(btc, total, idx, n)
+		Set other = OtherTransformer(instances, total, idx, n)
 
 		If Not other Is Nothing Then
 			Remember actions, idx, mode, other.Id
@@ -10658,10 +11111,12 @@ End Sub
 ' would be silent: a label naming one transformer and the command naming
 ' another.
 '
-' Busbar automations are passed over rather than counted. They are bound to
-' no transformer, so there is nothing about them to declare out of service
-' and nothing to offer as a contingency.
-Function OtherTransformer(btc, total, idx, n)
+' Only the manual transformer automations are counted. A busbar one is
+' bound to no transformer, so there is nothing about it to declare out of
+' service; an automatic transfer is bound to one, but it is that
+' transformer's second automation and counting it would offer every
+' transformer twice.
+Function OtherTransformer(instances, total, idx, n)
 
 	Set OtherTransformer = Nothing
 
@@ -10672,7 +11127,7 @@ Function OtherTransformer(btc, total, idx, n)
 
 		If i <> idx Then
 
-			Set tr = TransformerOf(btc(i))
+			Set tr = ManualTransformerOf(instances(i))
 
 			If Not tr Is Nothing Then
 
@@ -10694,14 +11149,14 @@ End Function
 
 ' The name of the transformer carrying an Id, among the ones on this menu,
 ' and the Id itself when no instance is bound to it.
-Function TransformerNameById(btc, total, id)
+Function TransformerNameById(instances, total, id)
 
 	TransformerNameById = "TR" & id
 
 	Dim i, tr
 	For i = 0 To total - 1
 
-		Set tr = TransformerOf(btc(i))
+		Set tr = ManualTransformerOf(instances(i))
 
 		If Not tr Is Nothing Then
 			If tr.Id = id Then
@@ -10711,6 +11166,34 @@ Function TransformerNameById(btc, total, id)
 		End If
 
 	Next
+
+End Function
+
+
+' Whether an object in the Automation folder is one this menu drives.
+'
+' Two classes now, where there was one: the manual maneuvers and the
+' automatic transfer. Anything else in the folder - a reclosing scheme,
+' say - is not this button's business.
+Function IsAutomationObject(obj)
+
+	Dim t
+	t = TypeName(obj)
+
+	IsAutomationObject = (t = "xatm_TMTNM" Or t = "xatm_TA")
+
+End Function
+
+
+' The transformer a manual automation is bound to, and Nothing for
+' anything else - which is what makes it safe to count.
+Function ManualTransformerOf(obj)
+
+	Set ManualTransformerOf = Nothing
+
+	If TypeName(obj) <> "xatm_TMTNM" Then Exit Function
+
+	Set ManualTransformerOf = TransformerOf(obj)
 
 End Function
 
@@ -10745,9 +11228,19 @@ End Function
 ' then the busbar ones by the pair they move.
 '
 ' A string and not a number, because a busbar automation has no Id to sort
-' on - and because the two families should not interleave, which the
+' on - and because the three families should not interleave, which the
 ' leading digit settles.
 Function MenuKey(obj)
+
+	Dim tId
+	If TypeName(obj) = "xatm_TA" Then
+		tId = 0
+		On Error Resume Next
+		tId = CLng(obj.Transformer.Id)
+		On Error Goto 0
+		MenuKey = "3" & Right("00000" & tId, 5)
+		Exit Function
+	End If
 
 	Dim pairMoved
 	pairMoved = BusbarPairOf(obj)
@@ -11067,7 +11560,7 @@ Sub SingleLineDiagram_OnPreShow(Arg)
 	
 	' TODO: make dynamic
 	On Error Resume Next
-	Item("xatm_BTCStatus1").Source = Application.GetObject("XATM_Data.Automation.BTC1").PathName
+	Item("xatm_TMTNMStatus1").Source = Application.GetObject("XATM_Data.Automation.TMTNM1").PathName
 	
 End Sub
 
