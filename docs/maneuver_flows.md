@@ -541,7 +541,7 @@ every other maneuver. There is no step 3: step 2 sets the FSM straight to 99.
 
 ### Which automation runs them
 
-Not a new set of commands — a new *kind of instance*. `xatm_BTC` carries a
+Not a new set of commands — a new *kind of instance*. `xatm_TMTNM` carries a
 `BusbarPair` property; where it names a pair, that instance moves those busbars
 instead of a transformer's load, and the two commands it already had mean the
 busbar sequences:
@@ -554,19 +554,18 @@ busbar sequences:
 | `TA`, from the transformer's own trip | *rejected* — and the trigger never routes to it |
 
 Two more instances, created and kept by `SyncAutomation` whenever the busbar layout
-is `6BB6TIERING`, alongside `BTC1`…`BTC4`:
+is `6BB6TIERING`, alongside `TMTNM1`…`TMTNM4`:
 
 | Instance | `BusbarPair` | `Transformer` | Runs |
 |----------|--------------|---------------|------|
-| `BTC_B1A` | `B1A-B4A` | *unbound* | TM/NM B1A-B4A |
-| `BTC_B2B` | `B2B-B3A` | *unbound* | TM/NM B2B-B3A |
+| `TMTNM_B1A` | `B1A-B4A` | *unbound* | TM/NM B1A-B4A |
+| `TMTNM_B2B` | `B2B-B3A` | *unbound* | TM/NM B2B-B3A |
 
 **`Transformer` is left unbound.** A busbar is not an XObject there is anything to
 link to, so which pair the instance moves is carried as text rather than as a link —
 and it is not any transformer's automation, so there is nothing it should be bound to.
-`RequestBTC` inside `xatm_Transformer` passes over any instance carrying a pair, so a
-trip can never be handed to a sequence with no TA in it, and `StartMode` asks for no
-binding before it writes.
+`RequestTA` inside `xatm_Transformer` looks only for `xatm_TA`, so a trip can never
+reach one of these, and `StartMode` asks for no binding before it writes.
 
 **One property, not two.** A flag saying "this is a busbar automation" beside a name
 saying which busbar would be two ways of writing one fact, and two ways of writing one

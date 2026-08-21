@@ -19,7 +19,7 @@ TIE[1A,4A]──B1A──TIE[1B,1A]──B1B──TIE[2A,1B]──B2A──TIE[2
 
 ## Mapeamento de Dispositivos
 
-O **ID Lógico** é o valor da propriedade `.Id` que a lógica (`xatm_BTC`) usa — é
+O **ID Lógico** é o valor da propriedade `.Id` que a lógica (`xatm_TMTNM`) usa — é
 o contrato, independente do nome de exibição do dispositivo em `xatm_data`.
 
 ### Transformadores
@@ -384,7 +384,7 @@ transferida) e **13** (B2B transferida).
 
 ### Qual automatismo as executa
 
-Não é um novo conjunto de comandos — é um novo *tipo de instância*. O `xatm_BTC` passou
+Não é um novo conjunto de comandos — é um novo *tipo de instância*. O `xatm_TMTNM` passou
 a ter a propriedade `BusbarPair`; onde ela nomeia um par, aquela instância transfere
 esses barramentos em vez da carga de um transformador, e os dois comandos que ela já
 tinha passam a significar as sequências de barra:
@@ -397,19 +397,19 @@ tinha passam a significar as sequências de barra:
 | `TA`, pelo trip do próprio transformador | *recusado* — e o gatilho nunca chega a ela |
 
 Mais duas instâncias, criadas e mantidas pelo `SyncAutomation` sempre que o layout de
-barras for `6BB6TIERING`, ao lado de `BTC1`…`BTC4`:
+barras for `6BB6TIERING`, ao lado de `TMTNM1`…`TMTNM4`:
 
 | Instância | `BusbarPair` | `Transformer` | Executa |
 |-----------|--------------|---------------|---------|
-| `BTC_B1A` | `B1A-B4A` | *sem vínculo* | TM/NM B1A-B4A |
-| `BTC_B2B` | `B2B-B3A` | *sem vínculo* | TM/NM B2B-B3A |
+| `TMTNM_B1A` | `B1A-B4A` | *sem vínculo* | TM/NM B1A-B4A |
+| `TMTNM_B2B` | `B2B-B3A` | *sem vínculo* | TM/NM B2B-B3A |
 
 **O `Transformer` fica sem vínculo.** Um barramento não é um XObject ao qual se possa
 vincular nada, então o par que a instância transfere é carregado como texto e não como
 link — e ela não é o automatismo de transformador nenhum, portanto não há a que
-vinculá-la. O `RequestBTC`, dentro do `xatm_Transformer`, ignora qualquer instância que
-carregue um par, para que um trip nunca seja entregue a uma sequência que não tem TA; e
-o `StartMode` não exige vínculo algum antes de escrever.
+vinculá-la. O `RequestTA`, dentro do `xatm_Transformer`, procura apenas por `xatm_TA`, de modo
+que um trip nunca chega a uma destas; e o `StartMode` não exige vínculo algum antes
+de escrever.
 
 **Uma propriedade, não duas.** Uma marca dizendo "isto é um automatismo de barra" ao
 lado de um nome dizendo qual barra seriam duas formas de escrever o mesmo fato — e duas

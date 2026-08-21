@@ -16,7 +16,7 @@
 
 ## Mapeamento de Dispositivos
 
-O **ID Lógico** é o valor da propriedade `.Id` que a lógica (`xatm_BTC`) usa — é
+O **ID Lógico** é o valor da propriedade `.Id` que a lógica (`xatm_TMTNM`) usa — é
 o contrato, independente do nome de exibição do dispositivo em `xatm_data`.
 
 ### Transformadores
