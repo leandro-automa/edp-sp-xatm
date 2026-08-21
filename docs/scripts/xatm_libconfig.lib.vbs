@@ -5,14 +5,6 @@ XATM_LIBCONFIG (C:\ProjDev\edp_sp\xatm_libconfig.lib)
 Wed Aug 12 11:18:51 2026
 -----------------------
 
-<xatm_BTCStatus.Source:xatm_BTCStatus_OnSourceChanged()>
-Sub xatm_BTCStatus_OnSourceChanged()
-	
-	Links.CreateLink "CurrentStep", Source.Item("FSM").Item("Main").PathName & ".Value"
-	Links.CreateLink "StepTimer", Source.Item("FSM").Item("StepTimer").PathName & ".Value"
-	
-End Sub
-
 <xatm_BreakerSymbol.Source:xatm_BreakerSymbol_OnSourceChanged()>
 Sub xatm_BreakerSymbol_OnSourceChanged()
 	
@@ -1097,6 +1089,24 @@ Sub objArea_OnStartRunning()
 	
 	Visible = False
 		
+End Sub
+
+<xatm_TAStatus.Source:xatm_TAStatus_OnSourceChanged()>
+Sub xatm_TAStatus_OnSourceChanged()
+
+	' Bind to an xatm_TA. Which step it is on, and how long it has been there.
+	Links.CreateLink "CurrentStep", Source.Item("FSM").Item("Main").PathName & ".Value"
+	Links.CreateLink "StepTimer", Source.Item("FSM").Item("StepTimer").PathName & ".Value"
+
+End Sub
+
+<xatm_TMTNMStatus.Source:xatm_TMTNMStatus_OnSourceChanged()>
+Sub xatm_TMTNMStatus_OnSourceChanged()
+
+	' Bind to an xatm_TMTNM. Which step it is on, and how long it has been there.
+	Links.CreateLink "CurrentStep", Source.Item("FSM").Item("Main").PathName & ".Value"
+	Links.CreateLink "StepTimer", Source.Item("FSM").Item("StepTimer").PathName & ".Value"
+
 End Sub
 
 <xatm_TransformerSymbol.Source:xatm_TransformerSymbol_OnSourceChanged()>

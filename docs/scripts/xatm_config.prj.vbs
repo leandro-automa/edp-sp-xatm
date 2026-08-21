@@ -10453,6 +10453,208 @@ Sub btnSupervision_Click()
 		
 End Sub
 
+<xatm_config_screens.Menu.btnTA:btnTA_Click()>
+Sub btnTA_Click()
+
+	Dim autos
+	Set autos = Application.GetObject("XATM_Data.Automation")
+
+	' --- Collect every automatic transfer -----------------------------
+	Dim obj, total
+	total = 0
+	For Each obj In autos
+		If TypeName(obj) = "xatm_TA" Then total = total + 1
+	Next
+
+	If total = 0 Then
+		MsgBox "No automatic transfer found!"
+		Exit Sub
+	End If
+
+	Dim instances()
+	ReDim instances(total - 1)
+	Dim k
+	k = 0
+	For Each obj In autos
+		If TypeName(obj) = "xatm_TA" Then
+			Set instances(k) = obj
+			k = k + 1
+		End If
+	Next
+
+	' --- Order by the transformer each one answers for ----------------
+	Dim i, j, tmp
+	For i = 0 To total - 2
+		For j = 0 To total - 2 - i
+			If MenuKey(instances(j)) > MenuKey(instances(j + 1)) Then
+				Set tmp = instances(j)
+				Set instances(j) = instances(j + 1)
+				Set instances(j + 1) = tmp
+			End If
+		Next
+	Next
+
+	' --- Build the menu, recording what each option does --------------
+	'
+	' Every submenu here is the same three entries, so the mapping could be
+	' a division. It is recorded instead, the way the manual menu records
+	' it: an instance bound to nothing gets a different submenu, and one
+	' exception is all it takes for a division to point at the wrong
+	' automation.
+	'
+	' Separators cost nothing: an empty entry takes no option number.
+	Dim menu, actions, tr
+	Set actions = CreateObject("Scripting.Dictionary")
+	menu = ""
+
+	For i = 0 To total - 1
+
+		If i > 0 Then menu = menu & "|"
+
+		Set tr = TransformerOf(instances(i))
+
+		If tr Is Nothing Then
+
+			' Bound to no transformer. Shown so that it is visibly there to
+			' be fixed rather than quietly absent from a menu that looks
+			' complete - a TA answers one particular transformer's trip,
+			' and one bound to nothing answers nothing.
+			Remember actions, i, "NONE"
+			menu = menu & instances(i).Name & "{not configured}"
+
+		Else
+
+			menu = menu & tr.Name & "{"
+
+			Remember actions, i, "TA"
+			menu = menu & "TA||"
+
+			Remember actions, i, "BLOCK"
+			menu = menu & IIf(instances(i).OperatorBlock, "*", "") & "Operator Block|"
+
+			Remember actions, i, "RESET"
+			menu = menu & "Reset}"
+
+		End If
+
+	Next
+
+	Dim lOption
+	lOption = Application.SelectMenu(menu)
+	If lOption <= 0 Then Exit Sub
+
+	If Not actions.Exists(CStr(lOption)) Then
+		MsgBox "The menu and the automation list disagree - nothing sent.", _
+		       vbExclamation, "Error"
+		Exit Sub
+	End If
+
+	' --- Do what the chosen option said -------------------------------
+	Dim parts
+	parts = Split(actions(CStr(lOption)), "|")
+
+	Dim target
+	Set target = instances(CLng(parts(0)))
+
+	Select Case parts(1)
+
+		Case "NONE"
+
+			MsgBox target.Name & " is bound to no transformer, so there is nothing " & _
+			       "it can be asked to run.", vbExclamation, "Not configured"
+
+		Case "BLOCK"
+
+			target.OperatorBlock = Not target.OperatorBlock
+
+		Case "RESET"
+
+			target.Item("Commands").Item("Reset").WriteEx True
+
+		Case Else
+
+			' Forced from here and asked for by nobody in service: a TA
+			' answers a trip, through the transformer's own trigger. The
+			' entry exists because somebody commissioning the station has
+			' to be able to make it run.
+			'
+			' Written with two fields on purpose. Start reads the field for
+			' the contingency, the way it does for a protection trip, so
+			' there is nothing here for an operator to choose beyond which
+			' transformer.
+			If MsgBox("Force TA on " & target.Transformer.Name & "?", _
+			          vbYesNo + vbQuestion, "Confirm") = vbYes Then
+				target.Item("Commands").Item("Start").WriteEx "TA:" & target.Transformer.Id
+			End If
+
+	End Select
+
+End Sub
+
+
+' Records what the next option number is to do: which instance, and what to
+' ask of it.
+'
+' Keyed by the count so far plus one, because SelectMenu numbers the entries
+' it returns from one and passes over the empty ones. Called immediately
+' before the label it belongs to is appended, which is what keeps the two in
+' step. The key is written as text on both sides: a Dictionary keyed on a
+' number answers Exists only for a lookup of the same subtype, and what
+' SelectMenu hands back is not this script's to choose.
+'
+' No contingency argument, unlike the manual menu's copy. Nobody declares
+' one for a TA - Start reads the field.
+Sub Remember(actions, idx, kind)
+
+	actions.Add CStr(actions.Count + 1), idx & "|" & kind
+
+End Sub
+
+
+' The transformer an instance answers for, or Nothing when it is bound to
+' none. Its own copy, because one E3 object cannot call a procedure in
+' another's scope.
+Function TransformerOf(obj)
+
+	Set TransformerOf = Nothing
+
+	On Error Resume Next
+	Set TransformerOf = obj.Transformer
+	On Error Goto 0
+
+End Function
+
+
+' What the menu is ordered by: the transformer each one answers for, and
+' anything bound to nothing after them.
+'
+' A string and not a number, so that the unbound ones sort last without
+' having to stand for a transformer Id they do not have.
+Function MenuKey(obj)
+
+	Dim tr
+	Set tr = TransformerOf(obj)
+
+	If tr Is Nothing Then
+		MenuKey = "2"
+		Exit Function
+	End If
+
+	Dim id
+	id = 0
+
+	On Error Resume Next
+	id = CLng(tr.Id)
+	On Error Goto 0
+
+	MenuKey = "1" & Right("00000" & id, 5)
+
+End Function
+
+Sub EndOfScope()
+
+End Sub
+
 <xatm_config_screens.Menu.btnTMTNM:btnTMTNM_Click()>
 Sub btnTMTNM_Click()
 
@@ -10463,7 +10665,7 @@ Sub btnTMTNM_Click()
 	Dim obj, total
 	total = 0
 	For Each obj In autos
-		If IsAutomationObject(obj) Then total = total + 1
+		If TypeName(obj) = "xatm_TMTNM" Then total = total + 1
 	Next
 
 	If total = 0 Then
@@ -10476,7 +10678,7 @@ Sub btnTMTNM_Click()
 	Dim k
 	k = 0
 	For Each obj In autos
-		If IsAutomationObject(obj) Then
+		If TypeName(obj) = "xatm_TMTNM" Then
 			Set instances(k) = obj
 			k = k + 1
 		End If
@@ -10518,11 +10720,7 @@ Sub btnTMTNM_Click()
 
 		If i > 0 Then menu = menu & "|"
 
-		If TypeName(instances(i)) = "xatm_TA" Then
-
-			AddTAMenu instances, i, menu, actions
-
-		ElseIf BusbarPairOf(instances(i)) <> "" Then
+		If BusbarPairOf(instances(i)) <> "" Then
 
 			AddBusbarMenu instances, i, menu, actions
 
@@ -10580,15 +10778,6 @@ Sub btnTMTNM_Click()
 
 			target.Item("Commands").Item("Reset").WriteEx True
 
-		Case "TA"
-
-			' Written with two fields on purpose. Start reads the field for
-			' the contingency, the way it does for a protection trip.
-			If MsgBox("Force TA on " & target.Transformer.Name & "?", _
-			          vbYesNo + vbQuestion, "Confirm") = vbYes Then
-				target.Item("Commands").Item("Start").WriteEx "TA:" & target.Transformer.Id
-			End If
-
 		Case Else
 
 			SendManeuver target, instances, total, kind, impedeId
@@ -10642,8 +10831,7 @@ End Sub
 ' One manual automation's submenu: both maneuvers with every contingency,
 ' then the two things done to the automation itself.
 '
-' No TA. That one is a class of its own now, and gets a submenu of its
-' own further down.
+' No TA. That one is a class of its own, and a button of its own.
 Sub AddTransformerMenu(instances, total, idx, menu, actions)
 
 	menu = menu & instances(idx).Transformer.Name & "{"
@@ -10651,27 +10839,6 @@ Sub AddTransformerMenu(instances, total, idx, menu, actions)
 	menu = menu & ModeBlock("TM", instances, total, idx, actions) & "||"
 	menu = menu & ModeBlock("NM", instances, total, idx, actions) & "||"
 
-
-	Remember actions, idx, "BLOCK", 0
-	menu = menu & IIf(instances(idx).OperatorBlock, "*", "") & "Operator Block|"
-
-	Remember actions, idx, "RESET", 0
-	menu = menu & "Reset}"
-
-End Sub
-
-
-' One automatic transfer's submenu.
-'
-' One maneuver, and it is not really asked for here at all - a TA answers
-' a trip. The entry is a forcing, kept for the same reason the manual ones
-' are: somebody commissioning the station has to be able to make it run.
-Sub AddTAMenu(instances, idx, menu, actions)
-
-	menu = menu & instances(idx).Transformer.Name & " TA{"
-
-	Remember actions, idx, "TA", 0
-	menu = menu & "TA||"
 
 	Remember actions, idx, "BLOCK", 0
 	menu = menu & IIf(instances(idx).OperatorBlock, "*", "") & "Operator Block|"
@@ -10762,11 +10929,9 @@ End Sub
 ' would be silent: a label naming one transformer and the command naming
 ' another.
 '
-' Only the manual transformer automations are counted. A busbar one is
-' bound to no transformer, so there is nothing about it to declare out of
-' service; an automatic transfer is bound to one, but it is that
-' transformer's second automation and counting it would offer every
-' transformer twice.
+' Busbar automations are passed over rather than counted. They are bound
+' to no transformer, so there is nothing about them to declare out of
+' service and nothing to offer as a contingency.
 Function OtherTransformer(instances, total, idx, n)
 
 	Set OtherTransformer = Nothing
@@ -10778,7 +10943,7 @@ Function OtherTransformer(instances, total, idx, n)
 
 		If i <> idx Then
 
-			Set tr = ManualTransformerOf(instances(i))
+			Set tr = TransformerOf(instances(i))
 
 			If Not tr Is Nothing Then
 
@@ -10807,7 +10972,7 @@ Function TransformerNameById(instances, total, id)
 	Dim i, tr
 	For i = 0 To total - 1
 
-		Set tr = ManualTransformerOf(instances(i))
+		Set tr = TransformerOf(instances(i))
 
 		If Not tr Is Nothing Then
 			If tr.Id = id Then
@@ -10817,34 +10982,6 @@ Function TransformerNameById(instances, total, id)
 		End If
 
 	Next
-
-End Function
-
-
-' Whether an object in the Automation folder is one this menu drives.
-'
-' Two classes now, where there was one: the manual maneuvers and the
-' automatic transfer. Anything else in the folder - a reclosing scheme,
-' say - is not this button's business.
-Function IsAutomationObject(obj)
-
-	Dim t
-	t = TypeName(obj)
-
-	IsAutomationObject = (t = "xatm_TMTNM" Or t = "xatm_TA")
-
-End Function
-
-
-' The transformer a manual automation is bound to, and Nothing for
-' anything else - which is what makes it safe to count.
-Function ManualTransformerOf(obj)
-
-	Set ManualTransformerOf = Nothing
-
-	If TypeName(obj) <> "xatm_TMTNM" Then Exit Function
-
-	Set ManualTransformerOf = TransformerOf(obj)
 
 End Function
 
@@ -10879,19 +11016,9 @@ End Function
 ' then the busbar ones by the pair they move.
 '
 ' A string and not a number, because a busbar automation has no Id to sort
-' on - and because the three families should not interleave, which the
+' on - and because the two families should not interleave, which the
 ' leading digit settles.
 Function MenuKey(obj)
-
-	Dim tId
-	If TypeName(obj) = "xatm_TA" Then
-		tId = 0
-		On Error Resume Next
-		tId = CLng(obj.Transformer.Id)
-		On Error Goto 0
-		MenuKey = "3" & Right("00000" & tId, 5)
-		Exit Function
-	End If
 
 	Dim pairMoved
 	pairMoved = BusbarPairOf(obj)
@@ -10917,7 +11044,8 @@ Function MenuKey(obj)
 
 End Function
 
-Sub Foo()	
+Sub EndOfScope()
+	
 End Sub
 
 <xatm_config_screens.Menu.grpDemo.lblDemo:lblDemo_OnStartRunning()>

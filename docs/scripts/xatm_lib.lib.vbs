@@ -136,7 +136,7 @@ End Sub
 
 ' Whether the library driving this breaker is the demo build.
 '
-' Read off the xatm_Version the breaker carries, so the answer comes from
+' Read off the xatm_Build the breaker carries, so the answer comes from
 ' the same library file as this code - not from a constant copied into
 ' this scope, which would be a second thing to flip, and not from a
 ' singleton in another project, which a site might not have deployed.
@@ -768,16 +768,13 @@ Sub xatm_Build_OnStartRunning()
 	' it without having to know where it came from.
 	'
 	' One of these sits inside every breaker and every disconnector, so the
-	' command gate can ask the device it is already holding. One more stands
-	' alone in xatm_config_data, and that is the one the console line and
-	' the screen label read.
+	' command gate can ask the device it is already holding rather than
+	' reach into another project for the answer.
 	'
 	' Nothing here is configured. The class comes from whichever
 	' xatm_lib.lib the domain has loaded, so swapping the file swaps what
 	' every instance says at once - which is the whole mechanism.
-	Version      = LIBRARY_VERSION
-	ReleaseNotes = RELEASE_NOTES
-	Demo         = DEMO_BUILD
+	Demo = DEMO_BUILD
 
 	' The same fact as a word, for a label to bind to. Derived rather than
 	' declared, so it cannot come to disagree with the flag - and the gate
@@ -785,81 +782,30 @@ Sub xatm_Build_OnStartRunning()
 	' a string comparison is not a thing to put in front of a switchyard.
 	Edition = IIf(DEMO_BUILD, "DEMO", "RUNTIME")
 
-	If ShouldAnnounce() Then WriteLog Announcement()
-
 End Sub
 
 
-' The library's identity, and the one line that differs between the two
-' builds that ship.
+' Which of the two builds this is, and the only place it is written down.
 '
-' This is the only place either fact is written down. The command gate does
-' not keep a copy - it reads the instance its own breaker carries - so
-' there is no second constant to fall out of step, and no dependency on a
-' project a site might not deploy.
+' Building the pair is: flip this, export, protect the runtime one. The
+' command gate keeps no copy - it reads the instance its own breaker
+' carries - so there is no second flag to fall out of step with this one.
 '
-' Building the pair is: flip DEMO_BUILD, export, protect the runtime one.
-Const LIBRARY_VERSION = "1.0.0"
-Const RELEASE_NOTES   = "Initial commit."
-Const DEMO_BUILD      = True
-
-
-' Whether this copy is the one that talks.
+' Which version the library is says nothing about whether it may operate
+' anything, and lives on xatm_Version instead: one object standing in the
+' data project, rather than a copy inside every device. Two facts about
+' the same file, wanted in different places, kept apart.
 '
-' A station carries one per breaker and one per disconnector - dozens of
-' them - and none of those should say anything at start. The one that does
-' is the instance standing on its own in a data server rather than inside
-' another object.
-Function ShouldAnnounce()
-
-	Dim parentType
-	parentType = ""
-
-	On Error Resume Next
-	parentType = TypeName(Parent)
-	On Error Goto 0
-
-	ShouldAnnounce = (LCase(Left(parentType & "", 5)) <> "xatm_")
-
-End Function
+' Nothing is announced from here either. xatm_Version does that, once, and
+' two objects announcing the same library is how the two release notes came
+' to disagree in the first place.
+Const DEMO_BUILD = True
 
 
-' What goes on the console at start, in the two shapes it can take.
-'
-' The demo line says what is withheld rather than only that something is:
-' an engineer who reads that the build is a demo and nothing more will
-' still expect the switchyard to move.
-Function Announcement()
-
-	If DEMO_BUILD Then
-
-		Announcement = "xatm_lib " & LIBRARY_VERSION & " - DEMO build - " & _
-		               "commands reach simulated equipment only; nothing is sent to the switchyard."
-
-	Else
-
-		Announcement = "xatm_lib " & LIBRARY_VERSION & " - runtime build."
-
-	End If
-
-End Function
-
-
-' The console the automation logs to, and the E3 trace either way.
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
-	End If
-	
+' A scope may not end on a Function - E3 takes the script without
+' complaint and then behaves as though the last one were not there. This
+' one ends on a Const, which is no better a thing to rely on.
+Sub BuildConstants()
 End Sub
 
 <xatm_ConsoleLogEngine.WriteLine:xatm_ConsoleLogEngine_OnWriteLineChanged()>
@@ -1075,14 +1021,14 @@ Sub CommandOpenClose_OnChangedValue()
 
 End Sub
 
-' Whether the library driving this breaker is the demo build.
+' Whether the library driving this disconnector is the demo build.
 '
-' Read off the xatm_Version the breaker carries, so the answer comes from
-' the same library file as this code - not from a constant copied into
-' this scope, which would be a second thing to flip, and not from a
+' Read off the xatm_Build the disconnector carries, so the answer comes
+' from the same library file as this code - not from a constant copied
+' into this scope, which would be a second thing to flip, and not from a
 ' singleton in another project, which a site might not have deployed.
 '
-' Fails closed. A breaker with no Build inside it is one driven by a
+' Fails closed. A disconnector with no Build inside it is one driven by a
 ' library too old to have the class at all, and that is not a library to
 ' let near a switchyard.
 Function IsDemoBuild()
@@ -3165,7 +3111,7 @@ Sub Start_OnChangedValue()
 
 	If blocked Then
 
-		Reject "Blocked by field conditions (AutomaticBlock).", ts
+		Reject "Blocked by field conditions.", ts
 		Exit Sub
 
 	End If
@@ -3174,7 +3120,7 @@ Sub Start_OnChangedValue()
 	' the maneuver may go ahead, so it is the absence of it that rejects.
 	If Not permitted Then
 
-		Reject "Preconditions are not met (Preconditions).", ts
+		Reject "Preconditions are not met.", ts
 		Exit Sub
 
 	End If
@@ -7076,29 +7022,6 @@ Sub WriteLog(message)
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
 	
-End Sub
-
-<xatm_Version.Data.Version:Version_OnChangedValue()>
-Sub Version_OnChangedValue()
-	
-	' The report is asked for by writing this tag, which is the shape every
-	' command in the library takes: one E3 object cannot call a procedure in
-	' another's scope, so a screen writes a tag and the object acts on it.
-	'
-	' The value means nothing beyond "asked for" - which tag was written is
-	' what says what was wanted.
-	If Trim(Value & "") = "" Then Exit Sub
-
-	Dim ts
-	ts = TimeStamp
-
-	ShowReport
-
-	' Cleared with the timestamp it arrived with, so emptying the tag is not
-	' itself a second command. The guard above covers the other case, where
-	' the event is driven by the value rather than by the timestamp.
-	WriteEx "", ts
-		
 End Sub
 
 <xatm_Version.Data.Version:Version_OnStartRunning()>
