@@ -4387,6 +4387,7 @@ Sub Reset()
 	
 	xatm_TMTNM.Running 		= False
 	xatm_TMTNM.GeneralBlock	= False
+	xatm_TMTNM.Reverting	= False
 	
 	' ===============
 	' RESET ALL STEP FAIL POINTS
@@ -4793,6 +4794,12 @@ Sub Start_OnChangedValue()
 	' The resolved maneuver and not the command: a busbar instance was
 	' asked for TM and what it runs is TMB1A, which is what every step
 	' from here on reads.
+	' The last run's result stands until this one starts, so the control
+	' room keeps seeing how the previous attempt went.
+	xatm_TMTNM.Successful   = False
+	xatm_TMTNM.Unsuccessful = False
+	xatm_TMTNM.Reverting    = False
+
 	xatm_TMTNM.Item("FSM").Item("AutomationType").WriteEx runMode
 	xatm_TMTNM.Item("FSM").Item("TriggerTransformerId").WriteEx triggerId
 	xatm_TMTNM.Item("FSM").Item("ImpededTransformerId").WriteEx impedeId
@@ -5221,15 +5228,36 @@ End Sub
 
 <xatm_TMTNM.FSM.Main:Main_Completed()>
 Sub Main_Completed()
-	
+
+	' Read before the state is torn down, because tearing it down is what
+	' this does.
+	Dim reverted
+	reverted = IsReverting()
+
 	Parent.Item("TriggerTransformerId").WriteEx  Empty, 0
 	Parent.Item("AutomationType").WriteEx Empty, 0
 	Parent.Item("StepTimer").WriteEx  Empty, 0
 	WriteEx  Empty, 0
-	
-    xatm_TMTNM.Running = False
-    WriteLog "Automation completed successfully."
-            	
+
+	xatm_TMTNM.Running   = False
+	xatm_TMTNM.Reverting = False
+
+	' A revert reaches the end of a sequence without the maneuver having
+	' happened. Nothing is blocked and the substation is where it started,
+	' so there is nothing to clear and nothing to stop - but what was asked
+	' for did not take place, and that is the part the control room needs.
+	If reverted Then
+
+		xatm_TMTNM.Unsuccessful = True
+		WriteLog "Reverted - the substation is back the way it was, and the maneuver did not complete."
+
+	Else
+
+		xatm_TMTNM.Successful = True
+		WriteLog "Automation completed successfully."
+
+	End If
+
 End Sub
 
 <xatm_TMTNM.FSM.Main:Main_Functions()>
@@ -5508,10 +5536,15 @@ End Sub
 
 <xatm_TMTNM.FSM.Main:Main_GlobalLockout()>
 Sub Main_GlobalLockout()
-	
-	xatm_TMTNM.Running 		= False
-	xatm_TMTNM.GeneralBlock 	= True
 
+	' Where every failure lands, and so where the choice between unwinding
+	' and stopping is made. A step body that cannot go on calls this and
+	' says nothing about what should happen next - the timeout in Main_Main
+	' does the same, and so does a breaker the configuration does not have.
+
+	' Latched first, and whichever way this goes. Which step failed is the
+	' same fact either way, and once a revert has driven the substation back
+	' to normal it is the only trace left of what went wrong.
 	Select Case Value
 		Case 1 : xatm_TMTNM.StepExecutionFailed1 = True
 		Case 2 : xatm_TMTNM.StepExecutionFailed2 = True
@@ -5520,9 +5553,129 @@ Sub Main_GlobalLockout()
 		Case 5 : xatm_TMTNM.StepExecutionFailed5 = True
 		Case 6 : xatm_TMTNM.StepExecutionFailed6 = True
 	End Select
-	
+
+	If ShouldRevert() Then
+
+		StartRevert
+		Exit Sub
+
+	End If
+
+	xatm_TMTNM.Running      = False
+	xatm_TMTNM.GeneralBlock = True
+	xatm_TMTNM.Unsuccessful = True
+
 	WriteLog "Global lockout activated due to automation failure."
-	
+
+End Sub
+
+
+' Whether this failure unwinds the maneuver instead of stopping on it.
+'
+' Four things have to hold, and the last three are what keep it from being
+' a loop, a contradiction or a gesture:
+'
+'   - the instance is configured for it;
+'   - the run is not already a revert, or a revert that failed would start
+'     another one, and that one another;
+'   - something has actually been operated. A failure at step 1 has nothing
+'     to undo, and a sequence of six no-ops is a worse account of what
+'     happened than saying it stopped where it stopped;
+'   - the maneuver has an inverse at all.
+Function ShouldRevert()
+
+	ShouldRevert = False
+
+	If Not RevertsOnFailure() Then Exit Function
+	If IsReverting() Then Exit Function
+	If Value <= 1 Then Exit Function
+	If RevertMode(Parent.Item("AutomationType").Value) = "" Then Exit Function
+
+	ShouldRevert = True
+
+End Function
+
+
+' Hands the run to the inverse maneuver, from its own step 1.
+'
+' Nothing is unwound step by step. Every step in this library checks the
+' position it is about to command and passes when the device is already
+' there, so the inverse sequence walks its whole length and operates only
+' what the failed run had actually moved - which is why a partial transfer
+' needs no bookkeeping about how far it got.
+'
+' Running stays True and GeneralBlock stays clear: the maneuver is not over
+' and nothing is barred yet. The impediment travels untouched, because it
+' is what selects the contingency path on the way back as on the way out.
+Sub StartRevert()
+
+	Dim back
+	back = RevertMode(Parent.Item("AutomationType").Value)
+
+	WriteLog "Step " & Value & " failed - reverting, running " & back & _
+	         " to put the substation back the way it was."
+
+	xatm_TMTNM.Reverting = True
+
+	Parent.Item("AutomationType").WriteEx back
+	Parent.Item("StepTimer").WriteEx 0
+
+	Value = 1
+
+End Sub
+
+
+' The maneuver that undoes one, and "" for one that is not undone.
+'
+' Only the transfers, out and back across the ring alike. A normalisation
+' is already the way home, and a failed one is not answered by transferring
+' again - that moves load away from the normal state, which is not a thing
+' to do unasked.
+Function RevertMode(mode)
+
+	Select Case mode
+
+		Case "TM"
+			RevertMode = "NM"
+
+		Case "TMB1A"
+			RevertMode = "NMB1A"
+
+		Case "TMB2B"
+			RevertMode = "NMB2B"
+
+		Case Else
+			RevertMode = ""
+
+	End Select
+
+End Function
+
+
+' The two questions asked of the class, both failing to the answer that
+' changes nothing: an instance whose class predates these properties keeps
+' stopping on a failure, the way it always did.
+Function RevertsOnFailure()
+
+	RevertsOnFailure = False
+
+	On Error Resume Next
+	RevertsOnFailure = CBool(xatm_TMTNM.RevertOnFailure)
+	On Error Goto 0
+
+End Function
+
+Function IsReverting()
+
+	IsReverting = False
+
+	On Error Resume Next
+	IsReverting = CBool(xatm_TMTNM.Reverting)
+	On Error Goto 0
+
+End Function
+
+Sub EndOfScope()
 End Sub
 
 <xatm_TMTNM.FSM.Main:Main_Main()>
