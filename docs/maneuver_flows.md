@@ -389,10 +389,16 @@ flowchart TD
               RM01DISJ (10)          RM02DISJ (20)
 ```
 
-The station runs with **one incomer closed and the other open**. A busbar
-`CR` on any transformer trips the incomer that was carrying the station *and*
-that transformer's secondary breaker, so the whole entry goes dark — RASEAT
-is what brings it back.
+The station runs with **one incomer closed and the other open**. A transformer's
+lockout relay (86) trips the incomer that was carrying the station *and* that
+transformer's secondary breaker, so the whole entry goes dark — RASEAT is what
+brings it back.
+
+**The same relay starts TA.** One trip, two automations: TA moves the medium
+voltage off the transformer that tripped, RASEAT recloses the entry above it.
+Different equipment, so neither waits for the other — they are excluded against a
+manual transfer and not against each other. Undervoltage starts TA alone; nothing
+has opened at the entry there, so there is nothing to reclose.
 
 `DJ[p]` is whichever incomer was carrying the station, `DJ[b]` the other.
 Both are worked out at Step 0 from `MemorizedPosition`; neither is
@@ -404,7 +410,7 @@ different answer than the step before it.
 ```mermaid
 flowchart TD
     subgraph G0["Step 0"]
-        P0["Init — snapshot the CR set,\nand DJ[p] from MemorizedPosition"]
+        P0["Init — snapshot the tripped set,\nand DJ[p] from MemorizedPosition"]
     end
 
     subgraph G1["Step 1"]
@@ -412,7 +418,7 @@ flowchart TD
     end
 
     subgraph G2["Step 2"]
-        P2["WAIT every TR with CR → Isolated"]
+        P2["WAIT every tripped TR → Isolated"]
     end
 
     subgraph G3["Step 3"]
@@ -457,7 +463,7 @@ flowchart TD
 | Step | Waits for | Timeout | On timeout |
 |------|-----------|---------|------------|
 | 1 | both incomers open | `BreakerTimeout` | fail |
-| 2 | every TR carrying `CR` reports `Isolated` | `IsolationTimeout` | fail |
+| 2 | every tripped TR reports `Isolated` | `IsolationTimeout` | fail |
 | 3 | dwell for the bistable mechanism | `LatchDelay` | — |
 | 4 | `DJ[p]` position closed | `BreakerTimeout` | → Step 5 |
 | 5 | `DJ[p]` load current | `CurrentTimeout` | → Step 6 |
@@ -470,8 +476,8 @@ are *waits* instead, and what happens when the wait expires is part of the
 maneuver rather than an error case — Step 4 falling through to Step 5, and
 Step 5 to Step 6, are the scheme working as designed.
 
-**Step 2 is a fan-out drawn as one node.** It waits on *every* transformer
-carrying `CR`, not one. Several transformers can trip together, and that is
+**Step 2 is a fan-out drawn as one node.** It waits on *every* transformer whose
+lockout relay operated, not one. Several transformers can trip together, and that is
 not an ambiguity to resolve but simply a longer step — which is also why
 `IsolationTimeout` has to cover the slowest of them, including two motorised
 disconnectors travelling before a transformer can call itself isolated.
@@ -598,6 +604,6 @@ beyond the one property.
 | 4T Ring | TA | TR1 | B or C (1 contingency) | 4 |
 | 4T Ring | TM / NM | busbar B1A ↔ B4A | — | 2 |
 | 4T Ring | TM / NM | busbar B2B ↔ B3A | — | 2 |
-| 2BR2BB | RASEAT | any TR `CR` | primary confirms on position | 4 |
-| 2BR2BB | RASEAT | any TR `CR` | primary confirms on current | 5 |
-| 2BR2BB | RASEAT | any TR `CR` | falls back to the other incomer | 6 |
+| 2BR2BB | RASEAT | any TR 86 | primary confirms on position | 4 |
+| 2BR2BB | RASEAT | any TR 86 | primary confirms on current | 5 |
+| 2BR2BB | RASEAT | any TR 86 | falls back to the other incomer | 6 |
