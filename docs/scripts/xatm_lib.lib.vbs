@@ -1759,12 +1759,12 @@ End Sub
 <xatm_RASEAT.Commands.Start:Start_OnChangedValue()>
 Sub Start_OnChangedValue()
 
-	' Asked for by a transformer whose CR operated, and by nothing else.
+	' Asked for by a transformer whose lockout relay operated, and by nothing
 	' There is no operator command for this: the entry is already dark by
 	' the time anybody could press one.
 	'
 	' The value carries the Id of the transformer that asked, which is for
-	' the log alone - Step 0 reads the CR of every transformer for itself,
+	' the log alone - Step 0 reads the relay of every transformer for itself,
 	' because more than one can have operated and the sequence has to wait
 	' for all of them.
 
@@ -1788,7 +1788,7 @@ Sub Start_OnChangedValue()
 
 	End If
 
-	' Refused and logged, like any other. Two transformers losing their CR
+	' Refused and logged, like any other. Two transformers losing their relay
 	' together, or one shortly after the other, is unusual enough to be
 	' worth a line - and Step 0 already took whichever were carrying it
 	' when the sequence began, so the second request has nothing to add.
@@ -1859,15 +1859,15 @@ End Sub
 
 ' True if any OTHER automation object is currently running.
 '
-' The transfer keeps the same check and the two share the folder, so a
-' reclosing and a transfer cannot run at once - which is the intent, in
-' both directions.
+' The transfer that answers the same trip is not an "other". One lockout
+' relay starts both now: the transfer moves the medium voltage off the
+' transformer that tripped, and this recloses the entry above it. Different
+' equipment, the same event, and neither waits for the other - which is the
+' whole point of the change, and the opposite of what this check used to do.
 '
-' A CR takes the medium-voltage busbars down with it, so an undervoltage
-' transfer will be asking to start moments later and must not; and a
-' transfer already under way is not something a reclosing should cut
-' across either. Whichever was asked for first runs, and the other is
-' refused and says why.
+' A manual transfer still blocks, in both directions. That one is somebody
+' operating, and a reclosing should not cut across it any more than it
+' should be cut across.
 Function AnyOtherAutomationRunning()
 
 	AnyOtherAutomationRunning = False
@@ -1875,7 +1875,7 @@ Function AnyOtherAutomationRunning()
 	Dim obj
 	For Each obj In Application.GetObject("XATM_Data.Automation")
 
-		If Not (obj Is xatm_RASEAT) Then
+		If Not (obj Is xatm_RASEAT) And TypeName(obj) <> "xatm_TA" Then
 
 			Dim running
 			running = False
@@ -2148,9 +2148,9 @@ Function ReadBackupId()
 End Function
 
 
-' The transformers whose CR operated, as the run is treating them.
+' The transformers whose lockout relay operated, as the run treats them.
 '
-' Snapshotted rather than re-read, because a CR resets on its own and the
+' Snapshotted rather than re-read, because the relay resets on its own and
 ' sequence would otherwise stop waiting for a transformer half way through
 ' isolating - the same reason the reference logic memorises it.
 Function ReadTriggerTransformers()
@@ -2303,11 +2303,11 @@ End Sub
 '
 ' Declared here rather than configured: they are numbers this sequence is
 ' written around, not dials a panel offers. ISOLATION_TIMEOUT is the one to
-' watch - it has to cover the slowest transformer carrying CR finishing its
+' watch - it has to cover the slowest tripped transformer finishing its
 ' isolation, two motorised disconnectors travelling included, and 25 is the
 ' figure the reference logic used for a different station.
 Const BREAKER_TIMEOUT   = 5     ' a breaker confirming a position
-Const ISOLATION_TIMEOUT = 25    ' every transformer with CR reporting Isolated
+Const ISOLATION_TIMEOUT = 25    ' every tripped transformer reporting Isolated
 Const CURRENT_TIMEOUT   = 5     ' load current vouching for a close
 Const LATCH_DELAY       = 2     ' the bistable mechanism settling
 Const RESET_DELAY       = 5     ' the results standing before they are cleared
@@ -2321,7 +2321,7 @@ Sub Main_Step00()
 	' Everything the run is decided by, read once.
 	'
 	' Both of these change under a running sequence if they are re-read: a
-	' CR resets on its own, and MemorizedPosition adopts the new position
+	' The relay resets on its own, and MemorizedPosition adopts the new position
 	' once its own countdown expires. Snapshotting is what keeps step 6
 	' operating the breaker step 4 was talking about.
 	StoreTriggerTransformers()
@@ -2342,7 +2342,7 @@ Sub Main_Step00()
 End Sub
 
 
-' Which transformers had their CR operate, written down as a list.
+' Which transformers had their lockout relay operate, written down as a list.
 '
 ' Taken from the live signal at trigger time. A transformer whose relay has
 ' already reset by the time step 2 runs is still waited on, because this is
@@ -2367,7 +2367,7 @@ Sub StoreTriggerTransformers()
 				operated = False
 
 				On Error Resume Next
-				operated = CBool(transformer.CR)
+				operated = CBool(transformer.LockingOutRelay)
 				On Error Goto 0
 
 				If operated Then
@@ -2441,7 +2441,7 @@ Function DescribeReclosing()
 	If list = "" Then list = "no transformer"
 
 	DescribeReclosing = "reclosing on " & DeviceName(ReadPrimaryId()) & _
-	                    ", with CR on " & list
+	                    ", tripped by " & list
 
 End Function
 
@@ -2523,7 +2523,7 @@ End Sub
 <xatm_RASEAT.FSM.Main:Main_Step02()>
 Sub Main_Step02()
 	
-	' Every transformer whose CR operated, not one of them.
+	' Every transformer whose lockout relay operated, not one of them.
 	'
 	' Several can trip together, and that is not an ambiguity to resolve:
 	' the entry may not be re-energised while any of them is still tied to
@@ -2531,11 +2531,11 @@ Sub Main_Step02()
 	Dim trs, i, id, transformer, exists, allIsolated
 	trs = ReadTriggerTransformers()
 
-	' No CR anywhere means the trigger was withdrawn before this ran. There
+	' No relay anywhere means the trigger was withdrawn before this ran. There
 	' is nothing to isolate, and nothing to wait for.
 	If UBound(trs) < 0 Then
 
-		WriteLog "Step 2: no transformer is carrying CR - proceeding to the next step."
+		WriteLog "Step 2: no transformer is carrying its lockout relay - proceeding to the next step."
 		Advance 3
 		Exit Sub
 
@@ -2569,7 +2569,7 @@ Sub Main_Step02()
 
 	If allIsolated Then
 
-		WriteLog "Step 2: every transformer carrying CR is isolated - proceeding to the next step."
+		WriteLog "Step 2: every tripped transformer is isolated - proceeding to the next step."
 		Advance 3
 		Exit Sub
 
@@ -3155,6 +3155,15 @@ End Sub
 
 ' True if any OTHER automation object is currently running (mutual exclusion).
 ' Relies on a common Running property instead of enumerating each type.
+'
+' The reclosing is not an "other" any more. One lockout relay starts both:
+' this one moves the medium voltage off the transformer that tripped, that
+' one recloses the entry above it. Different equipment, the same event, and
+' neither has anything to wait for in the other.
+'
+' A manual transfer still blocks, in both directions. That one is somebody
+' operating, and two sets of hands on the same busbars is what this check
+' was put here for.
 Function AnyOtherAutomationRunning()
 
 	AnyOtherAutomationRunning = False
@@ -3162,7 +3171,7 @@ Function AnyOtherAutomationRunning()
 	Dim obj
 	For Each obj In Application.GetObject("XATM_Data.Automation")
 
-		If Not (obj Is xatm_TA) Then
+		If Not (obj Is xatm_TA) And TypeName(obj) <> "xatm_RASEAT" Then
 
 			Dim running
 			running = False
@@ -3504,6 +3513,8 @@ Function OperationName(operation)
 		OperationName = "operated"
 	End If
 End Function
+
+
 ' Which transformer the running maneuver is treating as out of service, or 0
 ' for none. Written once by Start_OnChangedValue - declared by the operator
 ' for TM and NM, read off the field for TA - and constant for the whole run,
@@ -3513,6 +3524,21 @@ End Function
 ' situations 2-5 are the states a sequence starts from, and 6-11 - two
 ' transformers out - are the states they end in, with no sequence leaving
 ' them. So this is one Id and not a set.
+' Whether step 1 waits for the secondary breaker rather than opening it.
+'
+' False for a class that has not been given the property, which is what
+' every station did before it existed.
+Function WaitsForBreaker()
+
+	WaitsForBreaker = False
+
+	On Error Resume Next
+	WaitsForBreaker = CBool(xatm_TA.WaitLowVoltageBreaker)
+	On Error Goto 0
+
+End Function
+
+
 Function ReadImpededId()
 
 	Dim id
@@ -3771,6 +3797,18 @@ Sub S1TA(triggerId, impedeId)
 		Exit Sub
 
 	End If
+
+	' Opened here, or only confirmed here.
+	'
+	' Where the lockout relay trips the secondary breaker itself there is
+	' nothing for this step to command - only something to confirm, and an
+	' order sent into a breaker the protection is already opening is a
+	' second order for one movement.
+	'
+	' Where it is not wired that way, this step is what opens it. The step
+	' timer bounds the wait either way: a breaker that never opens is a
+	' failed step and not a sequence that sits there.
+	If WaitsForBreaker() Then Exit Sub
 
 	Select Case breaker.Item("Data").Item("CommandInProgress").Value
 
@@ -6856,74 +6894,6 @@ Sub UndervoltageRelay_OnChangedValue()
 	
 End Sub
 
-<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_Functions()>
-Sub RASEAT_Functions()
-End Sub
-
-
-' Asks the high-voltage reclosing to run, because this transformer's busbar
-' relay operated.
-'
-' Found rather than configured. There is one reclosing automation in a
-' station and it holds no references to equipment, so the transformer looks
-' for it by class - the same way RequestTMTNM looks for the transfer bound to
-' this transformer, and for the same reason: E3 gives no way to call across
-' objects, so the only way to ask for work is to write to a tag on the
-' object that does it.
-'
-' A station whose incomer layout declares no entry bays has no reclosing to
-' find, and says so once rather than failing quietly.
-Sub RequestRASEAT()
-
-	Dim obj, bound
-	Set bound = Nothing
-
-	For Each obj In Application.GetObject("XATM_Data.Automation")
-
-		If TypeName(obj) = "xatm_RASEAT" Then
-			Set bound = obj
-			Exit For
-		End If
-
-	Next
-
-	If bound Is Nothing Then
-		WriteLog "No RASEAT in this substation - reclosing request ignored."
-		Exit Sub
-	End If
-
-	WriteLog "CR operated - reclosing requested via " & bound.Name & "."
-
-	' The Id travels so the reclosing can name who asked. It reads the CR
-	' of every transformer for itself: more than one can operate together,
-	' and the sequence has to wait for all of them to isolate.
-	bound.Item("Commands").Item("Start").WriteEx xatm_Transformer.Id
-
-End Sub
-
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-	
-End Sub
-
-<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_OnCRTrip()>
-Sub RASEAT_OnCRTrip()
-	
-	RequestRASEAT()
-	
-End Sub
-
 <xatm_Transformer.Data.Triggers.TA:TA_Functions()>
 Sub TA_Functions()
 End Sub
@@ -6968,6 +6938,48 @@ Sub RequestTA(mode)
 
 End Sub
 
+' Asks the high-voltage reclosing to run, because this transformer's lockout
+' relay operated.
+'
+' Found rather than configured. There is one reclosing automation in a
+' station and it holds no references to equipment, so the transformer looks
+' for it by class - the same way RequestTA looks for the transfer bound to
+' this transformer, and for the same reason: E3 gives no way to call across
+' objects, so the only way to ask for work is to write to a tag on the
+' object that does it.
+'
+' A station whose incomer layout declares no entry bays has no reclosing to
+' find, and says so once rather than failing quietly.
+Sub RequestRASEAT()
+
+	Dim obj, bound
+	Set bound = Nothing
+
+	For Each obj In Application.GetObject("XATM_Data.Automation")
+
+		If TypeName(obj) = "xatm_RASEAT" Then
+			Set bound = obj
+			Exit For
+		End If
+
+	Next
+
+	If bound Is Nothing Then
+		WriteLog "No RASEAT in this substation - reclosing request ignored."
+		Exit Sub
+	End If
+
+	WriteLog "Reclosing requested via " & bound.Name & "."
+
+	' The Id travels so the reclosing can name who asked. It reads the
+	' lockout relay of every transformer for itself: more than one can
+	' operate together, and the sequence has to wait for all of them to
+	' isolate.
+	bound.Item("Commands").Item("Start").WriteEx xatm_Transformer.Id
+
+End Sub
+
+
 Sub WriteLog(message)
 	
 	Dim consoleLogEngine
@@ -6986,9 +6998,20 @@ End Sub
 
 <xatm_Transformer.Data.Triggers.TA:TA_OnLockingoutRelayTrip()>
 Sub TA_OnLockingoutRelayTrip()
-	
+
+	' Both, off the one relay.
+	'
+	' The lockout takes the transformer off the medium-voltage busbars
+	' and the entry above it at the same time, so both answers are wanted
+	' and neither is the other's business: the transfer moves the load,
+	' the reclosing brings the entry back. Each refuses itself if it is
+	' not in a state to run, and each says so on the console.
+	'
+	' Undervoltage below asks for the transfer alone. Nothing has opened
+	' at the entry there, so there is nothing to reclose.
 	RequestTA "TA"
-		
+	RequestRASEAT
+
 End Sub
 
 <xatm_Transformer.Data.Triggers.TA:TA_OnUndervoltageTrip()>

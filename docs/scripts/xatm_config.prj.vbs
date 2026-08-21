@@ -4643,6 +4643,24 @@ Sub xatm_TA_OnStartRunning()
 		"XObject do transformador ao qual esta instância do automatismo está vinculada."
 	
 
+	' Whether step 1 opens the secondary breaker or waits for it.
+	'
+	' The lockout relay trips that breaker itself on most panels, and where
+	' it does there is nothing for step 1 to command - only something to
+	' confirm. An order sent into a breaker the protection is already
+	' opening is a second order for one movement.
+	'
+	' False where the protection does not open it, which is what every
+	' station did before this existed. The step timer bounds the wait
+	' either way: a breaker that never opens is a failed step.
+	'
+	' Read at step 1 and nowhere else. It says how this transformer's panel
+	' is wired, so it belongs to the instance and not to the request - the
+	' undervoltage trigger reaches the same step and finds the same answer.
+	AddProperty bag, "WaitLowVoltageBreaker", "Boolean", False, _
+		"True when step 1 waits for the low-voltage breaker to open instead of commanding it. Set it where the lockout relay already trips that breaker.", _
+		"True quando o passo 1 aguarda a abertura do disjuntor de baixa tensão em vez de comandá-lo. Marque onde o relé de bloqueio já abre esse disjuntor."
+
 	AddProperty bag, "OperatorBlock", "Boolean", False, _
 		"Operator lock. Blocks the start until the operator releases it.", _
 		"Bloqueio do operador. Impede a partida até que o operador libere."
@@ -4710,6 +4728,7 @@ Sub xatm_TA_OnStartRunning()
 	' the two have in common - the reasoning is written out there.
 	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "WaitLowVoltageBreaker", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 
@@ -5505,23 +5524,6 @@ Sub xatm_Transformer_OnStartRunning()
 	' The relay-failure check the specification asks for goes into the
 	' expression rather than into a property of its own: what is wanted is
 	' the message AND the messenger being healthy, which is one fact.
-	' The busbar chave rele for this transformer, and what starts the
-	' high-voltage reclosing.
-	'
-	' Not the LockingOutRelay above. That one is the transformer's own 86
-	' and trips its secondary breaker alone; this one trips the incomer as
-	' well, which is what takes the station down and what there is to
-	' reclose from.
-	'
-	' One property and not CR-1 and CR-2 apart. They differ in what they do
-	' to the medium-voltage transfer - one starts it, the other bars it -
-	' but that difference is written into the transfer's own AutomaticBlock
-	' rather than read here. All this has to say is that this transformer
-	' took the entry down, so the reclosing knows to wait for it to isolate.
-	AddProperty bag, "CR", "Boolean", False, _
-		"Busbar lockout relay of this transformer. Bound to an expression - CR-1 or CR-2, whichever the panel reports. Starts the high-voltage reclosing.", _
-		"Chave relé de barra deste transformador. Vinculada a uma expressão - CR-1 ou CR-2, o que o painel indicar. Inicia o religamento de alta tensão."
-
 	AddProperty bag, "Isolated", "Boolean", False, _
 		"Transformer is electrically isolated from the high-voltage busbars. Bound to an expression - the GOOSE its IED publishes, and that IED not having failed.", _
 		"Transformador isolado eletricamente das barras de alta tensão. Vinculada a uma expressão - a mensagem GOOSE publicada pelo seu IED, e esse IED sem defeito."
@@ -5542,7 +5544,6 @@ Sub xatm_Transformer_OnStartRunning()
 	SetExposure bag, "OutOfService",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "LockingOutRelay",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "UndervoltageRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
-	SetExposure bag, "CR",                EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "Isolated",          EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "Maintenance",       EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 
@@ -10403,12 +10404,12 @@ Sub btnRASEAT_Click()
 
 		Case 1
 
-			' Asked for the way a transformer's CR asks, so every gate that
-			' Start keeps is kept for this too - enabled, not already
-			' running, the three blocks, the preconditions, no other
+			' Asked for the way a transformer's lockout relay asks, so every
+			' gate that Start keeps is kept for this too - enabled, not
+			' already running, the three blocks, the preconditions, no other
 			' automation in progress. A refusal is logged there and says why.
 			'
-			' Zero as the asker, because nobody's CR did this. What the
+			' Zero as the asker, because no relay did this. What the
 			' sequence acts on is read in Step 0 from the field either way,
 			' so a forced start on a healthy station finds nothing to
 			' isolate and goes straight to the reclose.
