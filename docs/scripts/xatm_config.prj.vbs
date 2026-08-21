@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Wed Aug 19 17:54:19 2026
+Fri Aug 21 09:07:06 2026
 -----------------------
 
 <xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
@@ -2009,7 +2009,7 @@ End Sub
 
 
 ' What an object answers to across a rename - its Id where it has one,
-' and its name where it has not. These carry no Id, and SyncAutomation
+' and its name where it has not. A TMTNM carries no Id, and SyncAutomation
 ' already goes by the number on the end of its name.
 Function ObjectKey(id, name)
 
@@ -3434,864 +3434,6 @@ Sub WriteLog(message)
 	
 End Sub
 
-<xatm_config_data.PropertiesHelper.xatm_TA:xatm_TA_OnStartRunning()>
-Sub xatm_TA_OnStartRunning()
-
-	Dim bag
-	Set bag = CreateObject("Scripting.Dictionary")
-
-	' The automatic transfer, and only that.
-	'
-	' Everything an operator asks for lives on xatm_TMTNM. This one is
-	' asked for by a trip, through the transformer's own trigger, and
-	' never by a person - which is why it has no command to start it,
-	' one pair of gates rather than five, and no property naming a
-	' transformer to treat as out of service. The field is read for
-	' that when the sequence starts.
-
-	AddProperty bag, "Enabled", "Boolean", True, _
-		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
-		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
-
-	AddProperty bag, "Running", "Boolean", False, _
-		"True while a sequence is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
-		"True enquanto uma sequência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
-
-	AddProperty bag, "Transformer", "xatm_Transformer", Empty, _
-		"Transformer XObject this automation instance is bound to.", _
-		"XObject do transformador ao qual esta instância do automatismo está vinculada."
-	
-
-	AddProperty bag, "OperatorBlock", "Boolean", False, _
-		"Operator lock. Blocks the start until the operator releases it.", _
-		"Bloqueio do operador. Impede a partida até que o operador libere."
-
-	AddProperty bag, "GeneralBlock", "Boolean", False, _
-		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
-		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
-		
-	
-	' --- the gates, one pair for each maneuver --------------------------
-	'
-	' A pair for every command, because what has to hold before a transfer
-	' may start is not the same from one contingency to the next: TM with
-	' TR2 out closes a different path, over different equipment, from a
-	' different starting state. One expression could not answer for all of
-	' them, and a single pair is what forced the question.
-	'
-	' Preconditions<gate> is True while that maneuver is permitted;
-	' AutomaticBlock<gate> is True while the switchyard bars it. The two
-	' polarities the single pair had, kept.
-	'
-	' The gate name is the mode, and the transformer the maneuver assumes
-	' is out where there is one: TM, TM200, NM, NM400. Exactly the names
-	' the command tags carry, so a command and the gates that let it
-	' through are read off one string and cannot drift apart.
-	'
-	Dim gm, gi, gate, gateLabel, outEN, outPT, whatEN, whatPT
-
-	AddProperty bag, "Preconditions", "Boolean", True, _
-		"Field conditions that have to hold before an automatic transfer may start. Bound to an expression - True while the maneuver is permitted.", _
-		"Condições de campo que devem valer antes que uma transferência automática possa partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
-
-	AddProperty bag, "AutomaticBlock", "Boolean", False, _
-		"Field conditions that block the automatic transfer. Bound to an expression - True keeps it from starting, alongside OperatorBlock and GeneralBlock.", _
-		"Condições de campo que bloqueiam a transferência automática. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
-
-	' --- the command interface ------------------------------------------
-	'
-	' No CommandStart of any kind. Over IEC 60870-5-104 an address means
-	' one maneuver, and there is no maneuver here for a person to ask
-	' for: a point that started an automatic transfer by hand would be a
-	' way to run the restoration scheme on a busbar that is still live.
-
-	AddProperty bag, "CommandReset", "InternalTag", Empty, _
-		"Reset command. Clears the latched step failures and the general block, so that a sequence can be started again.", _
-		"Comando de reset. Apaga as falhas seladas de passo e o bloqueio geral, para que uma sequência possa partir novamente."
-
-	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
-		"Operator lock command. Written by the operator's screen to set or release OperatorBlock.", _
-		"Comando de bloqueio do operador. Escrito pela tela do operador para marcar ou liberar o OperatorBlock."
-
-	Dim i
-	For i = 1 To 6
-
-		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
-			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
-			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
-
-	Next
-
-	' What the screen may do with each of these. Anything left out stays
-	' EXPOSE_NONE.
-	'
-	' The same answers the manual automation gives, for the properties
-	' the two have in common - the reasoning is written out there.
-	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-
-	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-
-	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
-
-	For i = 1 To 6
-		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
-	Next
-
-	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
-
-
-	' --- what the operator is alarmed on --------------------------------
-	'
-	' The same three the manual automation raises about itself, and the
-	' one pair of gates.
-	SetAlarm bag, "GeneralBlock",   "BLOQUEIO GERAL",      PAIR_BLOCKED,      SEV_HIGH
-	SetAlarm bag, "OperatorBlock",  "BLOQUEIO OPERADOR",   PAIR_BLOCKED,      SEV_MEDIUM
-	SetAlarm bag, "Running",        "AUTOMATISMO",         PAIR_RUNNING,      SEV_LOW
-
-	SetAlarm bag, "Preconditions",  "PRECONDIÇÕES TA",        PAIR_PRECONDITION, SEV_MEDIUM
-	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO TA", PAIR_BLOCKED,      SEV_MEDIUM
-
-	For i = 1 To 6
-		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
-	Next
-
-	Set Value = bag
-
-End Sub
-
-' What the configuration screen may do with a property, and whether its
-' value is a setting at all. A bitmask: a property can be bound to an
-' expression and forced, or shown and not edited, and so on.
-'
-' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
-' the screen and nothing is written to the project until the table at the
-' foot of the manifest says so. Both defaults fail closed.
-Const EXPOSE_NONE       = 0
-Const EXPOSE_VIEW       = 1     ' a row appears for it
-Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
-Const EXPOSE_EDIT       = 4     ' the value can be typed
-Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
-Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
-Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
-Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
-Const EXPOSE_IOTAG      = 128   ' level 3 is given a point for it, over 104
-
-
-' What the operator reads, and which state says it: normal|active|limit.
-'
-' One string rather than three fields because the polarity belongs with
-' the words. Preconditions is True while the maneuver is permitted, so
-' it alarms on 0 where the rest alarm on 1 - and a pair that carried
-' only the two words would let someone reword the message without ever
-' seeing that the state raising it was the healthy one.
-Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
-Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
-Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
-Const PAIR_RUNNING      = "CONCLUÍDO|EM ANDAMENTO|1"
-
-' DigitalSeverity, as Power numbers it.
-'
-' The scale runs backwards: the smaller the number the worse the alarm,
-' and -2 is the most severe value here rather than the least. Anything
-' comparing two of these has to be read twice - "worse than medium" is
-' a < and not a >. The manifests ask for medium unless a signal earns
-' otherwise; the overlay is what moves a single alarm off its default.
-Const SEV_CRITICAL = -2
-Const SEV_HIGH     =  0
-Const SEV_MEDIUM   =  1
-Const SEV_LOW      =  2
-
-
-
-Class PropertyInfo
-
-	Public Name
-	Public DataType
-	Public InitialValue
-	Public Exposure
-	Public HelpEn
-	Public HelpPt
-
-	' What the operator is told when this property changes, and which of
-	' its two states does the telling. Empty on every property until the
-	' alarm table at the foot of the manifest names it - the same way the
-	' exposure table is what makes a property appear on the panel. Both
-	' default to silence.
-	Public AlarmLabel
-	Public AlarmPair
-	Public AlarmSeverity
-
-	Public Function Help(lang)
-
-		If lang = "pt-BR" Then
-			Help = HelpPt
-		Else
-			Help = HelpEn
-		End If
-
-	End Function
-
-	' Asked of the property rather than of the caller, so the flags stay in
-	' the one scope that declares them. The instances travel to whatever
-	' scope reads the manifest and answer there just the same.
-	Public Function Shows()
-		Shows = Has(EXPOSE_VIEW)
-	End Function
-
-	Public Function ShowsValue()
-		ShowsValue = Has(EXPOSE_VALUE)
-	End Function
-
-	Public Function CanEdit()
-		CanEdit = Has(EXPOSE_EDIT)
-	End Function
-
-	Public Function CanBind()
-		CanBind = Has(EXPOSE_EXPRESSION)
-	End Function
-
-	Public Function CanForce()
-		CanForce = Has(EXPOSE_FORCE)
-	End Function
-
-	Public Function IsSaved()
-		IsSaved = Has(EXPOSE_SAVED)
-	End Function
-	
-	Public Function IsInterfaced()
-		IsInterfaced = Has(EXPOSE_INTERFACE)
-	End Function
-
-	' Whether level 3 is given a point for it.
-	'
-	' A separate question from IsInterfaced, and asked separately. The
-	' interface is where the Elipse application meets the automation; the
-	' distribution is what leaves the station. Everything distributed is
-	' interfaced - the distribution reads off the interface - but not
-	' everything interfaced is distributed, and conflating the two left no
-	' way to say so except a list of names kept somewhere else.
-	Public Function IsIOTagged()
-		IsIOTagged = Has(EXPOSE_IOTAG)
-	End Function
-
-	' An unnamed property raises nothing. Empty and "" compare equal in
-	' VBScript, so a property the alarm table never mentions answers no
-	' here without needing a flag of its own.
-	Public Function IsAlarmed()
-		IsAlarmed = (AlarmLabel <> "")
-	End Function
-
-	' The message either way, in the pattern the control room reads:
-	' a label and the state, joined by a dash.
-	Public Function AlarmNormalText()
-		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
-	End Function
-
-	Public Function AlarmActiveText()
-		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
-	End Function
-
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
-	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
-	End Function
-
-	Private Function PairPart(i)
-
-		PairPart = ""
-
-		Dim parts
-		parts = Split(AlarmPair & "", "|")
-
-		If i <= UBound(parts) Then PairPart = parts(i)
-
-	End Function
-
-	' Empty And anything is 0, so a property nobody classified answers no
-	' to all of these.
-	Private Function Has(flag)
-		Has = ((Exposure And flag) <> 0)
-	End Function
-
-End Class
-
-Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
-
-	Dim p
-	Set p = New PropertyInfo
-
-	p.Name         = name
-	p.DataType     = dataType
-	p.InitialValue = initialValue
-	p.Exposure     = EXPOSE_NONE
-	p.HelpEn       = helpEn
-	p.HelpPt       = helpPt
-
-	bag.Add LCase(name), p
-	
-End Sub
-
-' What the screen may do with a property. Set apart from AddProperty so
-' the classifications read as a table, and so changing one never means
-' touching the help text - which is where the accents live.
-' What the operator is alarmed on. Set apart from SetExposure for the
-' reason that one is set apart from AddProperty: the alarms read as a
-' table of their own, and a property left out of it raises nothing.
-'
-' A curated list and never a sweep of what is interfaced. An interface
-' tag exists so a screen can draw a value, which is a different question
-' from whether an operator should be told about it.
-Sub SetAlarm(bag, propertyName, label, pair, severity)
-
-	Dim k
-	k = LCase(propertyName)
-
-	If Not bag.Exists(k) Then Exit Sub
-
-	bag(k).AlarmLabel    = label
-	bag(k).AlarmPair     = pair
-	bag(k).AlarmSeverity = severity
-
-End Sub
-Sub SetExposure(bag, name, exposure)
-
-	Dim k
-	k = LCase(name)
-
-	If Not bag.Exists(k) Then Exit Sub
-
-	bag(k).Exposure = exposure
-		
-End Sub
-
-<xatm_config_data.PropertiesHelper.xatm_TMTNM:xatm_TMTNM_OnStartRunning()>
-Sub xatm_TMTNM_OnStartRunning()
-
-	Dim bag
-	Set bag = CreateObject("Scripting.Dictionary")
-
-	AddProperty bag, "Enabled", "Boolean", True, _
-		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
-		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
-
-	AddProperty bag, "Running", "Boolean", False, _
-		"True while a sequence is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
-		"True enquanto uma sequência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
-
-	AddProperty bag, "Transformer", "xatm_Transformer", Empty, _
-		"Transformer XObject this automation instance is bound to.", _
-		"XObject do transformador ao qual esta instância do automatismo está vinculada."
-	
-
-	' Which pair of busbars this automation moves, and whether it moves one
-	' at all.
-	'
-	' Empty, and this is an ordinary transformer automation: TM takes its
-	' transformer's load off, NM brings it back, and the numbered variants
-	' say which other transformer is out of service.
-	'
-	' Set, and it is a busbar automation instead. TM hands that busbar to
-	' the far side of the ring, NM brings it back, there is no contingency
-	' to declare, and Transformer is left unbound - it is not any
-	' transformer's automation.
-	'
-	' Text and not a link, unlike every other property here that names
-	' equipment, because a busbar is not an XObject there is anything to
-	' bind to. And one property rather than two: a flag reading "this is a
-	' busbar automation" beside a name saying which busbar would be two ways
-	' of writing one fact, and two ways of writing one fact can be made to
-	' disagree.
-	'
-	' The six-busbar ring defines B1A-B4A and B2B-B3A. A two-busbar layout
-	' defines neither, and SyncAutomation creates no such instance there.
-	AddProperty bag, "BusbarPair", "String", "", _
-		"The pair of busbars this automation transfers between, B1A-B4A or B2B-B3A, which makes TM and NM the busbar transfer and its normalisation. Empty on an ordinary transformer automation.", _
-		"O par de barramentos que este automatismo transfere, B1A-B4A ou B2B-B3A, o que faz de TM e NM a transferência de barra e a sua normalização. Vazio num automatismo de transformador comum."
-
-	AddProperty bag, "OperatorBlock", "Boolean", False, _
-		"Operator lock. Blocks the start until the operator releases it.", _
-		"Bloqueio do operador. Impede a partida até que o operador libere."
-
-	AddProperty bag, "GeneralBlock", "Boolean", False, _
-		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
-		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
-		
-	
-	' --- the gates, one pair for each maneuver --------------------------
-	'
-	' A pair for every command, because what has to hold before a transfer
-	' may start is not the same from one contingency to the next: TM with
-	' TR2 out closes a different path, over different equipment, from a
-	' different starting state. One expression could not answer for all of
-	' them, and a single pair is what forced the question.
-	'
-	' Preconditions<gate> is True while that maneuver is permitted;
-	' AutomaticBlock<gate> is True while the switchyard bars it. The two
-	' polarities the single pair had, kept.
-	'
-	' The gate name is the mode, and the transformer the maneuver assumes
-	' is out where there is one: TM, TM200, NM, NM400. Exactly the names
-	' the command tags carry, so a command and the gates that let it
-	' through are read off one string and cannot drift apart.
-	'
-	Dim gm, gi, gate, gateLabel, outEN, outPT, whatEN, whatPT
-
-	For Each gm In Array("TM", "NM")
-
-		If gm = "TM" Then
-			whatEN = "a manual transfer"
-			whatPT = "uma transferência manual"
-		Else
-			whatEN = "a manual normalisation"
-			whatPT = "uma normalização manual"
-		End If
-
-		For gi = 0 To 4
-
-			If gi = 0 Then
-				gate  = gm
-				outEN = ""
-				outPT = ""
-			Else
-				gate  = gm & (gi * 100)
-				outEN = " with transformer " & (gi * 100) & " out of service"
-				outPT = " com o transformador " & (gi * 100) & " impedido"
-			End If
-
-			AddProperty bag, "Preconditions" & gate, "Boolean", True, _
-				"Field conditions that have to hold before " & whatEN & outEN & " may start. Bound to an expression - True while the maneuver is permitted.", _
-				"Condições de campo que devem valer antes que " & whatPT & outPT & " possa partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
-
-			AddProperty bag, "AutomaticBlock" & gate, "Boolean", False, _
-				"Field conditions that block " & whatEN & outEN & ". Bound to an expression - True keeps it from starting, alongside OperatorBlock and GeneralBlock.", _
-				"Condições de campo que bloqueiam " & whatPT & outPT & ". Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
-
-		Next
-
-	Next
-
-
-	' --- the command interface -----------------------------------------
-
-	AddProperty bag, "CommandReset", "InternalTag", Empty, _
-		"Reset command. Clears the latched step failures and the general block, so that a sequence can be started again.", _
-		"Comando de reset. Apaga as falhas seladas de passo e o bloqueio geral, para que uma sequência possa partir novamente."
-
-	' One command per maneuver, rather than one command saying which.
-	'
-	' Level 3 reaches these over IEC 60870-5-104, where a command is a point
-	' address carrying no argument: the address has to mean one maneuver by
-	' itself. The E3 operation screen works the same way round - a button
-	' writes a tag, it does not compose an argument. So the variant lives in
-	' the tag, and the tag name says which transformer the maneuver assumes
-	' is out of service.
-	'
-	' CommandStartTM is the maneuver with nothing out; CommandStartTM<n00>
-	' is the same trigger with transformer n00 out, which is what the spec
-	' calls "TM TR<trigger>-TR<n>" - so the point list and the spec sections
-	' name the same thing.
-	'
-	' The one whose Id is the bound transformer's own is declared with the
-	' rest and never used: Start rejects a maneuver that is its own
-	' impediment. Declaring it keeps the set identical on every instance,
-	' so no point list has to reason about which member is missing.
-	AddProperty bag, "CommandStartTM", "InternalTag", Empty, _
-		"Start command for a manual transfer with no transformer out of service.", _
-		"Comando de partida da transferência manual sem transformador impedido."
-
-	AddProperty bag, "CommandStartNM", "InternalTag", Empty, _
-		"Start command for a manual normalisation with no transformer out of service.", _
-		"Comando de partida da normalização manual sem transformador impedido."
-
-	Dim trn
-	For trn = 1 To 4
-
-		AddProperty bag, "CommandStartTM" & (trn * 100), "InternalTag", Empty, _
-			"Start command for a manual transfer with transformer " & (trn * 100) & " out of service.", _
-			"Comando de partida da transferência manual com o transformador " & (trn * 100) & " impedido."
-
-		AddProperty bag, "CommandStartNM" & (trn * 100), "InternalTag", Empty, _
-			"Start command for a manual normalisation with transformer " & (trn * 100) & " out of service.", _
-			"Comando de partida da normalização manual com o transformador " & (trn * 100) & " impedido."
-
-	Next
-
-	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
-		"Operator lock command. Written by the operator's screen to set or release OperatorBlock.", _
-		"Comando de bloqueio do operador. Escrito pela tela do operador para marcar ou liberar o OperatorBlock."
-
-	Dim i
-	For i = 1 To 6
-
-		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
-			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
-			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
-
-	Next
-	
-	' What the screen may do with each of these, and which are settings
-	' rather than readings. Anything left out stays EXPOSE_NONE.
-	'
-	' The readings - the blocks and every gate - are not saved: their
-	' expression is the configuration, and the reading is whatever the
-	' switchyard was doing at the time.
-	'
-	' EXPOSE_INTERFACE is a different question from the rest, and answered
-	' separately: not what the panel may do with a property, but whether
-	' the Elipse application is given a tag of its own for it. What a
-	' screen draws or acts on is interfaced; what only an engineer sets -
-	' the transformer this instance drives - is not.
-	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
-	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-	' Interfaced, so a screen can tell an operator what the TM and NM
-	' buttons in front of them actually do, but not carried to level 3: it
-	' is configuration and never changes at runtime, so the point list says
-	' it once rather than the station repeating it forever.
-	SetExposure bag, "BusbarPair",     EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED + EXPOSE_INTERFACE
-	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-
-	' Every gate is shown, bound to an expression, forceable for a test and
-	' interfaced - what the single pair was - and carried to level 3 as
-	' well, so the control centre reads which maneuver is barred and not
-	' merely that one of them is.
-
-	For Each gm In Array("TM", "NM")
-		For gi = 0 To 4
-			If gi = 0 Then gate = gm Else gate = gm & (gi * 100)
-			SetExposure bag, "Preconditions"  & gate, EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-			SetExposure bag, "AutomaticBlock" & gate, EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-		Next
-	Next
-
-	' Running and the six step latches are the automation talking about
-	' itself. Neither belongs on the configuration panel - there is
-	' nothing about them to configure - but both are what a screen draws,
-	' so they are interfaced and nothing else.
-	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
-
-	For i = 1 To 6
-		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
-	Next
-
-	' The command interface is shown and nothing more. No EXPOSE_EDIT and
-	' no EXPOSE_FORCE, because either one would let the panel start a real
-	' maneuver on a live switchyard; no EXPOSE_VALUE, because a command is
-	' written and never read, and reading one back shows the last thing
-	' written to it as though it were a state.
-	'
-	' EXPOSE_SAVED all the same: what these hold is which tag the object
-	' talks through, which is configuration - and without it ResetReadings
-	' would put every one of them back to Empty on the next import.
-	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "CommandStartTM",       EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	SetExposure bag, "CommandStartNM",       EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
-
-	For trn = 1 To 4
-		SetExposure bag, "CommandStartTM" & (trn * 100), EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
-		SetExposure bag, "CommandStartNM" & (trn * 100), EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
-	Next
-	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
-
-
-	' --- what the operator is alarmed on --------------------------------
-	'
-	' The automation talking about itself, which is what the control room
-	' wants from it: a step that would not execute, whatever is holding a
-	' start back, and whether a sequence is on.
-	'
-	' Running is here as a status and not a fault - low severity, and a
-	' pair reading PARADO and EM OPERAÇÃO rather than NORMAL and
-	' ATUADO, because nothing about a sequence in progress is abnormal.
-	'
-	' Preconditions is the one that raises on False. It is True while the
-	' maneuver is permitted, so PAIR_PRECONDITION carries a limit of 0.
-	SetAlarm bag, "GeneralBlock",   "BLOQUEIO GERAL",      PAIR_BLOCKED,      SEV_HIGH
-	SetAlarm bag, "OperatorBlock",  "BLOQUEIO OPERADOR",   PAIR_BLOCKED,      SEV_MEDIUM
-	SetAlarm bag, "Running",        "AUTOMATISMO",         PAIR_RUNNING,      SEV_LOW
-
-	' Every gate raises too, the way the single pair did.
-	'
-	' This is also what puts them in the substation folder at all:
-	' AlarmObject builds a tag for a reading that is alarmed and for a
-	' command, and for nothing else. An unalarmed gate is interfaced and
-	' carried to level 3, but has no tag under the PowerSubstation - so the
-	' alarm table is what decides whether the control room can see it, not
-	' merely whether it is told about it.
-	'
-	' The label names the maneuver the way the control room says it: TM-TR2
-	' is a manual transfer with TR2 impeded, which is the spec's own
-	' "TM TR<trigger>-TR2".
-
-	For Each gm In Array("TM", "NM")
-		For gi = 0 To 4
-
-			If gi = 0 Then
-				gate      = gm
-				gateLabel = gm
-			Else
-				gate      = gm & (gi * 100)
-				gateLabel = gm & "-TR" & gi
-			End If
-
-			SetAlarm bag, "Preconditions"  & gate, "PRECONDIÇÕES " & gateLabel,        PAIR_PRECONDITION, SEV_MEDIUM
-			SetAlarm bag, "AutomaticBlock" & gate, "BLOQUEIO AUTOMÁTICO " & gateLabel, PAIR_BLOCKED,      SEV_MEDIUM
-
-		Next
-	Next
-
-	For i = 1 To 6
-		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
-	Next
-
-	Set Value = bag
-
-End Sub
-
-' What the configuration screen may do with a property, and whether its
-' value is a setting at all. A bitmask: a property can be bound to an
-' expression and forced, or shown and not edited, and so on.
-'
-' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
-' the screen and nothing is written to the project until the table at the
-' foot of the manifest says so. Both defaults fail closed.
-Const EXPOSE_NONE       = 0
-Const EXPOSE_VIEW       = 1     ' a row appears for it
-Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
-Const EXPOSE_EDIT       = 4     ' the value can be typed
-Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
-Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
-Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
-Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
-Const EXPOSE_IOTAG      = 128   ' level 3 is given a point for it, over 104
-
-
-' What the operator reads, and which state says it: normal|active|limit.
-'
-' One string rather than three fields because the polarity belongs with
-' the words. Preconditions is True while the maneuver is permitted, so
-' it alarms on 0 where the rest alarm on 1 - and a pair that carried
-' only the two words would let someone reword the message without ever
-' seeing that the state raising it was the healthy one.
-Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
-Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
-Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
-Const PAIR_RUNNING      = "CONCLUÍDO|EM ANDAMENTO|1"
-
-' DigitalSeverity, as Power numbers it.
-'
-' The scale runs backwards: the smaller the number the worse the alarm,
-' and -2 is the most severe value here rather than the least. Anything
-' comparing two of these has to be read twice - "worse than medium" is
-' a < and not a >. The manifests ask for medium unless a signal earns
-' otherwise; the overlay is what moves a single alarm off its default.
-Const SEV_CRITICAL = -2
-Const SEV_HIGH     =  0
-Const SEV_MEDIUM   =  1
-Const SEV_LOW      =  2
-
-
-
-Class PropertyInfo
-
-	Public Name
-	Public DataType
-	Public InitialValue
-	Public Exposure
-	Public HelpEn
-	Public HelpPt
-
-	' What the operator is told when this property changes, and which of
-	' its two states does the telling. Empty on every property until the
-	' alarm table at the foot of the manifest names it - the same way the
-	' exposure table is what makes a property appear on the panel. Both
-	' default to silence.
-	Public AlarmLabel
-	Public AlarmPair
-	Public AlarmSeverity
-
-	Public Function Help(lang)
-
-		If lang = "pt-BR" Then
-			Help = HelpPt
-		Else
-			Help = HelpEn
-		End If
-
-	End Function
-
-	' Asked of the property rather than of the caller, so the flags stay in
-	' the one scope that declares them. The instances travel to whatever
-	' scope reads the manifest and answer there just the same.
-	Public Function Shows()
-		Shows = Has(EXPOSE_VIEW)
-	End Function
-
-	Public Function ShowsValue()
-		ShowsValue = Has(EXPOSE_VALUE)
-	End Function
-
-	Public Function CanEdit()
-		CanEdit = Has(EXPOSE_EDIT)
-	End Function
-
-	Public Function CanBind()
-		CanBind = Has(EXPOSE_EXPRESSION)
-	End Function
-
-	Public Function CanForce()
-		CanForce = Has(EXPOSE_FORCE)
-	End Function
-
-	Public Function IsSaved()
-		IsSaved = Has(EXPOSE_SAVED)
-	End Function
-	
-	Public Function IsInterfaced()
-		IsInterfaced = Has(EXPOSE_INTERFACE)
-	End Function
-
-	' Whether level 3 is given a point for it.
-	'
-	' A separate question from IsInterfaced, and asked separately. The
-	' interface is where the Elipse application meets the automation; the
-	' distribution is what leaves the station. Everything distributed is
-	' interfaced - the distribution reads off the interface - but not
-	' everything interfaced is distributed, and conflating the two left no
-	' way to say so except a list of names kept somewhere else.
-	Public Function IsIOTagged()
-		IsIOTagged = Has(EXPOSE_IOTAG)
-	End Function
-
-	' An unnamed property raises nothing. Empty and "" compare equal in
-	' VBScript, so a property the alarm table never mentions answers no
-	' here without needing a flag of its own.
-	Public Function IsAlarmed()
-		IsAlarmed = (AlarmLabel <> "")
-	End Function
-
-	' The message either way, in the pattern the control room reads:
-	' a label and the state, joined by a dash.
-	Public Function AlarmNormalText()
-		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
-	End Function
-
-	Public Function AlarmActiveText()
-		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
-	End Function
-
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
-	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
-	End Function
-
-	Private Function PairPart(i)
-
-		PairPart = ""
-
-		Dim parts
-		parts = Split(AlarmPair & "", "|")
-
-		If i <= UBound(parts) Then PairPart = parts(i)
-
-	End Function
-
-	' Empty And anything is 0, so a property nobody classified answers no
-	' to all of these.
-	Private Function Has(flag)
-		Has = ((Exposure And flag) <> 0)
-	End Function
-
-End Class
-
-Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
-
-	Dim p
-	Set p = New PropertyInfo
-
-	p.Name         = name
-	p.DataType     = dataType
-	p.InitialValue = initialValue
-	p.Exposure     = EXPOSE_NONE
-	p.HelpEn       = helpEn
-	p.HelpPt       = helpPt
-
-	bag.Add LCase(name), p
-	
-End Sub
-
-' What the screen may do with a property. Set apart from AddProperty so
-' the classifications read as a table, and so changing one never means
-' touching the help text - which is where the accents live.
-' What the operator is alarmed on. Set apart from SetExposure for the
-' reason that one is set apart from AddProperty: the alarms read as a
-' table of their own, and a property left out of it raises nothing.
-'
-' A curated list and never a sweep of what is interfaced. An interface
-' tag exists so a screen can draw a value, which is a different question
-' from whether an operator should be told about it.
-Sub SetAlarm(bag, propertyName, label, pair, severity)
-
-	Dim k
-	k = LCase(propertyName)
-
-	If Not bag.Exists(k) Then Exit Sub
-
-	bag(k).AlarmLabel    = label
-	bag(k).AlarmPair     = pair
-	bag(k).AlarmSeverity = severity
-
-End Sub
-Sub SetExposure(bag, name, exposure)
-
-	Dim k
-	k = LCase(name)
-
-	If Not bag.Exists(k) Then Exit Sub
-
-	bag(k).Exposure = exposure
-		
-End Sub
-
 <xatm_config_data.PropertiesHelper.xatm_Breaker:xatm_Breaker_OnStartRunning()>
 Sub xatm_Breaker_OnStartRunning()
 
@@ -5473,6 +4615,864 @@ Sub SetExposure(bag, name, exposure)
 		
 End Sub
 
+<xatm_config_data.PropertiesHelper.xatm_TA:xatm_TA_OnStartRunning()>
+Sub xatm_TA_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	' The automatic transfer, and only that.
+	'
+	' Everything an operator asks for lives on xatm_TMTNM. This one is
+	' asked for by a trip, through the transformer's own trigger, and
+	' never by a person - which is why it has no command to start it,
+	' one pair of gates rather than five, and no property naming a
+	' transformer to treat as out of service. The field is read for
+	' that when the sequence starts.
+
+	AddProperty bag, "Enabled", "Boolean", True, _
+		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
+		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
+
+	AddProperty bag, "Running", "Boolean", False, _
+		"True while a sequence is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
+		"True enquanto uma sequência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
+
+	AddProperty bag, "Transformer", "xatm_Transformer", Empty, _
+		"Transformer XObject this automation instance is bound to.", _
+		"XObject do transformador ao qual esta instância do automatismo está vinculada."
+	
+
+	AddProperty bag, "OperatorBlock", "Boolean", False, _
+		"Operator lock. Blocks the start until the operator releases it.", _
+		"Bloqueio do operador. Impede a partida até que o operador libere."
+
+	AddProperty bag, "GeneralBlock", "Boolean", False, _
+		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
+		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
+		
+	
+	' --- the gates, one pair for each maneuver --------------------------
+	'
+	' A pair for every command, because what has to hold before a transfer
+	' may start is not the same from one contingency to the next: TM with
+	' TR2 out closes a different path, over different equipment, from a
+	' different starting state. One expression could not answer for all of
+	' them, and a single pair is what forced the question.
+	'
+	' Preconditions<gate> is True while that maneuver is permitted;
+	' AutomaticBlock<gate> is True while the switchyard bars it. The two
+	' polarities the single pair had, kept.
+	'
+	' The gate name is the mode, and the transformer the maneuver assumes
+	' is out where there is one: TM, TM200, NM, NM400. Exactly the names
+	' the command tags carry, so a command and the gates that let it
+	' through are read off one string and cannot drift apart.
+	'
+	Dim gm, gi, gate, gateLabel, outEN, outPT, whatEN, whatPT
+
+	AddProperty bag, "Preconditions", "Boolean", True, _
+		"Field conditions that have to hold before an automatic transfer may start. Bound to an expression - True while the maneuver is permitted.", _
+		"Condições de campo que devem valer antes que uma transferência automática possa partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
+
+	AddProperty bag, "AutomaticBlock", "Boolean", False, _
+		"Field conditions that block the automatic transfer. Bound to an expression - True keeps it from starting, alongside OperatorBlock and GeneralBlock.", _
+		"Condições de campo que bloqueiam a transferência automática. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
+
+	' --- the command interface ------------------------------------------
+	'
+	' No CommandStart of any kind. Over IEC 60870-5-104 an address means
+	' one maneuver, and there is no maneuver here for a person to ask
+	' for: a point that started an automatic transfer by hand would be a
+	' way to run the restoration scheme on a busbar that is still live.
+
+	AddProperty bag, "CommandReset", "InternalTag", Empty, _
+		"Reset command. Clears the latched step failures and the general block, so that a sequence can be started again.", _
+		"Comando de reset. Apaga as falhas seladas de passo e o bloqueio geral, para que uma sequência possa partir novamente."
+
+	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
+		"Operator lock command. Written by the operator's screen to set or release OperatorBlock.", _
+		"Comando de bloqueio do operador. Escrito pela tela do operador para marcar ou liberar o OperatorBlock."
+
+	Dim i
+	For i = 1 To 6
+
+		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
+			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
+			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
+
+	Next
+
+	' What the screen may do with each of these. Anything left out stays
+	' EXPOSE_NONE.
+	'
+	' The same answers the manual automation gives, for the properties
+	' the two have in common - the reasoning is written out there.
+	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	For i = 1 To 6
+		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
+	Next
+
+	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+
+	' --- what the operator is alarmed on --------------------------------
+	'
+	' The same three the manual automation raises about itself, and the
+	' one pair of gates.
+	SetAlarm bag, "GeneralBlock",   "BLOQUEIO GERAL",      PAIR_BLOCKED,      SEV_HIGH
+	SetAlarm bag, "OperatorBlock",  "BLOQUEIO OPERADOR",   PAIR_BLOCKED,      SEV_MEDIUM
+	SetAlarm bag, "Running",        "AUTOMATISMO",         PAIR_RUNNING,      SEV_LOW
+
+	SetAlarm bag, "Preconditions",  "PRECONDIÇÕES TA",        PAIR_PRECONDITION, SEV_MEDIUM
+	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO TA", PAIR_BLOCKED,      SEV_MEDIUM
+
+	For i = 1 To 6
+		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
+	Next
+
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
+Const EXPOSE_IOTAG      = 128   ' level 3 is given a point for it, over 104
+
+
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "CONCLUÍDO|EM ANDAMENTO|1"
+
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
+
+
+
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
+
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+	
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
+	End Function
+
+	' Whether level 3 is given a point for it.
+	'
+	' A separate question from IsInterfaced, and asked separately. The
+	' interface is where the Elipse application meets the automation; the
+	' distribution is what leaves the station. Everything distributed is
+	' interfaced - the distribution reads off the interface - but not
+	' everything interfaced is distributed, and conflating the two left no
+	' way to say so except a list of names kept somewhere else.
+	Public Function IsIOTagged()
+		IsIOTagged = Has(EXPOSE_IOTAG)
+	End Function
+
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	' The digital state that raises the alarm - DigitalLimit. It travels
+	' inside the pair rather than beside it, so the words and the state
+	' they describe cannot be changed independently of one another.
+	'
+	' The pair carries 1 or 0, meaning raises-when-true or
+	' raises-when-false, and this turns that into the number the tag will
+	' actually be holding. VBScript True is -1, every tag these alarms
+	' watch is a Boolean, and a DigitalAlarmSource compares its value
+	' against DigitalLimit as a number - so a limit of 1 never matches a
+	' reading of -1, and the alarm never raises. Writing 1 in the pair is
+	' still right: whoever adds one should say which state is the alarming
+	' one, not have to know what VBScript numbers True as.
+	Public Function AlarmLimit()
+
+		If CLng("0" & PairPart(2)) <> 0 Then
+			AlarmLimit = -1
+		Else
+			AlarmLimit = 0
+		End If
+
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
+
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+			
+End Sub
+
+<xatm_config_data.PropertiesHelper.xatm_TMTNM:xatm_TMTNM_OnStartRunning()>
+Sub xatm_TMTNM_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	AddProperty bag, "Enabled", "Boolean", True, _
+		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
+		"Habilitação geral deste automatismo. Pedidos de partida são recusados e a sequência em andamento para enquanto estiver False."
+
+	AddProperty bag, "Running", "Boolean", False, _
+		"True while a sequence is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
+		"True enquanto uma sequência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
+
+	AddProperty bag, "Transformer", "xatm_Transformer", Empty, _
+		"Transformer XObject this automation instance is bound to.", _
+		"XObject do transformador ao qual esta instância do automatismo está vinculada."
+	
+
+	' Which pair of busbars this automation moves, and whether it moves one
+	' at all.
+	'
+	' Empty, and this is an ordinary transformer automation: TM takes its
+	' transformer's load off, NM brings it back, and the numbered variants
+	' say which other transformer is out of service.
+	'
+	' Set, and it is a busbar automation instead. TM hands that busbar to
+	' the far side of the ring, NM brings it back, there is no contingency
+	' to declare, and Transformer is left unbound - it is not any
+	' transformer's automation.
+	'
+	' Text and not a link, unlike every other property here that names
+	' equipment, because a busbar is not an XObject there is anything to
+	' bind to. And one property rather than two: a flag reading "this is a
+	' busbar automation" beside a name saying which busbar would be two ways
+	' of writing one fact, and two ways of writing one fact can be made to
+	' disagree.
+	'
+	' The six-busbar ring defines B1A-B4A and B2B-B3A. A two-busbar layout
+	' defines neither, and SyncAutomation creates no such instance there.
+	AddProperty bag, "BusbarPair", "String", "", _
+		"The pair of busbars this automation transfers between, B1A-B4A or B2B-B3A, which makes TM and NM the busbar transfer and its normalisation. Empty on an ordinary transformer automation.", _
+		"O par de barramentos que este automatismo transfere, B1A-B4A ou B2B-B3A, o que faz de TM e NM a transferência de barra e a sua normalização. Vazio num automatismo de transformador comum."
+
+	AddProperty bag, "OperatorBlock", "Boolean", False, _
+		"Operator lock. Blocks the start until the operator releases it.", _
+		"Bloqueio do operador. Impede a partida até que o operador libere."
+
+	AddProperty bag, "GeneralBlock", "Boolean", False, _
+		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
+		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
+		
+	
+	' --- the gates, one pair for each maneuver --------------------------
+	'
+	' A pair for every command, because what has to hold before a transfer
+	' may start is not the same from one contingency to the next: TM with
+	' TR2 out closes a different path, over different equipment, from a
+	' different starting state. One expression could not answer for all of
+	' them, and a single pair is what forced the question.
+	'
+	' Preconditions<gate> is True while that maneuver is permitted;
+	' AutomaticBlock<gate> is True while the switchyard bars it. The two
+	' polarities the single pair had, kept.
+	'
+	' The gate name is the mode, and the transformer the maneuver assumes
+	' is out where there is one: TM, TM200, NM, NM400. Exactly the names
+	' the command tags carry, so a command and the gates that let it
+	' through are read off one string and cannot drift apart.
+	'
+	Dim gm, gi, gate, gateLabel, outEN, outPT, whatEN, whatPT
+
+	For Each gm In Array("TM", "NM")
+
+		If gm = "TM" Then
+			whatEN = "a manual transfer"
+			whatPT = "uma transferência manual"
+		Else
+			whatEN = "a manual normalisation"
+			whatPT = "uma normalização manual"
+		End If
+
+		For gi = 0 To 4
+
+			If gi = 0 Then
+				gate  = gm
+				outEN = ""
+				outPT = ""
+			Else
+				gate  = gm & (gi * 100)
+				outEN = " with transformer " & (gi * 100) & " out of service"
+				outPT = " com o transformador " & (gi * 100) & " impedido"
+			End If
+
+			AddProperty bag, "Preconditions" & gate, "Boolean", True, _
+				"Field conditions that have to hold before " & whatEN & outEN & " may start. Bound to an expression - True while the maneuver is permitted.", _
+				"Condições de campo que devem valer antes que " & whatPT & outPT & " possa partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
+
+			AddProperty bag, "AutomaticBlock" & gate, "Boolean", False, _
+				"Field conditions that block " & whatEN & outEN & ". Bound to an expression - True keeps it from starting, alongside OperatorBlock and GeneralBlock.", _
+				"Condições de campo que bloqueiam " & whatPT & outPT & ". Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
+
+		Next
+
+	Next
+
+
+	' --- the command interface -----------------------------------------
+
+	AddProperty bag, "CommandReset", "InternalTag", Empty, _
+		"Reset command. Clears the latched step failures and the general block, so that a sequence can be started again.", _
+		"Comando de reset. Apaga as falhas seladas de passo e o bloqueio geral, para que uma sequência possa partir novamente."
+
+	' One command per maneuver, rather than one command saying which.
+	'
+	' Level 3 reaches these over IEC 60870-5-104, where a command is a point
+	' address carrying no argument: the address has to mean one maneuver by
+	' itself. The E3 operation screen works the same way round - a button
+	' writes a tag, it does not compose an argument. So the variant lives in
+	' the tag, and the tag name says which transformer the maneuver assumes
+	' is out of service.
+	'
+	' CommandStartTM is the maneuver with nothing out; CommandStartTM<n00>
+	' is the same trigger with transformer n00 out, which is what the spec
+	' calls "TM TR<trigger>-TR<n>" - so the point list and the spec sections
+	' name the same thing.
+	'
+	' The one whose Id is the bound transformer's own is declared with the
+	' rest and never used: Start rejects a maneuver that is its own
+	' impediment. Declaring it keeps the set identical on every instance,
+	' so no point list has to reason about which member is missing.
+	AddProperty bag, "CommandStartTM", "InternalTag", Empty, _
+		"Start command for a manual transfer with no transformer out of service.", _
+		"Comando de partida da transferência manual sem transformador impedido."
+
+	AddProperty bag, "CommandStartNM", "InternalTag", Empty, _
+		"Start command for a manual normalisation with no transformer out of service.", _
+		"Comando de partida da normalização manual sem transformador impedido."
+
+	Dim trn
+	For trn = 1 To 4
+
+		AddProperty bag, "CommandStartTM" & (trn * 100), "InternalTag", Empty, _
+			"Start command for a manual transfer with transformer " & (trn * 100) & " out of service.", _
+			"Comando de partida da transferência manual com o transformador " & (trn * 100) & " impedido."
+
+		AddProperty bag, "CommandStartNM" & (trn * 100), "InternalTag", Empty, _
+			"Start command for a manual normalisation with transformer " & (trn * 100) & " out of service.", _
+			"Comando de partida da normalização manual com o transformador " & (trn * 100) & " impedido."
+
+	Next
+
+	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
+		"Operator lock command. Written by the operator's screen to set or release OperatorBlock.", _
+		"Comando de bloqueio do operador. Escrito pela tela do operador para marcar ou liberar o OperatorBlock."
+
+	Dim i
+	For i = 1 To 6
+
+		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
+			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
+			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
+
+	Next
+	
+	' What the screen may do with each of these, and which are settings
+	' rather than readings. Anything left out stays EXPOSE_NONE.
+	'
+	' The readings - the blocks and every gate - are not saved: their
+	' expression is the configuration, and the reading is whatever the
+	' switchyard was doing at the time.
+	'
+	' EXPOSE_INTERFACE is a different question from the rest, and answered
+	' separately: not what the panel may do with a property, but whether
+	' the Elipse application is given a tag of its own for it. What a
+	' screen draws or acts on is interfaced; what only an engineer sets -
+	' the transformer this instance drives - is not.
+	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
+	' Interfaced, so a screen can tell an operator what the TM and NM
+	' buttons in front of them actually do, but not carried to level 3: it
+	' is configuration and never changes at runtime, so the point list says
+	' it once rather than the station repeating it forever.
+	SetExposure bag, "BusbarPair",     EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED + EXPOSE_INTERFACE
+	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	' Every gate is shown, bound to an expression, forceable for a test and
+	' interfaced - what the single pair was - and carried to level 3 as
+	' well, so the control centre reads which maneuver is barred and not
+	' merely that one of them is.
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+			If gi = 0 Then gate = gm Else gate = gm & (gi * 100)
+			SetExposure bag, "Preconditions"  & gate, EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+			SetExposure bag, "AutomaticBlock" & gate, EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+		Next
+	Next
+
+	' Running and the six step latches are the automation talking about
+	' itself. Neither belongs on the configuration panel - there is
+	' nothing about them to configure - but both are what a screen draws,
+	' so they are interfaced and nothing else.
+	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	For i = 1 To 6
+		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
+	Next
+
+	' The command interface is shown and nothing more. No EXPOSE_EDIT and
+	' no EXPOSE_FORCE, because either one would let the panel start a real
+	' maneuver on a live switchyard; no EXPOSE_VALUE, because a command is
+	' written and never read, and reading one back shows the last thing
+	' written to it as though it were a state.
+	'
+	' EXPOSE_SAVED all the same: what these hold is which tag the object
+	' talks through, which is configuration - and without it ResetReadings
+	' would put every one of them back to Empty on the next import.
+	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "CommandStartTM",       EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "CommandStartNM",       EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	For trn = 1 To 4
+		SetExposure bag, "CommandStartTM" & (trn * 100), EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+		SetExposure bag, "CommandStartNM" & (trn * 100), EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	Next
+	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+
+	' --- what the operator is alarmed on --------------------------------
+	'
+	' The automation talking about itself, which is what the control room
+	' wants from it: a step that would not execute, whatever is holding a
+	' start back, and whether a sequence is on.
+	'
+	' Running is here as a status and not a fault - low severity, and a
+	' pair reading PARADO and EM OPERAÇÃO rather than NORMAL and
+	' ATUADO, because nothing about a sequence in progress is abnormal.
+	'
+	' Preconditions is the one that raises on False. It is True while the
+	' maneuver is permitted, so PAIR_PRECONDITION carries a limit of 0.
+	SetAlarm bag, "GeneralBlock",   "BLOQUEIO GERAL",      PAIR_BLOCKED,      SEV_HIGH
+	SetAlarm bag, "OperatorBlock",  "BLOQUEIO OPERADOR",   PAIR_BLOCKED,      SEV_MEDIUM
+	SetAlarm bag, "Running",        "AUTOMATISMO",         PAIR_RUNNING,      SEV_LOW
+
+	' Every gate raises too, the way the single pair did.
+	'
+	' This is also what puts them in the substation folder at all:
+	' AlarmObject builds a tag for a reading that is alarmed and for a
+	' command, and for nothing else. An unalarmed gate is interfaced and
+	' carried to level 3, but has no tag under the PowerSubstation - so the
+	' alarm table is what decides whether the control room can see it, not
+	' merely whether it is told about it.
+	'
+	' The label names the maneuver the way the control room says it: TM-TR2
+	' is a manual transfer with TR2 impeded, which is the spec's own
+	' "TM TR<trigger>-TR2".
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+
+			If gi = 0 Then
+				gate      = gm
+				gateLabel = gm
+			Else
+				gate      = gm & (gi * 100)
+				gateLabel = gm & "-TR" & gi
+			End If
+
+			SetAlarm bag, "Preconditions"  & gate, "PRECONDIÇÕES " & gateLabel,        PAIR_PRECONDITION, SEV_MEDIUM
+			SetAlarm bag, "AutomaticBlock" & gate, "BLOQUEIO AUTOMÁTICO " & gateLabel, PAIR_BLOCKED,      SEV_MEDIUM
+
+		Next
+	Next
+
+	For i = 1 To 6
+		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
+	Next
+
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
+Const EXPOSE_IOTAG      = 128   ' level 3 is given a point for it, over 104
+
+
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "CONCLUÍDO|EM ANDAMENTO|1"
+
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
+
+
+
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
+
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+	
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
+	End Function
+
+	' Whether level 3 is given a point for it.
+	'
+	' A separate question from IsInterfaced, and asked separately. The
+	' interface is where the Elipse application meets the automation; the
+	' distribution is what leaves the station. Everything distributed is
+	' interfaced - the distribution reads off the interface - but not
+	' everything interfaced is distributed, and conflating the two left no
+	' way to say so except a list of names kept somewhere else.
+	Public Function IsIOTagged()
+		IsIOTagged = Has(EXPOSE_IOTAG)
+	End Function
+
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	' The digital state that raises the alarm - DigitalLimit. It travels
+	' inside the pair rather than beside it, so the words and the state
+	' they describe cannot be changed independently of one another.
+	'
+	' The pair carries 1 or 0, meaning raises-when-true or
+	' raises-when-false, and this turns that into the number the tag will
+	' actually be holding. VBScript True is -1, every tag these alarms
+	' watch is a Boolean, and a DigitalAlarmSource compares its value
+	' against DigitalLimit as a number - so a limit of 1 never matches a
+	' reading of -1, and the alarm never raises. Writing 1 in the pair is
+	' still right: whoever adds one should say which state is the alarming
+	' one, not have to know what VBScript numbers True as.
+	Public Function AlarmLimit()
+
+		If CLng("0" & PairPart(2)) <> 0 Then
+			AlarmLimit = -1
+		Else
+			AlarmLimit = 0
+		End If
+
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
+
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+
+End Sub
+
 <xatm_config_data.PropertiesHelper.xatm_Transformer:xatm_Transformer_OnStartRunning()>
 Sub xatm_Transformer_OnStartRunning()
 
@@ -6042,7 +6042,7 @@ Sub SetExposure(bag, name, exposure)
 	If Not bag.Exists(k) Then Exit Sub
 
 	bag(k).Exposure = exposure
-			
+				
 End Sub
 
 <xatm_config_data.SimulationMode:SimulationMode_OnChangedValue()>
@@ -7452,7 +7452,7 @@ Sub btnApply_Click()
 	Else
 		SyncFolder doc, INCOMER_PATH, IncomerDevices(incomerType), removed, added, failed
 	End If
-
+	
 	' TODO: change function names to SyncAutomation
 	SyncAutomation doc, AutomationCount(transformerType), busbarType, removed, added, failed
 
@@ -7486,7 +7486,7 @@ Const AUTOMATION_PATH  = "/xatm-config/folder[@name='Automation']"
 Const LAYOUT_PATH      = "/xatm-config/folder[@name='Automation']/folder[@name='Layout']"
 Const TRANSFORMER_PATH = "/xatm-config/folder[@name='Substation']/folder[@name='Transformer']"
 Const BUSBAR_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Busbar']"
-Const INCOMER_PATH      = "/xatm-config/folder[@name='Substation']/folder[@name='Incomer']"
+Const INCOMER_PATH     = "/xatm-config/folder[@name='Substation']/folder[@name='Incomer']"
 
 Const TMTNM_CLASS       = "xatm_TMTNM"
 Const TA_CLASS          = "xatm_TA"
@@ -7967,7 +7967,7 @@ Sub SyncAutomation(doc, keepCount, busbarType, removed, added, failed)
 
 	Dim nodes, node, n, num, objectName
 	Set nodes = folder.selectNodes("object[@type='" & TMTNM_CLASS & "']")
-
+	
 	For n = 0 To nodes.length - 1
 
 		Set node   = nodes.item(n)
@@ -8106,7 +8106,6 @@ Function BusbarWanted(busbars, objectName)
 	Next
 
 End Function
-
 
 
 ' Brings the Automation folder to one automatic transfer per transformer.
@@ -10346,464 +10345,116 @@ Sub AddArrayContentToList()
     
 End Sub
 
-<xatm_config_screens.Menu.lblVersion:lblVersion_Click()>
-Sub lblVersion_Click()
-
-	' What is installed, and then the notes if they are wanted.
-	'
-	' The version is read off the object rather than written down here: it
-	' comes from a constant inside xatm_lib.lib and is published as a
-	' property, so a screen keeping its own copy would be one more thing to
-	' remember on a release. The demo flag is not put in the dialogue at all
-	' - the blinking label on this same screen is what says that, and says
-	' it without being asked.
-	Dim versionObject
-	Set versionObject = Nothing
-
-	On Error Resume Next
-	Set versionObject = Application.GetObject(VERSION_OBJECT)
-	On Error Goto 0
-
-	If versionObject Is Nothing Then
-
-		MsgBox MissingText(), vbExclamation, DialogTitle()
-		Exit Sub
-
-	End If
-
-	If MsgBox(AskText(VersionOf(versionObject)), vbInformation + vbYesNo, DialogTitle()) <> vbYes Then Exit Sub
-
-	ShowReport versionObject
-
+<xatm_config_screens.Menu.btnClose:btnClose_Click()>
+Sub btnClose_Click()
+	
+	Screen.Close(0)
+	
 End Sub
 
+<xatm_config_screens.Menu.btnConfig:btnConfig_Click()>
+Sub btnConfig_Click()
+	
+	Dim fr
+	Set fr = Application.GetFrame("Superior")
+	fr.OpenScreen "xatm_config_screens.Config?4?0", 0
+		
+End Sub
 
-' Where the one version object lives. One for the library and not one per
-' device: what it publishes is true of the file rather than of any piece of
-' equipment, which is the opposite of how the demo flag is carried.
-Const VERSION_OBJECT = "xatm_config_data.Version"
+<xatm_config_screens.Menu.btnMinimize:btnMinimize_Click()>
+Sub btnMinimize_Click()
+	Me.Frame.MinimizeFrame()	
+End Sub
 
+<xatm_config_screens.Menu.btnRASEAT:btnRASEAT_Click()>
+Sub btnRASEAT_Click()
 
-' Which language the panel speaks. Written out again here because one E3
-' object cannot read another's constants - the same copy the Config screen
-' and the demo label each keep.
-Const HELP_LANG = "pt-BR"
+	Dim autos
+	Set autos = Application.GetObject("XATM_Data.Automation")
 
+	' There is one of these in a station, so there is no list to order and
+	' no instance to choose between - unlike the transfers, which get a
+	' submenu each.
+	Dim obj, target
+	Set target = Nothing
 
-' What is installed, written out and put in front of whoever asked for it.
-'
-' Done here in the screen rather than in the library object, which is where
-' it started. An E3 data server runs as a service: its %TEMP% is
-' C:\Windows\Temp and not the operator's own, and a process in session 0
-' has no desktop to put a Notepad window on - it starts and nobody ever
-' sees it. The viewer runs as the person at the keyboard, so both problems
-' go away by moving the work rather than by working around them.
-'
-' A dictionary rather than a built-up string: the report is a list of
-' facts, and keeping it as one until the moment it is rendered means the
-' order is the order it was filled in, and adding a line is one line.
-Sub ShowReport(obj)
+	For Each obj In autos
+		If TypeName(obj) = "xatm_RASEAT" Then
+			Set target = obj
+			Exit For
+		End If
+	Next
 
-	Dim info
-	Set info = CreateObject("Scripting.Dictionary")
-
-	info.Add "Library",       "xatm_lib"
-	info.Add "Version",       VersionOf(obj)
-	info.Add "Edition",       EditionText()
-	info.Add "Generated",     Now
-	info.Add "Release notes", NotesOf(obj)
-
-	Dim failed
-	failed = ""
-
-	Dim path
-	path = WriteReport(info, failed)
-
-	If path = "" Then
-		MsgBox WriteFailedText(failed), vbExclamation, DialogTitle()
+	If target Is Nothing Then
+		MsgBox "No RASEAT automation found!"
 		Exit Sub
 	End If
 
-	failed = OpenFile(path)
+	' --- the menu -------------------------------------------------------
+	Dim menu
+	menu = target.Name & "{Force reclosing||" & _
+	       IIf(target.OperatorBlock, "*", "") & "Operator Block|Reset}"
 
-	If failed <> "" Then
-		MsgBox OpenFailedText(path, failed), vbExclamation, DialogTitle()
-	End If
+	Dim lOption
+	lOption = Application.SelectMenu(menu)
+	If lOption <= 0 Then Exit Sub
 
+	Select Case lOption
+
+		Case 1
+
+			' Asked for the way a transformer's CR asks, so every gate that
+			' Start keeps is kept for this too - enabled, not already
+			' running, the three blocks, the preconditions, no other
+			' automation in progress. A refusal is logged there and says why.
+			'
+			' Zero as the asker, because nobody's CR did this. What the
+			' sequence acts on is read in Step 0 from the field either way,
+			' so a forced start on a healthy station finds nothing to
+			' isolate and goes straight to the reclose.
+			If MsgBox("Force a reclosing on " & target.Name & "?" & vbCrLf & vbCrLf & _
+			          "The switchyard is operated for real.", _
+			          vbYesNo + vbExclamation + vbDefaultButton2, "Confirm") = vbYes Then
+
+				target.Item("Commands").Item("Start").WriteEx 0
+
+			End If
+
+		Case 2
+
+			' Operator Block toggle
+			target.OperatorBlock = Not target.OperatorBlock
+
+		Case 3
+
+			' Reset - clears the latched step failures, the general block
+			' and the result of the last run.
+			target.Item("Commands").Item("Reset").WriteEx True
+
+	End Select
+	
 End Sub
 
-
-' Renders the dictionary into %TEMP% and returns where it went - "" when it
-' went nowhere, with why in the second argument.
-Function WriteReport(info, ByRef failed)
-
-	WriteReport = ""
-	failed      = ""
-
-	Dim fso
-	Set fso = Nothing
-
-	On Error Resume Next
-	Set fso = CreateObject("Scripting.FileSystemObject")
-	On Error Goto 0
-
-	If fso Is Nothing Then
-		failed = "Scripting.FileSystemObject"
-		Exit Function
-	End If
-
-	Dim folder
-	folder = ReportFolder(fso)
-
-	If Trim(folder & "") = "" Then
-		failed = "%TEMP%"
-		Exit Function
-	End If
-
-	Dim path
-	path = fso.BuildPath(folder, REPORT_FILE_NAME)
-
-	On Error Resume Next
-	Err.Clear
-
-	Dim stream
-	Set stream = fso.CreateTextFile(path, True)
-	stream.Write Rendered(info)
-	stream.Close
-
-	If Err.Number <> 0 Then failed = Err.Description
-	On Error Goto 0
-
-	If failed <> "" Then Exit Function
-
-	WriteReport = path
-
-End Function
-
-
-' The operator's own temporary folder, and the scripting object's idea of
-' one only if %TEMP% will not answer.
-'
-' Read from this process on purpose. In the viewer that is the account of
-' the person who logged in, which is the whole reason the report is written
-' here: the data server's answer to the same question is C:\Windows\Temp,
-' a folder they cannot so much as cd into.
-Function ReportFolder(fso)
-
-	ReportFolder = ""
-
-	Dim shell
-	Set shell = NewShell()
-
-	Dim expanded
-	expanded = ""
-
-	If Not shell Is Nothing Then
-
-		On Error Resume Next
-		expanded = shell.ExpandEnvironmentStrings("%TEMP%")
-		On Error Goto 0
-
-	End If
-
-	' An unset variable comes back as the name it was written as, so an
-	' answer still carrying a per cent sign is not a folder.
-	If InStr(expanded & "", "%") = 0 And Trim(expanded & "") <> "" Then
-
-		If fso.FolderExists(expanded) Then
-			ReportFolder = expanded
-			Exit Function
-		End If
-
-	End If
-
-	On Error Resume Next
-	ReportFolder = fso.GetSpecialFolder(TEMPORARY_FOLDER).Path
-	On Error Goto 0
-
-End Function
-
-
-' The dictionary as text: one fact per line, the keys padded so the values
-' line up and the thing can be read down rather than across.
-Function Rendered(info)
-
-	Dim width, k
-	width = 0
-
-	For Each k In info.Keys
-		If Len(k) > width Then width = Len(k)
-	Next
-
-	Dim out
-	out = "xatm_lib" & vbCrLf & String(40, "-") & vbCrLf & vbCrLf
-
-	For Each k In info.Keys
-		out = out & k & String(width - Len(k) + 2, " ") & info(k) & vbCrLf
-	Next
-
-	Rendered = out
-
-End Function
-
-
-' A WScript.Shell, or Nothing. Two things want one - the folder to write in
-' and the editor to open it - and neither is worth failing the whole report
-' over on its own.
-Function NewShell()
-
-	Set NewShell = Nothing
-
-	On Error Resume Next
-	Set NewShell = CreateObject("WScript.Shell")
-	On Error Goto 0
-
-End Function
-
-
-' Puts the report on the screen. Returns "" when it opened, and why not
-' when it did not.
-'
-' Notepad by name rather than handing the path to whatever the machine
-' opens a .txt with: it is on every Windows there is and takes a path and
-' nothing else.
-Function OpenFile(path)
-
-	OpenFile = ""
-
-	Dim shell
-	Set shell = NewShell()
-
-	If shell Is Nothing Then
-		OpenFile = "WScript.Shell"
-		Exit Function
-	End If
-
-	On Error Resume Next
-	Err.Clear
-	shell.Run "notepad.exe """ & path & """", 1, False
-	If Err.Number <> 0 Then OpenFile = Err.Description
-	On Error Goto 0
-
-End Function
-
-
-' The version as the object publishes it, falling back to the three numbers
-' when the written form is blank. Both are set at start from the same
-' constant, so either one answers.
-Function VersionOf(obj)
-
-	Dim written
-	written = ""
-
-	On Error Resume Next
-	written = Trim(obj.Version & "")
-	On Error Goto 0
-
-	If written <> "" Then
-		VersionOf = written
-		Exit Function
-	End If
-
-	Dim major, minor, patch
-	major = 0
-	minor = 0
-	patch = 0
-
-	On Error Resume Next
-	major = CLng(obj.Major)
-	minor = CLng(obj.Minor)
-	patch = CLng(obj.Patch)
-	On Error Goto 0
-
-	VersionOf = major & "." & minor & "." & patch
-
-End Function
-
-
-Function NotesOf(obj)
-
-	NotesOf = ""
-
-	On Error Resume Next
-	NotesOf = Trim(obj.ReleaseNotes & "")
-	On Error Goto 0
-
-	If NotesOf = "" Then NotesOf = "(none published)"
-
-End Function
-
-
-' Which build is driving this station, for the report to carry - and said
-' as unknown rather than guessed at when nothing answers.
-'
-' Asked of the equipment: every breaker and disconnector carries an
-' xatm_Build, all of them come from the same library file, so the first one
-' found answers for the rest. The walk is written out again here because
-' one E3 object cannot call a procedure in another's scope - the demo label
-' on this same screen keeps its own copy for the same reason.
-Function EditionText()
-
-	EditionText = "unknown - no device has reported its build"
-
-	Dim substation
-	Set substation = Nothing
-
-	On Error Resume Next
-	Set substation = Application.GetObject(SUBSTATION)
-	On Error Goto 0
-
-	If substation Is Nothing Then Exit Function
-
-	Dim found
-	found = ""
-
-	FindEdition substation, found
-
-	If found <> "" Then EditionText = found
-
-End Function
-
-Sub FindEdition(folder, ByRef found)
-
-	If found <> "" Then Exit Sub
-
-	Dim obj
-	For Each obj In folder
-
-		If found <> "" Then Exit Sub
-
-		Dim build
-		Set build = Nothing
-
-		On Error Resume Next
-		Set build = obj.Item("Build")
-		On Error Goto 0
-
-		If Not build Is Nothing Then
-
-			On Error Resume Next
-			found = Trim(build.Edition & "")
-			On Error Goto 0
-
-			If found <> "" Then Exit Sub
-
-		End If
-
-		On Error Resume Next
-		FindEdition obj, found
-		On Error Goto 0
-
-	Next
-
+<xatm_config_screens.Menu.btnSimulationMode:btnSimulationMode_Click()>
+Sub btnSimulationMode_Click()
+	
+	Dim tag
+	Set tag = Application.GetObject("xatm_config_data.SimulationMode")
+	tag.WriteEx (Not CBool(tag.Value))
+		
 End Sub
 
-
-Function DialogTitle()
-
-	If HELP_LANG = "pt-BR" Then
-		DialogTitle = "Versão da biblioteca"
-	Else
-		DialogTitle = "Library version"
-	End If
-
-End Function
-
-
-' What the dialogue says, and the question it ends on.
-'
-' The notes themselves are not put in here. They are a page rather than a
-' line, they grow with every release, and a MsgBox that has to be scrolled
-' is a worse way to read them than the text file this offers instead.
-Function AskText(versionText)
-
-	If HELP_LANG = "pt-BR" Then
-
-		AskText = "Biblioteca de automatismos xatm_lib, versão " & versionText & "." & vbCrLf & vbCrLf & _
-		          "Deseja abrir as notas desta versão em um arquivo de texto?"
-
-	Else
-
-		AskText = "Automation library xatm_lib, version " & versionText & "." & vbCrLf & vbCrLf & _
-		          "Open the release notes in a text file?"
-
-	End If
-
-End Function
-
-
-' Said plainly rather than as a failed read. The object is created by hand,
-' once, and a station that never had it done reads exactly like one where
-' the name was mistyped - so the name is what the message carries.
-Function MissingText()
-
-	If HELP_LANG = "pt-BR" Then
-
-		MissingText = "Não foi possível ler a versão da biblioteca." & vbCrLf & vbCrLf & _
-		              "O objeto " & VERSION_OBJECT & " não foi encontrado no projeto."
-
-	Else
-
-		MissingText = "The library version could not be read." & vbCrLf & vbCrLf & _
-		              "The object " & VERSION_OBJECT & " was not found in the project."
-
-	End If
-
-End Function
-
-
-Function WriteFailedText(reason)
-
-	If HELP_LANG = "pt-BR" Then
-
-		WriteFailedText = "Não foi possível gravar o arquivo com as notas desta versão." & vbCrLf & vbCrLf & _
-		                  reason
-
-	Else
-
-		WriteFailedText = "The file with the release notes could not be written." & vbCrLf & vbCrLf & _
-		                  reason
-
-	End If
-
-End Function
-
-
-' The path is given even so. The file is written and only the opening
-' failed, so telling somebody where it is leaves them able to go and read
-' it themselves.
-Function OpenFailedText(path, reason)
-
-	If HELP_LANG = "pt-BR" Then
-
-		OpenFailedText = "As notas foram gravadas, mas o Bloco de Notas não abriu." & vbCrLf & vbCrLf & _
-		                 path & vbCrLf & vbCrLf & reason
-
-	Else
-
-		OpenFailedText = "The notes were written, but Notepad would not open." & vbCrLf & vbCrLf & _
-		                 path & vbCrLf & vbCrLf & reason
-
-	End If
-
-End Function
-
-
-' Where the equipment lives, Scripting's own number for the temporary
-' folder that ReportFolder falls back on, and what the report is called
-' once it is written.
-Const SUBSTATION        = "XATM_Data.Substation"
-Const TEMPORARY_FOLDER  = 2
-Const REPORT_FILE_NAME  = "xatm_lib.txt"
-
-
-' A scope may not end on a Function - E3 takes the script without complaint
-' and then behaves as though the last one were not there.
-Sub EndOfScope()
+<xatm_config_screens.Menu.btnSupervision:btnSupervision_Click()>
+Sub btnSupervision_Click()
+	
+	Dim fr
+	Set fr = Application.GetFrame("Superior")
+	fr.OpenScreen "xatm_config_screens.SingleLineDiagram?4?0", 0
+		
 End Sub
 
-<xatm_config_screens.Menu.btnBTC:btnBTC_Click()>
-Sub btnBTC_Click()
+<xatm_config_screens.Menu.btnTMTNM:btnTMTNM_Click()>
+Sub btnTMTNM_Click()
 
 	Dim autos
 	Set autos = Application.GetObject("XATM_Data.Automation")
@@ -11266,116 +10917,7 @@ Function MenuKey(obj)
 
 End Function
 
-Sub Foo()
-
-End Sub
-
-<xatm_config_screens.Menu.btnClose:btnClose_Click()>
-Sub btnClose_Click()
-	
-	Screen.Close(0)
-	
-End Sub
-
-<xatm_config_screens.Menu.btnConfig:btnConfig_Click()>
-Sub btnConfig_Click()
-	
-	Dim fr
-	Set fr = Application.GetFrame("Superior")
-	fr.OpenScreen "xatm_config_screens.Config?4?0", 0
-		
-End Sub
-
-<xatm_config_screens.Menu.btnMinimize:btnMinimize_Click()>
-Sub btnMinimize_Click()
-	Me.Frame.MinimizeFrame()	
-End Sub
-
-<xatm_config_screens.Menu.btnRASEAT:btnRASEAT_Click()>
-Sub btnRASEAT_Click()
-
-	Dim autos
-	Set autos = Application.GetObject("XATM_Data.Automation")
-
-	' There is one of these in a station, so there is no list to order and
-	' no instance to choose between - unlike the transfers, which get a
-	' submenu each.
-	Dim obj, target
-	Set target = Nothing
-
-	For Each obj In autos
-		If TypeName(obj) = "xatm_RASEAT" Then
-			Set target = obj
-			Exit For
-		End If
-	Next
-
-	If target Is Nothing Then
-		MsgBox "No RASEAT automation found!"
-		Exit Sub
-	End If
-
-	' --- the menu -------------------------------------------------------
-	Dim menu
-	menu = target.Name & "{Force reclosing||" & _
-	       IIf(target.OperatorBlock, "*", "") & "Operator Block|Reset}"
-
-	Dim lOption
-	lOption = Application.SelectMenu(menu)
-	If lOption <= 0 Then Exit Sub
-
-	Select Case lOption
-
-		Case 1
-
-			' Asked for the way a transformer's CR asks, so every gate that
-			' Start keeps is kept for this too - enabled, not already
-			' running, the three blocks, the preconditions, no other
-			' automation in progress. A refusal is logged there and says why.
-			'
-			' Zero as the asker, because nobody's CR did this. What the
-			' sequence acts on is read in Step 0 from the field either way,
-			' so a forced start on a healthy station finds nothing to
-			' isolate and goes straight to the reclose.
-			If MsgBox("Force a reclosing on " & target.Name & "?" & vbCrLf & vbCrLf & _
-			          "The switchyard is operated for real.", _
-			          vbYesNo + vbExclamation + vbDefaultButton2, "Confirm") = vbYes Then
-
-				target.Item("Commands").Item("Start").WriteEx 0
-
-			End If
-
-		Case 2
-
-			' Operator Block toggle
-			target.OperatorBlock = Not target.OperatorBlock
-
-		Case 3
-
-			' Reset - clears the latched step failures, the general block
-			' and the result of the last run.
-			target.Item("Commands").Item("Reset").WriteEx True
-
-	End Select
-	
-End Sub
-
-<xatm_config_screens.Menu.btnSimulationMode:btnSimulationMode_Click()>
-Sub btnSimulationMode_Click()
-	
-	Dim tag
-	Set tag = Application.GetObject("xatm_config_data.SimulationMode")
-	tag.WriteEx (Not CBool(tag.Value))
-		
-End Sub
-
-<xatm_config_screens.Menu.btnSupervision:btnSupervision_Click()>
-Sub btnSupervision_Click()
-	
-	Dim fr
-	Set fr = Application.GetFrame("Superior")
-	fr.OpenScreen "xatm_config_screens.SingleLineDiagram?4?0", 0
-		
+Sub Foo()	
 End Sub
 
 <xatm_config_screens.Menu.grpDemo.lblDemo:lblDemo_OnStartRunning()>
@@ -11526,6 +11068,463 @@ Sub Foo()
 
 End Sub
 
+<xatm_config_screens.Menu.lblVersion:lblVersion_Click()>
+Sub lblVersion_Click()
+
+	' What is installed, and then the notes if they are wanted.
+	'
+	' The version is read off the object rather than written down here: it
+	' comes from a constant inside xatm_lib.lib and is published as a
+	' property, so a screen keeping its own copy would be one more thing to
+	' remember on a release. The demo flag is not put in the dialogue at all
+	' - the blinking label on this same screen is what says that, and says
+	' it without being asked.
+	Dim versionObject
+	Set versionObject = Nothing
+
+	On Error Resume Next
+	Set versionObject = Application.GetObject(VERSION_OBJECT)
+	On Error Goto 0
+
+	If versionObject Is Nothing Then
+
+		MsgBox MissingText(), vbExclamation, DialogTitle()
+		Exit Sub
+
+	End If
+
+	If MsgBox(AskText(VersionOf(versionObject)), vbInformation + vbYesNo, DialogTitle()) <> vbYes Then Exit Sub
+
+	ShowReport versionObject
+
+End Sub
+
+
+' Where the one version object lives. One for the library and not one per
+' device: what it publishes is true of the file rather than of any piece of
+' equipment, which is the opposite of how the demo flag is carried.
+Const VERSION_OBJECT = "xatm_config_data.Version"
+
+
+' Which language the panel speaks. Written out again here because one E3
+' object cannot read another's constants - the same copy the Config screen
+' and the demo label each keep.
+Const HELP_LANG = "pt-BR"
+
+
+' What is installed, written out and put in front of whoever asked for it.
+'
+' Done here in the screen rather than in the library object, which is where
+' it started. An E3 data server runs as a service: its %TEMP% is
+' C:\Windows\Temp and not the operator's own, and a process in session 0
+' has no desktop to put a Notepad window on - it starts and nobody ever
+' sees it. The viewer runs as the person at the keyboard, so both problems
+' go away by moving the work rather than by working around them.
+'
+' A dictionary rather than a built-up string: the report is a list of
+' facts, and keeping it as one until the moment it is rendered means the
+' order is the order it was filled in, and adding a line is one line.
+Sub ShowReport(obj)
+
+	Dim info
+	Set info = CreateObject("Scripting.Dictionary")
+
+	info.Add "Library",       "xatm_lib"
+	info.Add "Version",       VersionOf(obj)
+	info.Add "Edition",       EditionText()
+	info.Add "Generated",     Now
+	info.Add "Release notes", NotesOf(obj)
+
+	Dim failed
+	failed = ""
+
+	Dim path
+	path = WriteReport(info, failed)
+
+	If path = "" Then
+		MsgBox WriteFailedText(failed), vbExclamation, DialogTitle()
+		Exit Sub
+	End If
+
+	failed = OpenFile(path)
+
+	If failed <> "" Then
+		MsgBox OpenFailedText(path, failed), vbExclamation, DialogTitle()
+	End If
+
+End Sub
+
+
+' Renders the dictionary into %TEMP% and returns where it went - "" when it
+' went nowhere, with why in the second argument.
+Function WriteReport(info, ByRef failed)
+
+	WriteReport = ""
+	failed      = ""
+
+	Dim fso
+	Set fso = Nothing
+
+	On Error Resume Next
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	On Error Goto 0
+
+	If fso Is Nothing Then
+		failed = "Scripting.FileSystemObject"
+		Exit Function
+	End If
+
+	Dim folder
+	folder = ReportFolder(fso)
+
+	If Trim(folder & "") = "" Then
+		failed = "%TEMP%"
+		Exit Function
+	End If
+
+	Dim path
+	path = fso.BuildPath(folder, REPORT_FILE_NAME)
+
+	On Error Resume Next
+	Err.Clear
+
+	Dim stream
+	Set stream = fso.CreateTextFile(path, True)
+	stream.Write Rendered(info)
+	stream.Close
+
+	If Err.Number <> 0 Then failed = Err.Description
+	On Error Goto 0
+
+	If failed <> "" Then Exit Function
+
+	WriteReport = path
+
+End Function
+
+
+' The operator's own temporary folder, and the scripting object's idea of
+' one only if %TEMP% will not answer.
+'
+' Read from this process on purpose. In the viewer that is the account of
+' the person who logged in, which is the whole reason the report is written
+' here: the data server's answer to the same question is C:\Windows\Temp,
+' a folder they cannot so much as cd into.
+Function ReportFolder(fso)
+
+	ReportFolder = ""
+
+	Dim shell
+	Set shell = NewShell()
+
+	Dim expanded
+	expanded = ""
+
+	If Not shell Is Nothing Then
+
+		On Error Resume Next
+		expanded = shell.ExpandEnvironmentStrings("%TEMP%")
+		On Error Goto 0
+
+	End If
+
+	' An unset variable comes back as the name it was written as, so an
+	' answer still carrying a per cent sign is not a folder.
+	If InStr(expanded & "", "%") = 0 And Trim(expanded & "") <> "" Then
+
+		If fso.FolderExists(expanded) Then
+			ReportFolder = expanded
+			Exit Function
+		End If
+
+	End If
+
+	On Error Resume Next
+	ReportFolder = fso.GetSpecialFolder(TEMPORARY_FOLDER).Path
+	On Error Goto 0
+
+End Function
+
+
+' The dictionary as text: one fact per line, the keys padded so the values
+' line up and the thing can be read down rather than across.
+Function Rendered(info)
+
+	Dim width, k
+	width = 0
+
+	For Each k In info.Keys
+		If Len(k) > width Then width = Len(k)
+	Next
+
+	Dim out
+	out = "xatm_lib" & vbCrLf & String(40, "-") & vbCrLf & vbCrLf
+
+	For Each k In info.Keys
+		out = out & k & String(width - Len(k) + 2, " ") & info(k) & vbCrLf
+	Next
+
+	Rendered = out
+
+End Function
+
+
+' A WScript.Shell, or Nothing. Two things want one - the folder to write in
+' and the editor to open it - and neither is worth failing the whole report
+' over on its own.
+Function NewShell()
+
+	Set NewShell = Nothing
+
+	On Error Resume Next
+	Set NewShell = CreateObject("WScript.Shell")
+	On Error Goto 0
+
+End Function
+
+
+' Puts the report on the screen. Returns "" when it opened, and why not
+' when it did not.
+'
+' Notepad by name rather than handing the path to whatever the machine
+' opens a .txt with: it is on every Windows there is and takes a path and
+' nothing else.
+Function OpenFile(path)
+
+	OpenFile = ""
+
+	Dim shell
+	Set shell = NewShell()
+
+	If shell Is Nothing Then
+		OpenFile = "WScript.Shell"
+		Exit Function
+	End If
+
+	On Error Resume Next
+	Err.Clear
+	shell.Run "notepad.exe """ & path & """", 1, False
+	If Err.Number <> 0 Then OpenFile = Err.Description
+	On Error Goto 0
+
+End Function
+
+
+' The version as the object publishes it, falling back to the three numbers
+' when the written form is blank. Both are set at start from the same
+' constant, so either one answers.
+Function VersionOf(obj)
+
+	Dim written
+	written = ""
+
+	On Error Resume Next
+	written = Trim(obj.Version & "")
+	On Error Goto 0
+
+	If written <> "" Then
+		VersionOf = written
+		Exit Function
+	End If
+
+	Dim major, minor, patch
+	major = 0
+	minor = 0
+	patch = 0
+
+	On Error Resume Next
+	major = CLng(obj.Major)
+	minor = CLng(obj.Minor)
+	patch = CLng(obj.Patch)
+	On Error Goto 0
+
+	VersionOf = major & "." & minor & "." & patch
+
+End Function
+
+
+Function NotesOf(obj)
+
+	NotesOf = ""
+
+	On Error Resume Next
+	NotesOf = Trim(obj.ReleaseNotes & "")
+	On Error Goto 0
+
+	If NotesOf = "" Then NotesOf = "(none published)"
+
+End Function
+
+
+' Which build is driving this station, for the report to carry - and said
+' as unknown rather than guessed at when nothing answers.
+'
+' Asked of the equipment: every breaker and disconnector carries an
+' xatm_Build, all of them come from the same library file, so the first one
+' found answers for the rest. The walk is written out again here because
+' one E3 object cannot call a procedure in another's scope - the demo label
+' on this same screen keeps its own copy for the same reason.
+Function EditionText()
+
+	EditionText = "unknown - no device has reported its build"
+
+	Dim substation
+	Set substation = Nothing
+
+	On Error Resume Next
+	Set substation = Application.GetObject(SUBSTATION)
+	On Error Goto 0
+
+	If substation Is Nothing Then Exit Function
+
+	Dim found
+	found = ""
+
+	FindEdition substation, found
+
+	If found <> "" Then EditionText = found
+
+End Function
+
+Sub FindEdition(folder, ByRef found)
+
+	If found <> "" Then Exit Sub
+
+	Dim obj
+	For Each obj In folder
+
+		If found <> "" Then Exit Sub
+
+		Dim build
+		Set build = Nothing
+
+		On Error Resume Next
+		Set build = obj.Item("Build")
+		On Error Goto 0
+
+		If Not build Is Nothing Then
+
+			On Error Resume Next
+			found = Trim(build.Edition & "")
+			On Error Goto 0
+
+			If found <> "" Then Exit Sub
+
+		End If
+
+		On Error Resume Next
+		FindEdition obj, found
+		On Error Goto 0
+
+	Next
+
+End Sub
+
+
+Function DialogTitle()
+
+	If HELP_LANG = "pt-BR" Then
+		DialogTitle = "Versão da biblioteca"
+	Else
+		DialogTitle = "Library version"
+	End If
+
+End Function
+
+
+' What the dialogue says, and the question it ends on.
+'
+' The notes themselves are not put in here. They are a page rather than a
+' line, they grow with every release, and a MsgBox that has to be scrolled
+' is a worse way to read them than the text file this offers instead.
+Function AskText(versionText)
+
+	If HELP_LANG = "pt-BR" Then
+
+		AskText = "Biblioteca de automatismos xatm_lib, versão " & versionText & "." & vbCrLf & vbCrLf & _
+		          "Deseja abrir as notas desta versão em um arquivo de texto?"
+
+	Else
+
+		AskText = "Automation library xatm_lib, version " & versionText & "." & vbCrLf & vbCrLf & _
+		          "Open the release notes in a text file?"
+
+	End If
+
+End Function
+
+
+' Said plainly rather than as a failed read. The object is created by hand,
+' once, and a station that never had it done reads exactly like one where
+' the name was mistyped - so the name is what the message carries.
+Function MissingText()
+
+	If HELP_LANG = "pt-BR" Then
+
+		MissingText = "Não foi possível ler a versão da biblioteca." & vbCrLf & vbCrLf & _
+		              "O objeto " & VERSION_OBJECT & " não foi encontrado no projeto."
+
+	Else
+
+		MissingText = "The library version could not be read." & vbCrLf & vbCrLf & _
+		              "The object " & VERSION_OBJECT & " was not found in the project."
+
+	End If
+
+End Function
+
+
+Function WriteFailedText(reason)
+
+	If HELP_LANG = "pt-BR" Then
+
+		WriteFailedText = "Não foi possível gravar o arquivo com as notas desta versão." & vbCrLf & vbCrLf & _
+		                  reason
+
+	Else
+
+		WriteFailedText = "The file with the release notes could not be written." & vbCrLf & vbCrLf & _
+		                  reason
+
+	End If
+
+End Function
+
+
+' The path is given even so. The file is written and only the opening
+' failed, so telling somebody where it is leaves them able to go and read
+' it themselves.
+Function OpenFailedText(path, reason)
+
+	If HELP_LANG = "pt-BR" Then
+
+		OpenFailedText = "As notas foram gravadas, mas o Bloco de Notas não abriu." & vbCrLf & vbCrLf & _
+		                 path & vbCrLf & vbCrLf & reason
+
+	Else
+
+		OpenFailedText = "The notes were written, but Notepad would not open." & vbCrLf & vbCrLf & _
+		                 path & vbCrLf & vbCrLf & reason
+
+	End If
+
+End Function
+
+
+' Where the equipment lives, Scripting's own number for the temporary
+' folder that ReportFolder falls back on, and what the report is called
+' once it is written.
+Const SUBSTATION        = "XATM_Data.Substation"
+Const TEMPORARY_FOLDER  = 2
+Const REPORT_FILE_NAME  = "xatm_lib.txt"
+
+
+' A scope may not end on a Function - E3 takes the script without complaint
+' and then behaves as though the last one were not there.
+Sub EndOfScope()
+
+End Sub
+
 <xatm_config_screens.SingleLineDiagram:SingleLineDiagram_OnPreShow(Arg)>
 Sub SingleLineDiagram_OnPreShow(Arg)
 	
@@ -11559,8 +11558,8 @@ Sub SingleLineDiagram_OnPreShow(Arg)
 	Next
 	
 	' TODO: make dynamic
-	On Error Resume Next
-	Item("xatm_TMTNMStatus1").Source = Application.GetObject("XATM_Data.Automation.TMTNM1").PathName
+	'On Error Resume Next
+	'Item("xatm_TMTNMStatus1").Source = Application.GetObject("XATM_Data.Automation.TMTNM1").PathName
 	
 End Sub
 

@@ -2,3967 +2,8 @@
 Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Wed Aug 19 17:53:51 2026
+Fri Aug 21 09:06:41 2026
 -----------------------
-
-<xatm_TA.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
-Sub OperatorBlock_CommandOperatorBlock()
-	
-	Dim v
-	v = False
-	
-	On Error Resume Next
-	v = CBool(xatm_TA.CommandOperatorBlock.Value)
-	On Error Goto 0
-	
-	xatm_TA.OperatorBlock = v
-
-End Sub
-
-<xatm_TA.Commands.OperatorBlock:OperatorBlock_OnChangedValue()>
-Sub OperatorBlock_OnChangedValue()
-	
-	If xatm_TA.OperatorBlock Then
-		WriteLog "Blocked by operator."
-	Else
-		WriteLog "Released by operator."
-	End If
-
-End Sub
-	
-Sub WriteLog(message)
-	
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-	
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-	
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-			
-End Sub
-
-<xatm_TA.Commands.Reset:Reset_OnChangedTimeStamp()>
-Sub Reset_OnChangedTimeStamp()
-	
-	If CBool(Value) Then
-		
-		Reset()
-		
-	End If
-	
-End Sub
-
-Sub Reset()
-	
-	xatm_TA.Running 		= False
-	xatm_TA.GeneralBlock	= False
-	
-	' ===============
-	' RESET ALL STEP FAIL POINTS
-	' ===============
-	Dim i
-	For i = 1 To 6
-		Dim propName
-		propName = "StepExecutionFailed" & i
-		
-		On Error Resume Next
-		Execute("xatm_TA." & propName & " = False")
-		On Error Goto 0
-	Next
-	
-	Dim tag
-	For Each tag In xatm_TA.Item("FSM")
-		
-		If TypeName(tag) = "InternalTag" Then
-
-			tag.WriteEx Empty, tag.TimeStamp
-		
-		End If
-		
-	Next
-	
-	' ================
-	' RESET ALL DEVICES
-	' ================
-	ResetDevices Application.GetObject("XATM_Data.Substation")
-	
-	WriteLog "Reset"
-
-End Sub
-
-Sub ResetDevices(folder)
-	
-	For Each obj In folder
-	
-		If TypeName(obj) = "xatm_Breaker" Then
-		
-			On Error Resume Next
-			obj.Item("Data").Item("Reset").WriteEx True
-			On Error Goto 0
-			
-		Else
-		
-			ResetDevices obj
-		
-		End If
-	
-	Next
-
-End Sub
-	
-Sub WriteLog(message)
-	
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-	
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-	
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-	
-End Sub
-
-<xatm_TA.Commands.Reset:Reset_Reset()>
-Sub Reset_Reset()
-	
-	If xatm_TA.CommandReset.Value = 0 Then Exit Sub
-	
-	WriteEx True
-		
-End Sub
-
-<xatm_TA.Commands.Start:Start_OnChangedValue()>
-Sub Start_OnChangedValue()
-
-	If Trim(Value) = "" Then Exit Sub      ' self-cleared write, ignore
-
-	Dim ts
-	ts = TimeStamp	' preserve for the silent clear
-
-	Dim parts
-	parts = Split(Me.Value, ":")
-
-	' Two fields, and only two.
-	'
-	' Nobody commands an automatic transfer - it answers a trip - so there
-	' is no third field naming a contingency, because there was no operator
-	' to pick one. Which transformer is out is read off the field instead,
-	' below. That is the whole of what separates this class from the manual
-	' one, and it is why the two were pulled apart.
-	If UBound(parts) <> 1 Then
-		Reject "Invalid Start format '" & Me.Value & "' (expected TA:trigger).", ts
-		Exit Sub
-	End If
-
-	Dim mode
-	mode = UCase(Trim(parts(0)))
-
-	If mode <> "TA" Then
-		Reject "This automation runs TA and nothing else - '" & mode & "' was asked for.", ts
-		Exit Sub
-	End If
-
-	If Not IsNumeric(parts(1)) Then
-		Reject "Invalid trigger transformer '" & parts(1) & "'.", ts
-		Exit Sub
-	End If
-
-	Dim triggerId
-	triggerId = CInt(parts(1))
-
-	' ================
-	' WHICH TRANSFORMER IS OUT
-	' ================
-	'
-	' Read off the field, because the switchyard is what asked and the
-	' switchyard says nothing.
-	Dim impedeId, outCount
-	impedeId = FieldImpediment(triggerId, outCount)
-
-	' Tabela 1 situations 6-11 are two transformers out, and no sequence
-	' leaves them. Refusing is the honest answer; picking one of the two
-	' would run a sequence whose starting state is false.
-	If outCount > 1 Then
-
-		Reject "More than one transformer is out of service - no sequence is defined from there.", ts
-		Exit Sub
-
-	End If
-
-	' ================
-	' IS THE REQUEST ITSELF COHERENT
-	' ================
-	'
-	' Ahead of the gates below, because these say the request is malformed
-	' rather than that the switchyard is not ready for it.
-
-	If Not IsConfiguredTransformer(triggerId) Then
-
-		Reject "Trigger transformer " & triggerId & " is not configured in this substation.", ts
-		Exit Sub
-
-	End If
-
-	' A transfer needs somewhere to put the load. Anything that is neither
-	' the trigger nor out of service can take it; with none left there is
-	' nothing to transfer to and no sequence to run.
-	If CountDestinations(triggerId, impedeId) = 0 Then
-
-		Reject "No transformer is left to take the load.", ts
-		Exit Sub
-
-	End If
-
-	' ================
-	' GATE CHECKS
-	' ================
-
-	If Not xatm_TA.Enabled Then
-
-		Reject "Automation disabled.", ts
-		Exit Sub
-
-	End If
-
-	If xatm_TA.Running Then
-
-		Reject "Already running.", ts
-		Exit Sub
-
-	End If
-
-	If xatm_TA.OperatorBlock Then
-
-	 	Reject "Blocked by operator.", ts
-		Exit Sub
-
-	End If
-
-	If xatm_TA.GeneralBlock Then
-
-	 	Reject "General interlock active.", ts
-	 	Exit Sub
-
-	End If
-
-	' One pair of gates, and named outright rather than built from the mode.
-	'
-	' The manual class keeps a pair per contingency because an operator
-	' picks which maneuver to run and each one closes a different path. This
-	' one is picked by a trip; there is nothing for a gate name to vary
-	' with, and a scheme that restores a dead busbar should not have five
-	' ways to be barred.
-	'
-	' Both are read before either is judged, so a manifest that has not been
-	' rebuilt is reported as the configuration fault it is rather than
-	' surfacing as a maneuver that will not start for no stated reason.
-	Dim missing, blocked, permitted
-	missing = ""
-
-	blocked   = ReadGate("AutomaticBlockTA", False, missing)
-	permitted = ReadGate("PreconditionsTA",  True,  missing)
-
-	If missing <> "" Then
-
-		Reject "this automation has no " & missing & " - the manifest has not been rebuilt.", ts
-		Exit Sub
-
-	End If
-
-	If blocked Then
-
-		Reject "Blocked by field conditions (AutomaticBlockTA).", ts
-		Exit Sub
-
-	End If
-
-	' This one reads the other way round - the expression on it says when
-	' the maneuver may go ahead, so it is the absence of it that rejects.
-	If Not permitted Then
-
-		Reject "Preconditions are not met (PreconditionsTA).", ts
-		Exit Sub
-
-	End If
-
-	If AnyOtherAutomationRunning() Then
-
-		Reject "Another automation is in progress.", ts
-		Exit Sub
-
-	End If
-
-	' ================
-	' START
-	' ================
-
-	xatm_TA.Item("FSM").Item("AutomationType").WriteEx mode
-	xatm_TA.Item("FSM").Item("TriggerTransformerId").WriteEx triggerId
-	xatm_TA.Item("FSM").Item("ImpededTransformerId").WriteEx impedeId
-	xatm_TA.Item("FSM").Item("StepTimer").WriteEx 0
-	xatm_TA.Item("FSM").Item("Main").WriteEx 0
-	xatm_TA.Running = True
-
-	If impedeId = 0 Then
-		WriteLog "Start - TA TR" & triggerId
-	Else
-		WriteLog "Start - TA TR" & triggerId & " with TR" & impedeId & " out of service"
-	End If
-
-	WriteEx "", ts ' clear without re-firing
-
-End Sub
-
-' True if any OTHER automation object is currently running (mutual exclusion).
-' Relies on a common Running property instead of enumerating each type.
-Function AnyOtherAutomationRunning()
-
-	AnyOtherAutomationRunning = False
-
-	Dim obj
-	For Each obj In Application.GetObject("XATM_Data.Automation")
-
-		If Not (obj Is xatm_TA) Then
-
-			Dim running
-			running = False
-			On Error Resume Next
-			running = obj.Running
-			On Error GoTo 0
-
-			If running Then
-				AnyOtherAutomationRunning = True
-				Exit Function
-			End If
-
-		End If
-
-	Next
-
-End Function
-
-
-' Every transformer the substation has, as "<id>:<0|1>" pairs - the flag is
-' its out-of-service reading at the moment of asking.
-'
-' One walk, because the three questions below - is this Id configured, how
-' many are out, which one is out - are all answered off the same list.
-'
-' FSM.Main has GetDeviceById for the same job. E3 gives no way to call a
-' procedure in another object's scope, so this scope keeps its own, narrower
-' version: it only ever looks for transformers.
-Function TransformerStates()
-
-	Dim acc
-	acc = ""
-
-	On Error Resume Next
-	CollectTransformers Application.GetObject("XATM_Data.Substation"), acc
-	On Error Goto 0
-
-	TransformerStates = acc
-
-End Function
-
-Sub CollectTransformers(folder, ByRef acc)
-
-	Dim obj
-	For Each obj In folder
-
-		Select Case UCase(TypeName(obj))
-
-			Case "XATM_TRANSFORMER"
-
-				Dim id
-				id = Empty
-
-				On Error Resume Next
-				id = obj.Id
-				On Error Goto 0
-
-				If IsNumeric(id) Then
-
-					Dim flag
-					flag = 0
-
-					On Error Resume Next
-					If CBool(obj.OutOfService) Then flag = 1
-					On Error Goto 0
-
-					If acc <> "" Then acc = acc & ","
-					acc = acc & CInt(id) & ":" & flag
-
-				End If
-
-			Case "XATM_BREAKER", "XATM_DISCONNECTOR"
-
-				' a device, and not one this is looking for
-
-			Case Else
-
-				' Not a device -> treat as a subfolder and recurse.
-				On Error Resume Next
-				CollectTransformers obj, acc
-				On Error Goto 0
-
-		End Select
-
-	Next
-
-End Sub
-
-' True when id names a transformer this substation actually has.
-'
-' Without it a typo'd screen binding, or a command tag left unconfigured,
-' falls through every ElseIf in the step logic and lands on the Else that
-' means "nothing is out" - running a real maneuver on a live switchyard
-' under an assumption nobody made.
-Function IsConfiguredTransformer(id)
-
-	IsConfiguredTransformer = False
-
-	Dim entries, i, pair
-	entries = Split(TransformerStates(), ",")
-
-	For i = 0 To UBound(entries)
-
-		If entries(i) <> "" Then
-
-			pair = Split(entries(i), ":")
-
-			If CInt(pair(0)) = id Then
-				IsConfiguredTransformer = True
-				Exit Function
-			End If
-
-		End If
-
-	Next
-
-End Function
-
-' How many transformers could take the load: everything that is neither the
-' trigger, nor the one declared out, nor out of service in the field.
-Function CountDestinations(triggerId, impedeId)
-
-	CountDestinations = 0
-
-	Dim entries, i, pair, id
-	entries = Split(TransformerStates(), ",")
-
-	For i = 0 To UBound(entries)
-
-		If entries(i) <> "" Then
-
-			pair = Split(entries(i), ":")
-			id   = CInt(pair(0))
-
-			If id <> triggerId And id <> impedeId And pair(1) = "0" Then
-				CountDestinations = CountDestinations + 1
-			End If
-
-		End If
-
-	Next
-
-End Function
-
-' What StoreImpediments used to snapshot, reduced to the one Id the
-' sequences can take an argument for. This is the TA path: no operator said
-' anything, so the field is asked.
-'
-' The trigger is skipped. A transformer that has just tripped may carry the
-' out-of-service flag as well - stale, or set by whoever was about to work
-' on it - and counting it would make the maneuver its own impediment, which
-' Start then rejects. A protection-driven restoration refusing to run is the
-' worst way to be wrong: the busbars stay dead. StoreImpediments had the
-' same immunity, though by accident rather than on purpose - the step logic
-' simply never tested imp(trigger).
-'
-' outCount is how many OTHERS were found out, so the caller can tell "none
-' out" from "more out than any sequence covers" - 0 is returned for both.
-Function FieldImpediment(triggerId, ByRef outCount)
-
-	FieldImpediment = 0
-	outCount = 0
-
-	Dim entries, i, pair, id
-	entries = Split(TransformerStates(), ",")
-
-	For i = 0 To UBound(entries)
-
-		If entries(i) <> "" Then
-
-			pair = Split(entries(i), ":")
-			id   = CInt(pair(0))
-
-			If id <> triggerId And pair(1) = "1" Then
-
-				outCount = outCount + 1
-				If outCount = 1 Then FieldImpediment = id
-
-			End If
-
-		End If
-
-	Next
-
-End Function
-
-' One gate, read by the name built for it.
-'
-' E3 gives no way to index an XObject properties, so the read is late
-' bound - the same Execute and scratch cell the configuration import uses
-' to write one.
-'
-' A property that is not there leaves the default and adds its name to
-' missing. Reported rather than assumed either way round: defaulting a
-' precondition to True would let a maneuver run on a gate nobody wrote,
-' and defaulting it to False would bar every maneuver with nothing said
-' about why.
-Function ReadGate(propertyName, defaultValue, ByRef missing)
-
-	gGateValue = defaultValue
-
-	Dim failed
-	failed = False
-
-	On Error Resume Next
-	Err.Clear
-	Execute "gGateValue = xatm_TA." & propertyName
-	If Err.Number <> 0 Then failed = True
-	Err.Clear
-	On Error Goto 0
-
-	If failed Then
-
-		If missing <> "" Then missing = missing & ", "
-		missing = missing & propertyName
-		gGateValue = defaultValue
-
-	End If
-
-	ReadGate = CBool(gGateValue)
-
-End Function
-
-' Scratch cell for the late-bound read, the way the configuration import
-' keeps one for its writes.
-Dim gGateValue
-
-
-' Logs the rejection and clears the trigger without re-firing.
-' Uses the explicit tag path (not Me) so it is safe to call from a helper.
-Sub Reject(reason, ts)
-
-	WriteLog "Not started - " & reason
-	WriteEx "", ts
-
-End Sub
-
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-	
-End Sub
-<xatm_TA.FSM.Main:Main_Completed()>
-Sub Main_Completed()
-	
-	Parent.Item("TriggerTransformerId").WriteEx  Empty, 0
-	Parent.Item("AutomationType").WriteEx Empty, 0
-	Parent.Item("StepTimer").WriteEx  Empty, 0
-	WriteEx  Empty, 0
-	
-    xatm_TA.Running = False
-    WriteLog "Automation completed successfully."
-            	
-End Sub
-
-<xatm_TA.FSM.Main:Main_Functions()>
-Sub Main_Functions()
-End Sub
-
-
-Function GetDeviceById(id, ByRef exists)
-    
-    exists = False
-    Set GetDeviceById = FindInFolder(Application.GetObject("XATM_Data.Substation"), id, exists)
-    
-End Function
-
-Function FindInFolder(folder, id, ByRef exists)
-    
-    Set FindInFolder = Nothing
-        
-    Dim obj
-
-    For Each obj In folder
-        
-        Select Case UCase(TypeName(obj))
-
-            Case "XATM_BREAKER", "XATM_TRANSFORMER", "XATM_DISCONNECTOR"
-                If obj.Id = id Then
-                    Set FindInFolder = obj
-                    exists = True
-                    Exit Function
-                End If
-
-            Case Else
-                ' Not a device -> treat as a subfolder and recurse.
-                Dim found
-                On Error Resume Next
-                Set found = FindInFolder(obj, id, exists)
-                On Error GoTo 0
-
-                If exists Then
-                    Set FindInFolder = found
-                    Exit Function
-                End If
-
-        End Select
-        
-    Next
-
-End Function
-
-Function GetLayoutType()
-
-	GetLayoutType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value & "_" & _
-					Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
-	
-End Function
-
-Sub ResetTimer()
-
-    Parent.Item("StepTimer").Value = 0
-    
-End Sub
-
-Sub IncrementTimer()
-
-    Parent.Item("StepTimer").Value = Parent.Item("StepTimer").Value + 1
-    
-End Sub
-
-Function OperationName(operation)
-	If operation = 2 Then
-		OperationName = "closed"
-	ElseIf operation = 1 Then
-		OperationName = "opened"
-	Else
-		OperationName = "operated"
-	End If
-End Function
-' Which transformer the running maneuver is treating as out of service, or 0
-' for none. Written once by Start_OnChangedValue - declared by the operator
-' for TM and NM, read off the field for TA - and constant for the whole run,
-' so no step can be handed a different contingency than the step before it.
-'
-' The spec pairs every maneuver with at most one impediment: Tabela 1
-' situations 2-5 are the states a sequence starts from, and 6-11 - two
-' transformers out - are the states they end in, with no sequence leaving
-' them. So this is one Id and not a set.
-Function ReadImpededId()
-
-	Dim id
-	id = 0
-
-	On Error Resume Next
-	id = Parent.Item("ImpededTransformerId").Value
-	On Error Goto 0
-
-	If IsEmpty(id) Or IsNull(id) Then id = 0
-	If Not IsNumeric(id) Then id = 0
-
-	ReadImpededId = CInt(id)
-
-End Function
-
-Sub WriteLog(message)
-	
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-	
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-	
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-		
-End Sub
-
-<xatm_TA.FSM.Main:Main_GlobalLockout()>
-Sub Main_GlobalLockout()
-	
-	xatm_TA.Running 		= False
-	xatm_TA.GeneralBlock 	= True
-
-	Select Case Value
-		Case 1 : xatm_TA.StepExecutionFailed1 = True
-		Case 2 : xatm_TA.StepExecutionFailed2 = True
-		Case 3 : xatm_TA.StepExecutionFailed3 = True
-		Case 4 : xatm_TA.StepExecutionFailed4 = True
-		Case 5 : xatm_TA.StepExecutionFailed5 = True
-		Case 6 : xatm_TA.StepExecutionFailed6 = True
-	End Select
-	
-	WriteLog "Global lockout activated due to automation failure."
-	
-End Sub
-
-<xatm_TA.FSM.Main:Main_Main()>
-Sub Main_Main()
-	
-	Const STEP_1_TIMER = 30
-
-	If Not xatm_TA.Enabled Then
-		
-		WriteLog "Automation not enabled."
-		xatm_TA.Running = False
-		Exit Sub
-	
-	End If
-	
-	If Not xatm_TA.Running Then
-		Exit Sub
-	End If
-	
-	Select Case Value
-		
-		Case 0
-			
-			Main_Step00()
-		
-		Case 1
-			
-			If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-				
-				Main_Step01()
-				
-			Else
-				
-				WriteLog "Step 1: Execution failed - Timeout exceeded."
-				Main_GlobalLockout
-				Exit Sub
-				
-			End If
-
-        Case 2
-
-            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
-                Main_Step02()
-                
-            Else
-                
-                WriteLog "Step 2: Execution failed - Timeout exceeded."
-                Main_GlobalLockout
-				Exit Sub
-				
-            End If
-        
-        Case 3
-
-            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
-                Main_Step03()
-                
-            Else
-                
-                WriteLog "Step 3: Execution failed - Timeout exceeded."
-                Main_GlobalLockout
-				Exit Sub
-                
-            End If
-
-        Case 4
-            
-            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
-                Main_Step04()
-                
-            Else
-                
-                WriteLog "Step 4: Execution failed - Timeout exceeded."
-                Main_GlobalLockout
-				Exit Sub
-				
-            End If
-        
-        Case 5
-            
-            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
-                Main_Step05()
-                
-            Else
-                
-                WriteLog "Step 5: Execution failed - Timeout exceeded."
-                Main_GlobalLockout
-				Exit Sub
-				
-            End If
-
-        Case 6
-
-            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
-                Main_Step06()
-                
-            Else
-                
-                WriteLog "Step 6: Execution failed - Timeout exceeded."
-                Main_GlobalLockout
-				Exit Sub
-				
-            End If
-
-        Case 99
-			
-			Main_Completed()
-			
-	End Select
-	
-	IncrementTimer()
-
-End Sub
-
-<xatm_TA.FSM.Main:Main_Step00()>
-Sub Main_Step00()
-
-	WriteLog "Starting " & DescribeAutomation()
-
-	Value = 1
-
-End Sub
-
-' Human-readable summary of the running automation for the step log,
-' using transformer names, e.g. "TA TR-01 - TR-02 out of service".
-'
-' The mode is not read off the FSM the way the manual class reads it. There
-' is only one thing this automation runs, and a line that fetched the
-' answer it already knows would only be able to disagree with itself.
-Function DescribeAutomation()
-
-	Dim triggerId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-
-	Dim impedeId
-	impedeId  = ReadImpededId()
-
-	If impedeId = 0 Then
-		DescribeAutomation = "TA " & TransformerName(triggerId) & " - no transformer out of service"
-	Else
-		DescribeAutomation = "TA " & TransformerName(triggerId) & " - " & TransformerName(impedeId) & " out of service"
-	End If
-
-End Function
-
-' Transformer name for an id, falling back to "ID <n>" when not found.
-Function TransformerName(id)
-
-	Dim transformer, exists
-	Set transformer = GetDeviceById(id, exists)
-
-	If exists Then
-		TransformerName = transformer.Name
-	Else
-		TransformerName = "ID " & id
-	End If
-
-End Function
-
-Sub Foo()
-
-End Sub
-
-<xatm_TA.FSM.Main:Main_Step01()>
-Sub Main_Step01()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-
-	S1TA triggerId, impedeId
-
-End Sub
-
-Sub S1TA(triggerId, impedeId)
-
-	Dim breakerId, action
-	action = 1
-
-	' TA always starts by opening the tripped transformer's own secondary
-	' breaker (triggerId + 20) to confirm isolation - same for every layout.
-	' TODO: (Spec 1.4.3.16 mistakenly writes CB3 for the TR4/TR3-out case; 
-	' opening the trigger's own CB is correct and makes that a non-issue.)
-	breakerId = triggerId + 20
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 1: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 1: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 2
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-	
-End Sub
-
-<xatm_TA.FSM.Main:Main_Step02()>
-Sub Main_Step02()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-
-	S2TA triggerId, impedeId
-
-End Sub
-
-Sub S2TA(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action, nextStep
-	nextStep = 3
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 1                      ' default: open a tie to isolate the dead busbar
-
-		Select Case triggerId
-
-			Case 100
-				If impedeId = 200 Then
-					breakerId = 710
-				Else
-					breakerId = 700
-				End If
-
-			Case 200
-				If impedeId = 100 Then
-					breakerId = 710
-				Else
-					breakerId = 720
-				End If
-
-			Case 300
-				If impedeId = 100 Then
-					breakerId = 730
-				ElseIf impedeId = 200 Then
-					breakerId = 900
-				ElseIf impedeId = 400 Then
-					breakerId = 740
-				Else
-					breakerId = 740        ' no contingency: 2-step restore
-					action = 2
-					nextStep = 99
-				End If
-
-			Case 400
-				If impedeId = 100 Then
-					breakerId = 730
-				ElseIf impedeId = 200 Then
-					breakerId = 900
-				ElseIf impedeId = 300 Then
-					breakerId = 740
-				Else
-					breakerId = 740        ' no contingency: 2-step restore
-					action = 2
-					nextStep = 99
-				End If
-
-		End Select
-
-	Else
-
-		' ==============
-		' DEFAULT
-		' ==============
-		action = 2
-		breakerId = 700
-		nextStep = 99
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 2: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 2: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = nextStep
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-	
-End Sub
-
-<xatm_TA.FSM.Main:Main_Step03()>
-Sub Main_Step03()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-
-	S3TA triggerId, impedeId
-
-End Sub
-
-Sub S3TA(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-	action = 2                          ' restore step: close a tie
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		Select Case triggerId
-
-			Case 100
-				If impedeId = 200 Then
-					breakerId = 700
-				Else
-					breakerId = 900
-				End If
-
-			Case 200
-				If impedeId = 100 Then
-					breakerId = 700
-				Else
-					breakerId = 730
-				End If
-
-			Case 300
-				If impedeId = 100 Then
-					breakerId = 740
-				ElseIf impedeId = 200 Then
-					breakerId = 700
-				ElseIf impedeId = 400 Then
-					breakerId = 900
-				End If
-
-			Case 400
-				If impedeId = 300 Then
-					breakerId = 900
-				Else
-					breakerId = 740
-				End If
-
-		End Select
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 3: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 3: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 4
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-	
-End Sub
-
-<xatm_TA.FSM.Main:Main_Step04()>
-Sub Main_Step04()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-
-	S4TA triggerId, impedeId
-
-End Sub
-
-Sub S4TA(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action, nextStep
-	nextStep = 99
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		Select Case triggerId
-
-			Case 100
-				If impedeId = 200 Then
-					action = 2
-					breakerId = 720
-				ElseIf impedeId = 300 Or impedeId = 400 Then
-					action = 2
-					breakerId = 710
-				Else
-					action = 1             ' no contingency: open, sequence continues
-					breakerId = 720
-					nextStep = 5
-				End If
-
-			Case 200
-				If impedeId = 100 Then
-					action = 2
-					breakerId = 720
-				ElseIf impedeId = 300 Or impedeId = 400 Then
-					action = 2
-					breakerId = 710
-				Else
-					action = 1             ' no contingency: open, sequence continues
-					breakerId = 700
-					nextStep = 5
-				End If
-
-			Case 300
-				action = 2
-				If impedeId = 100 Then
-					breakerId = 720
-				ElseIf impedeId = 200 Then
-					breakerId = 740
-				ElseIf impedeId = 400 Then
-					breakerId = 730
-				End If
-
-			Case 400
-				action = 2
-				If impedeId = 100 Then
-					breakerId = 720
-				ElseIf impedeId = 200 Then
-					breakerId = 700
-				ElseIf impedeId = 300 Then
-					breakerId = 730
-				End If
-
-		End Select
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 4: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 4: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = nextStep
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-	
-End Sub
-
-<xatm_TA.FSM.Main:Main_Step05()>
-Sub Main_Step05()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-
-	S5TA triggerId, impedeId
-
-End Sub
-
-Sub S5TA(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-	action = 2
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		Select Case triggerId
-
-			Case 100
-				breakerId = 730
-
-			Case 200
-				breakerId = 900
-
-		End Select
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 5: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 5: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 6
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-	
-End Sub
-
-<xatm_TA.FSM.Main:Main_Step06()>
-Sub Main_Step06()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-
-	S6TA triggerId, impedeId
-
-End Sub
-
-Sub S6TA(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-	action = 2
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		Select Case triggerId
-
-			Case 100, 200
-				breakerId = 710
-
-		End Select
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 6: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 6: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 99
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-	
-End Sub
-
-<xatm_TMTNM.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
-Sub OperatorBlock_CommandOperatorBlock()
-	
-	Dim v
-	v = False
-	
-	On Error Resume Next
-	v = CBool(xatm_TMTNM.CommandOperatorBlock.Value)
-	On Error Goto 0
-	
-	xatm_TMTNM.OperatorBlock = v
-
-End Sub
-
-<xatm_TMTNM.Commands.OperatorBlock:OperatorBlock_OnChangedValue()>
-Sub OperatorBlock_OnChangedValue()
-	
-	If xatm_TMTNM.OperatorBlock Then
-		WriteLog "Blocked by operator."
-	Else
-		WriteLog "Released by operator."
-	End If
-
-End Sub
-	
-Sub WriteLog(message)
-	
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-	
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-	
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-			
-End Sub
-
-<xatm_TMTNM.Commands.Reset:Reset_OnChangedTimeStamp()>
-Sub Reset_OnChangedTimeStamp()
-	
-	If CBool(Value) Then
-		
-		Reset()
-		
-	End If
-	
-End Sub
-
-Sub Reset()
-	
-	xatm_TMTNM.Running 		= False
-	xatm_TMTNM.GeneralBlock	= False
-	
-	' ===============
-	' RESET ALL STEP FAIL POINTS
-	' ===============
-	Dim i
-	For i = 1 To 6
-		Dim propName
-		propName = "StepExecutionFailed" & i
-		
-		On Error Resume Next
-		Execute("xatm_TMTNM." & propName & " = False")
-		On Error Goto 0
-	Next
-	
-	Dim tag
-	For Each tag In xatm_TMTNM.Item("FSM")
-		
-		If TypeName(tag) = "InternalTag" Then
-
-			tag.WriteEx Empty, tag.TimeStamp
-		
-		End If
-		
-	Next
-	
-	' ================
-	' RESET ALL DEVICES
-	' ================
-	ResetDevices Application.GetObject("XATM_Data.Substation")
-	
-	WriteLog "Reset"
-
-End Sub
-
-Sub ResetDevices(folder)
-	
-	For Each obj In folder
-	
-		If TypeName(obj) = "xatm_Breaker" Then
-		
-			On Error Resume Next
-			obj.Item("Data").Item("Reset").WriteEx True
-			On Error Goto 0
-			
-		Else
-		
-			ResetDevices obj
-		
-		End If
-	
-	Next
-
-End Sub
-	
-Sub WriteLog(message)
-	
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-	
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-	
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-	
-End Sub
-
-<xatm_TMTNM.Commands.Reset:Reset_Reset()>
-Sub Reset_Reset()
-	
-	If xatm_TMTNM.CommandReset.Value = 0 Then Exit Sub
-	
-	WriteEx True
-		
-End Sub
-
-<xatm_TMTNM.Commands.Start:Start_CommandStartNM()>
-Sub Start_CommandStartNM()
-	
-	If xatm_TMTNM.CommandStartNM.Value = 0 Then Exit Sub
-	
-	StartMode "NM", 0
-	
-End Sub
-
-<xatm_TMTNM.Commands.Start:Start_CommandStartNM100()>
-Sub Start_CommandStartNM100()
-
-	If xatm_TMTNM.CommandStartNM100.Value = 0 Then Exit Sub
-
-	StartMode "NM", 100
-	
-End Sub
-
-<xatm_TMTNM.Commands.Start:Start_CommandStartNM200()>
-Sub Start_CommandStartNM200()
-
-	If xatm_TMTNM.CommandStartNM200.Value = 0 Then Exit Sub
-
-	StartMode "NM", 200
-	
-End Sub
-
-<xatm_TMTNM.Commands.Start:Start_CommandStartNM300()>
-Sub Start_CommandStartNM300()
-
-	If xatm_TMTNM.CommandStartNM300.Value = 0 Then Exit Sub
-
-	StartMode "NM", 300
-	
-End Sub
-
-<xatm_TMTNM.Commands.Start:Start_CommandStartNM400()>
-Sub Start_CommandStartNM400()
-
-	If xatm_TMTNM.CommandStartNM400.Value = 0 Then Exit Sub
-
-	StartMode "NM", 400
-	
-End Sub
-
-<xatm_TMTNM.Commands.Start:Start_CommandStartTM()>
-Sub Start_CommandStartTM()
-
-	If xatm_TMTNM.CommandStartTM.Value = 0 Then Exit Sub
-
-	StartMode "TM", 0
-	
-End Sub
-
-<xatm_TMTNM.Commands.Start:Start_CommandStartTM100()>
-Sub Start_CommandStartTM100()
-
-	If xatm_TMTNM.CommandStartTM100.Value = 0 Then Exit Sub
-
-	StartMode "TM", 100
-	
-End Sub
-
-<xatm_TMTNM.Commands.Start:Start_CommandStartTM200()>
-Sub Start_CommandStartTM200()
-
-	If xatm_TMTNM.CommandStartTM200.Value = 0 Then Exit Sub
-
-	StartMode "TM", 200
-	
-End Sub
-
-<xatm_TMTNM.Commands.Start:Start_CommandStartTM300()>
-Sub Start_CommandStartTM300()
-
-	If xatm_TMTNM.CommandStartTM300.Value = 0 Then Exit Sub
-
-	StartMode "TM", 300
-	
-End Sub
-
-<xatm_TMTNM.Commands.Start:Start_CommandStartTM400()>
-Sub Start_CommandStartTM400()
-
-	If xatm_TMTNM.CommandStartTM400.Value = 0 Then Exit Sub
-
-	StartMode "TM", 400
-	
-End Sub
-
-<xatm_TMTNM.Commands.Start:Start_OnChangedValue()>
-Sub Start_OnChangedValue()
-
-	If Trim(Value) = "" Then Exit Sub      ' self-cleared write, ignore
-
-	Dim ts
-	ts = TimeStamp	' preserve for the silent clear
-
-	Dim parts
-	parts = Split(Me.Value, ":")
-
-	' Two fields or three. The third names the transformer the maneuver is
-	' to assume out of service, and is what the operator now picks; a
-	' request without it is a request with nothing out.
-	If UBound(parts) < 1 Or UBound(parts) > 2 Then
-		Reject "Invalid Start format '" & Me.Value & "' (expected MODE:trigger[:impeded]).", ts
-		Exit Sub
-	End If
-
-	Dim mode
-	mode = UCase(Trim(parts(0)))
-
-	Select Case mode
-
-		Case "TM", "NM"
-
-		Case Else
-
-			Reject "Unknown automation type '" & mode & "'.", ts
-			Exit Sub
-
-	End Select
-
-	If Not IsNumeric(parts(1)) Then
-
-		Reject "Invalid trigger transformer '" & parts(1) & "'.", ts
-		Exit Sub
-
-	End If
-
-	Dim triggerId
-	triggerId = CInt(parts(1))
-
-	' ================
-	' WHICH TRANSFORMER IS OUT
-	' ================
-	'
-	' The person asking says which one, and that is the whole of the
-	' triggering philosophy here. An automatic transfer reads the field
-	' for it instead, because the switchyard is what asked and the
-	' switchyard says nothing - which is xatm_TA's business now.
-	Dim impedeId
-	impedeId = 0
-
-	If UBound(parts) = 2 Then
-
-		If Not IsNumeric(parts(2)) Then
-
-			Reject "Invalid impeded transformer '" & parts(2) & "'.", ts
-			Exit Sub
-
-		End If
-
-		impedeId = CInt(parts(2))
-
-	End If
-
-	' ================
-	' IS THE REQUEST ITSELF COHERENT
-	' ================
-	'
-	' Ahead of the gates below, because these say the request is malformed
-	' rather than that the switchyard is not ready for it. Each one is a
-	' case the step logic cannot express: its Else branch would take a
-	' nonsense argument for "nothing is out" and run a real maneuver.
-	'
-	' Two kinds of automation asking for two different things, so they are
-	' checked apart. An instance carrying a BusbarPair moves that pair of
-	' busbars and is bound to no transformer at all - there is no busbar
-	' XObject to bind to, which is why the pair is carried as text. Every
-	' other instance moves its own transformer's load, and answers the
-	' questions that were always asked here.
-	Dim runMode
-	runMode = mode
-
-	If BusbarPair() <> "" Then
-
-		If mode = "TA" Then
-
-			Reject "a busbar automation has no automatic transfer - it is asked for and never triggered.", ts
-			Exit Sub
-
-		End If
-
-		If impedeId <> 0 Then
-
-			Reject "a busbar transfer takes no impediment - it has one path and it does not vary.", ts
-			Exit Sub
-
-		End If
-
-		If GetLayoutType() <> "4TR4LV_6BB6TIERING" Then
-
-			Reject "a busbar transfer is defined only on the 4TR4LV_6BB6TIERING layout.", ts
-			Exit Sub
-
-		End If
-
-		runMode = BusbarMode(mode, BusbarPair())
-
-		If runMode = "" Then
-
-			Reject "'" & BusbarPair() & "' is not a pair of busbars that can be transferred between.", ts
-			Exit Sub
-
-		End If
-
-	Else
-
-		If Not IsConfiguredTransformer(triggerId) Then
-
-			Reject "Trigger transformer " & triggerId & " is not configured in this substation.", ts
-			Exit Sub
-
-		End If
-
-		If impedeId <> 0 Then
-
-			If impedeId = triggerId Then
-
-				Reject "Transformer " & triggerId & " cannot be both the trigger and the one out of service.", ts
-				Exit Sub
-
-			End If
-
-			If Not IsConfiguredTransformer(impedeId) Then
-
-				Reject "Impeded transformer " & impedeId & " is not configured in this substation.", ts
-				Exit Sub
-
-			End If
-
-		End If
-
-		' A transfer needs somewhere to put the load. Anything that is
-		' neither the trigger nor out of service can take it; with none
-		' left there is nothing to transfer to and no sequence to run.
-		'
-		' On the four transformer ring one impediment still leaves two, so
-		' this only bites on the small layouts - two transformers with the
-		' adjacent one impeded, which is the case the client asked to have
-		' refused.
-		If CountDestinations(triggerId, impedeId) = 0 Then
-
-			Reject "No transformer is left to take the load.", ts
-			Exit Sub
-
-		End If
-
-	End If
-
-	' ================
-	' GATE CHECKS
-	' ================
-
-	If Not xatm_TMTNM.Enabled Then
-
-		Reject "Automation disabled.", ts
-		Exit Sub
-
-	End If
-
-	If xatm_TMTNM.Running Then
-
-		Reject "Already running.", ts
-		Exit Sub
-
-	End If
-
-	If xatm_TMTNM.OperatorBlock Then
-
-	 	Reject "Blocked by operator.", ts
-		Exit Sub
-
-	End If
-
-	If xatm_TMTNM.GeneralBlock Then
-
-	 	Reject "General interlock active.", ts
-	 	Exit Sub
-
-	End If
-
-	' The switchyard withholding it and the switchyard permitting it - but
-	' asked of this maneuver own pair of gates, not of one pair standing
-	' for every maneuver the automation can run.
-	'
-	' Both are read before either is judged, so a manifest that has not
-	' been rebuilt is reported as the configuration fault it is rather than
-	' surfacing as a maneuver that will not start for no stated reason.
-	Dim gate, missing, blocked, permitted
-	gate    = GateSuffix(mode, impedeId)
-	missing = ""
-
-	blocked   = ReadGate("AutomaticBlock" & gate, False, missing)
-	permitted = ReadGate("Preconditions"  & gate, True,  missing)
-
-	If missing <> "" Then
-
-		Reject "this automation has no " & missing & " - the manifest has not been rebuilt.", ts
-		Exit Sub
-
-	End If
-
-	If blocked Then
-
-		Reject "Blocked by field conditions (AutomaticBlock" & gate & ").", ts
-		Exit Sub
-
-	End If
-
-	' This one reads the other way round - the expression on it says when
-	' the maneuver may go ahead, so it is the absence of it that rejects.
-	If Not permitted Then
-
-		Reject "Preconditions are not met (Preconditions" & gate & ").", ts
-		Exit Sub
-
-	End If
-
-	If AnyOtherAutomationRunning() Then
-
-		Reject "Another automation is in progress.", ts
-		Exit Sub
-
-	End If
-
-	' ================
-	' START
-	' ================
-
-	' The resolved maneuver and not the command: a busbar instance was
-	' asked for TM and what it runs is TMB1A, which is what every step
-	' from here on reads.
-	xatm_TMTNM.Item("FSM").Item("AutomationType").WriteEx runMode
-	xatm_TMTNM.Item("FSM").Item("TriggerTransformerId").WriteEx triggerId
-	xatm_TMTNM.Item("FSM").Item("ImpededTransformerId").WriteEx impedeId
-	xatm_TMTNM.Item("FSM").Item("StepTimer").WriteEx 0
-	xatm_TMTNM.Item("FSM").Item("Main").WriteEx 0
-	xatm_TMTNM.Running = True
-
-	If runMode <> mode Then
-		WriteLog "Start - " & BusbarLabel(runMode)
-	ElseIf impedeId = 0 Then
-		WriteLog "Start - " & mode & " TR" & triggerId
-	Else
-		WriteLog "Start - " & mode & " TR" & triggerId & " with TR" & impedeId & " out of service"
-	End If
-
-	WriteEx "", ts ' clear without re-firing
-
-End Sub
-
-' True if any OTHER automation object is currently running (mutual exclusion).
-' Relies on a common Running property instead of enumerating each type.
-Function AnyOtherAutomationRunning()
-
-	AnyOtherAutomationRunning = False
-
-	Dim obj
-	For Each obj In Application.GetObject("XATM_Data.Automation")
-
-		If Not (obj Is xatm_TMTNM) Then
-
-			Dim running
-			running = False
-			On Error Resume Next
-			running = obj.Running
-			On Error GoTo 0
-
-			If running Then
-				AnyOtherAutomationRunning = True
-				Exit Function
-			End If
-
-		End If
-
-	Next
-
-End Function
-
-
-' Asks for a maneuver by writing the very tag this runs on.
-'
-' Start_OnChangedValue is what reads it, so every gate it keeps - enabled,
-' not already running, the three blocks, the preconditions, no other
-' automation in progress - is kept for a command off a screen too, and is
-' kept in the one place that has them all. A command that is refused is
-' logged there and says why, exactly as a written trigger is.
-'
-' impedeId is which transformer the maneuver is to treat as out of service,
-' or 0 for none. It is not read off the command tag: there is one tag per
-' maneuver, and which tag was written is what says which maneuver was asked
-' for. The value on it means nothing beyond "asked for".
-'
-' That is the shape Level 3 needs. Over IEC 60870-5-104 a command is a point
-' address and carries no argument, so an address has to mean one maneuver by
-' itself; the E3 operation screen works the same way round, a button writes
-' a tag rather than composing one. A single tag carrying which transformer
-' is out would have to be a setpoint, and a setpoint followed by an execute
-' is two telegrams with nothing binding them together - not something to put
-' under a switching sequence.
-'
-' There is no TA among the commands. That one is asked for by the
-' switchyard, through the transformer's own triggers, and never by a
-' person - which is also why TA takes no impediment argument and reads the
-' field for it instead.
-Sub StartMode(mode, impedeId)
-
-	' A busbar automation is bound to nothing, so there is nothing to
-	' look up and no trigger to name: which pair it moves is a property
-	' of its own, and that pair is the whole of what the maneuver needs.
-	If BusbarPair() <> "" Then
-
-		WriteEx mode & ":0:0"
-		Exit Sub
-
-	End If
-
-	Dim found, id
-	id = BoundTransformerId(found)
-
-	' Not something the operator did wrong: the automation has been left
-	' unbound, and Start could only reject a maneuver on transformer 0.
-	If Not found Then
-
-		WriteLog "Not started - no transformer is bound to this automation."
-		Exit Sub
-
-	End If
-
-	WriteEx mode & ":" & id & ":" & impedeId
-
-End Sub
-
-' The Id of the transformer this instance drives, which is the trigger of
-' anything asked for from a screen. found stays False where nothing is
-' bound, or where what is bound carries no Id yet - a half-configured
-' automation rather than a maneuver to reject.
-Function BoundTransformerId(ByRef found)
-
-	found = False
-	BoundTransformerId = 0
-
-	Dim transformer
-	Set transformer = Nothing
-
-	On Error Resume Next
-	Set transformer = xatm_TMTNM.Transformer
-	On Error Goto 0
-
-	If transformer Is Nothing Then Exit Function
-
-	Dim id
-	id = Empty
-
-	On Error Resume Next
-	id = transformer.Id
-	On Error Goto 0
-
-	If IsEmpty(id) Or IsNull(id) Then Exit Function
-	If Not IsNumeric(id) Then Exit Function
-
-	BoundTransformerId = CInt(id)
-	found = True
-
-End Function
-
-' Every transformer the substation has, as "<id>:<0|1>" pairs - the flag is
-' its out-of-service reading at the moment of asking.
-'
-' One walk, because the three questions below - is this Id configured, how
-' many are out, which one is out - are all answered off the same list.
-'
-' FSM.Main has GetDeviceById for the same job. E3 gives no way to call a
-' procedure in another object's scope, so this scope keeps its own, narrower
-' version: it only ever looks for transformers.
-Function TransformerStates()
-
-	Dim acc
-	acc = ""
-
-	On Error Resume Next
-	CollectTransformers Application.GetObject("XATM_Data.Substation"), acc
-	On Error Goto 0
-
-	TransformerStates = acc
-
-End Function
-
-Sub CollectTransformers(folder, ByRef acc)
-
-	Dim obj
-	For Each obj In folder
-
-		Select Case UCase(TypeName(obj))
-
-			Case "XATM_TRANSFORMER"
-
-				Dim id
-				id = Empty
-
-				On Error Resume Next
-				id = obj.Id
-				On Error Goto 0
-
-				If IsNumeric(id) Then
-
-					Dim flag
-					flag = 0
-
-					On Error Resume Next
-					If CBool(obj.OutOfService) Then flag = 1
-					On Error Goto 0
-
-					If acc <> "" Then acc = acc & ","
-					acc = acc & CInt(id) & ":" & flag
-
-				End If
-
-			Case "XATM_BREAKER", "XATM_DISCONNECTOR"
-
-				' a device, and not one this is looking for
-
-			Case Else
-
-				' Not a device -> treat as a subfolder and recurse.
-				On Error Resume Next
-				CollectTransformers obj, acc
-				On Error Goto 0
-
-		End Select
-
-	Next
-
-End Sub
-
-' True when id names a transformer this substation actually has.
-'
-' Without it a typo'd screen binding, or a command tag left unconfigured,
-' falls through every ElseIf in the step logic and lands on the Else that
-' means "nothing is out" - running a real maneuver on a live switchyard
-' under an assumption nobody made.
-Function IsConfiguredTransformer(id)
-
-	IsConfiguredTransformer = False
-
-	Dim entries, i, pair
-	entries = Split(TransformerStates(), ",")
-
-	For i = 0 To UBound(entries)
-
-		If entries(i) <> "" Then
-
-			pair = Split(entries(i), ":")
-
-			If CInt(pair(0)) = id Then
-				IsConfiguredTransformer = True
-				Exit Function
-			End If
-
-		End If
-
-	Next
-
-End Function
-
-' How many transformers could take the load: everything that is neither the
-' trigger, nor the one declared out, nor out of service in the field.
-Function CountDestinations(triggerId, impedeId)
-
-	CountDestinations = 0
-
-	Dim entries, i, pair, id
-	entries = Split(TransformerStates(), ",")
-
-	For i = 0 To UBound(entries)
-
-		If entries(i) <> "" Then
-
-			pair = Split(entries(i), ":")
-			id   = CInt(pair(0))
-
-			If id <> triggerId And id <> impedeId And pair(1) = "0" Then
-				CountDestinations = CountDestinations + 1
-			End If
-
-		End If
-
-	Next
-
-End Function
-
-' The pair of busbars this instance moves, or "" when it moves none.
-'
-' Text and not a link, because a busbar is not an XObject there is anything
-' to bind to - the four other properties that name equipment are links, and
-' this one could not be.
-'
-' One property and not two. A flag reading "this is a busbar automation"
-' beside a name saying which busbar would be two ways of writing one fact,
-' and two ways of writing one fact can be made to disagree; a name that is
-' either there or is not answers both questions and cannot.
-'
-' Empty is the ordinary case and the safe one: an instance nobody
-' configured, or one predating the property, is a transformer automation.
-Function BusbarPair()
-
-	BusbarPair = ""
-
-	On Error Resume Next
-	BusbarPair = Trim(xatm_TMTNM.BusbarPair & "")
-	On Error Goto 0
-
-End Function
-
-
-' Which of the four busbar sequences a TM or an NM on this instance is, and
-' "" for a pair that names none of them.
-'
-' The mode says which way round - out or back - and the pair says which
-' busbars, so the two together name one sequence: TM on B1A-B4A is TMB1A
-' and NM on B2B-B3A is NMB2B.
-Function BusbarMode(mode, pair)
-
-	BusbarMode = ""
-
-	Select Case UCase(pair)
-
-		Case "B1A-B4A"
-			BusbarMode = mode & "B1A"
-
-		Case "B2B-B3A"
-			BusbarMode = mode & "B2B"
-
-	End Select
-
-End Function
-
-
-' The maneuver as the spec writes it, for anything a person reads.
-Function BusbarLabel(mode)
-
-	Select Case mode
-
-		Case "TMB1A"
-			BusbarLabel = "TM B1A-B4A"
-
-		Case "NMB1A"
-			BusbarLabel = "NM B1A-B4A"
-
-		Case "TMB2B"
-			BusbarLabel = "TM B2B-B3A"
-
-		Case "NMB2B"
-			BusbarLabel = "NM B2B-B3A"
-
-		Case Else
-			BusbarLabel = mode
-
-	End Select
-
-End Function
-
-
-' The layout this substation is configured as, read the way the step logic
-' reads it. Written out again here because one E3 object cannot call a
-' procedure in another's scope.
-Function GetLayoutType()
-
-	GetLayoutType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value & "_" & _
-					Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
-
-End Function
-
-
-' Which pair of gates a maneuver answers to.
-'
-' The mode, and the transformer it assumes is out where there is one: TM,
-' TM200, NM400. The same names the command tags carry, so the command and
-' the gates that let it through are one string apart.
-'
-Function GateSuffix(mode, impedeId)
-
-	If impedeId = 0 Then
-		GateSuffix = mode
-	Else
-		GateSuffix = mode & impedeId
-	End If
-
-End Function
-
-
-' One gate, read by the name built for it.
-'
-' E3 gives no way to index an XObject properties, so the read is late
-' bound - the same Execute and scratch cell the configuration import uses
-' to write one.
-'
-' A property that is not there leaves the default and adds its name to
-' missing. Reported rather than assumed either way round: defaulting a
-' precondition to True would let a maneuver run on a gate nobody wrote,
-' and defaulting it to False would bar every maneuver with nothing said
-' about why.
-Function ReadGate(propertyName, defaultValue, ByRef missing)
-
-	gGateValue = defaultValue
-
-	Dim failed
-	failed = False
-
-	On Error Resume Next
-	Err.Clear
-	Execute "gGateValue = xatm_TMTNM." & propertyName
-	If Err.Number <> 0 Then failed = True
-	Err.Clear
-	On Error Goto 0
-
-	If failed Then
-
-		If missing <> "" Then missing = missing & ", "
-		missing = missing & propertyName
-		gGateValue = defaultValue
-
-	End If
-
-	ReadGate = CBool(gGateValue)
-
-End Function
-
-' Scratch cell for the late-bound read, the way the configuration import
-' keeps one for its writes.
-Dim gGateValue
-
-
-' Logs the rejection and clears the trigger without re-firing.
-' Uses the explicit tag path (not Me) so it is safe to call from a helper.
-Sub Reject(reason, ts)
-
-	WriteLog "Not started - " & reason
-	WriteEx "", ts
-
-End Sub
-
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-	
-End Sub
-
-<xatm_TMTNM.FSM.Main:Main_Completed()>
-Sub Main_Completed()
-	
-	Parent.Item("TriggerTransformerId").WriteEx  Empty, 0
-	Parent.Item("AutomationType").WriteEx Empty, 0
-	Parent.Item("StepTimer").WriteEx  Empty, 0
-	WriteEx  Empty, 0
-	
-    xatm_TMTNM.Running = False
-    WriteLog "Automation completed successfully."
-            	
-End Sub
-
-<xatm_TMTNM.FSM.Main:Main_Functions()>
-Sub Main_Functions()
-End Sub
-
-
-Function GetDeviceById(id, ByRef exists)
-    
-    exists = False
-    Set GetDeviceById = FindInFolder(Application.GetObject("XATM_Data.Substation"), id, exists)
-    
-End Function
-
-Function FindInFolder(folder, id, ByRef exists)
-    
-    Set FindInFolder = Nothing
-        
-    Dim obj
-
-    For Each obj In folder
-        
-        Select Case UCase(TypeName(obj))
-
-            Case "XATM_BREAKER", "XATM_TRANSFORMER", "XATM_DISCONNECTOR"
-                If obj.Id = id Then
-                    Set FindInFolder = obj
-                    exists = True
-                    Exit Function
-                End If
-
-            Case Else
-                ' Not a device -> treat as a subfolder and recurse.
-                Dim found
-                On Error Resume Next
-                Set found = FindInFolder(obj, id, exists)
-                On Error GoTo 0
-
-                If exists Then
-                    Set FindInFolder = found
-                    Exit Function
-                End If
-
-        End Select
-        
-    Next
-
-End Function
-
-Function GetLayoutType()
-
-	GetLayoutType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value & "_" & _
-					Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
-	
-End Function
-
-Sub ResetTimer()
-
-    Parent.Item("StepTimer").Value = 0
-    
-End Sub
-
-Sub IncrementTimer()
-
-    Parent.Item("StepTimer").Value = Parent.Item("StepTimer").Value + 1
-    
-End Sub
-
-Function OperationName(operation)
-	If operation = 2 Then
-		OperationName = "closed"
-	ElseIf operation = 1 Then
-		OperationName = "opened"
-	Else
-		OperationName = "operated"
-	End If
-End Function
-' Which transformer the running maneuver is treating as out of service, or 0
-' for none. Written once by Start_OnChangedValue - declared by the operator
-' for TM and NM, read off the field for TA - and constant for the whole run,
-' so no step can be handed a different contingency than the step before it.
-'
-' The spec pairs every maneuver with at most one impediment: Tabela 1
-' situations 2-5 are the states a sequence starts from, and 6-11 - two
-' transformers out - are the states they end in, with no sequence leaving
-' them. So this is one Id and not a set.
-Function ReadImpededId()
-
-	Dim id
-	id = 0
-
-	On Error Resume Next
-	id = Parent.Item("ImpededTransformerId").Value
-	On Error Goto 0
-
-	If IsEmpty(id) Or IsNull(id) Then id = 0
-	If Not IsNumeric(id) Then id = 0
-
-	ReadImpededId = CInt(id)
-
-End Function
-
-' The maneuver as the spec writes it, for anything a person reads. Its own
-' copy, because one E3 object cannot call a procedure in another's scope.
-Function BusbarLabel(mode)
-
-	Select Case mode
-
-		Case "TMB1A"
-			BusbarLabel = "TM B1A-B4A"
-
-		Case "NMB1A"
-			BusbarLabel = "NM B1A-B4A"
-
-		Case "TMB2B"
-			BusbarLabel = "TM B2B-B3A"
-
-		Case "NMB2B"
-			BusbarLabel = "NM B2B-B3A"
-
-		Case Else
-			BusbarLabel = mode
-
-	End Select
-
-End Function
-
-
-' Whether the running maneuver is one of the two busbar ones.
-Function IsBusbarMode(mode)
-
-	Select Case mode
-
-		Case "TMB1A", "NMB1A", "TMB2B", "NMB2B"
-			IsBusbarMode = True
-
-		Case Else
-			IsBusbarMode = False
-
-	End Select
-
-End Function
-
-
-' The two ties a busbar maneuver works, in the order it works them: which
-' = 1 is the one to close, which = 2 the one to open.
-'
-'   TM B1A-B4A   close DJ10 (900), open DJ20 (700)   B1A leaves TR1 for TR4
-'   NM B1A-B4A   close DJ20 (700), open DJ10 (900)   and comes back
-'   TM B2B-B3A   close DJ50 (730), open DJ40 (720)   B2B leaves TR2 for TR3
-'   NM B2B-B3A   close DJ40 (720), open DJ50 (730)   and comes back
-'
-' Make before break both ways round, and that is worth saying because the
-' spec's normalisation tables read the other way at a glance: they carry an
-' upward arrow and are read from the bottom row up, so what looks like an
-' open followed by a close is a close followed by an open. The busbar is
-' live throughout either maneuver and stays live - it is the pair of ties
-' that swaps, and all that separates a transfer from its normalisation is
-' which of the two closes first.
-'
-' 0 for a mode that names no tie, which the step reports rather than acting
-' on: a busbar maneuver that reached a step with nothing to operate is a
-' maneuver this table does not know, not a breaker that failed.
-Function BusbarTie(mode, which)
-
-	BusbarTie = 0
-
-	Select Case mode
-
-		Case "TMB1A"
-			If which = 1 Then BusbarTie = 900 Else BusbarTie = 700
-
-		Case "NMB1A"
-			If which = 1 Then BusbarTie = 700 Else BusbarTie = 900
-
-		Case "TMB2B"
-			If which = 1 Then BusbarTie = 730 Else BusbarTie = 720
-
-		Case "NMB2B"
-			If which = 1 Then BusbarTie = 720 Else BusbarTie = 730
-
-	End Select
-
-End Function
-
-
-' One step of a busbar maneuver: operate the tie this step is for, and go
-' on once it has moved.
-'
-' Both steps in one procedure because both are the same procedure - one
-' breaker taken to one position - where each transformer maneuver picks its
-' path from the trigger and the contingency and so needs a step of its own.
-' Step 1 closes and hands over to step 2; step 2 opens and the sequence is
-' done, which is why nothing beyond step 2 ever sees these modes.
-Sub SBB(stepNumber, mode)
-
-	Dim action, nextStep
-
-	If stepNumber = 1 Then
-		action   = 2
-		nextStep = 2
-	Else
-		action   = 1
-		nextStep = 99
-	End If
-
-	Dim breakerId
-	breakerId = BusbarTie(mode, stepNumber)
-
-	If breakerId = 0 Then
-
-		WriteLog "Step " & stepNumber & ": " & mode & " names no tie breaker for this step. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step " & stepNumber & ": Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step " & stepNumber & ": " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = nextStep
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-
-Sub WriteLog(message)
-	
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-	
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-	
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-		
-End Sub
-
-<xatm_TMTNM.FSM.Main:Main_GlobalLockout()>
-Sub Main_GlobalLockout()
-	
-	xatm_TMTNM.Running 		= False
-	xatm_TMTNM.GeneralBlock 	= True
-
-	Select Case Value
-		Case 1 : xatm_TMTNM.StepExecutionFailed1 = True
-		Case 2 : xatm_TMTNM.StepExecutionFailed2 = True
-		Case 3 : xatm_TMTNM.StepExecutionFailed3 = True
-		Case 4 : xatm_TMTNM.StepExecutionFailed4 = True
-		Case 5 : xatm_TMTNM.StepExecutionFailed5 = True
-		Case 6 : xatm_TMTNM.StepExecutionFailed6 = True
-	End Select
-	
-	WriteLog "Global lockout activated due to automation failure."
-	
-End Sub
-
-<xatm_TMTNM.FSM.Main:Main_Main()>
-Sub Main_Main()
-	
-	Const STEP_1_TIMER = 30
-
-	If Not xatm_TMTNM.Enabled Then
-		
-		WriteLog "Automation not enabled."
-		xatm_TMTNM.Running = False
-		Exit Sub
-	
-	End If
-	
-	If Not xatm_TMTNM.Running Then
-		Exit Sub
-	End If
-	
-	Select Case Value
-		
-		Case 0
-			
-			Main_Step00()
-		
-		Case 1
-			
-			If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-				
-				Main_Step01()
-				
-			Else
-				
-				WriteLog "Step 1: Execution failed - Timeout exceeded."
-				Main_GlobalLockout
-				Exit Sub
-				
-			End If
-
-        Case 2
-
-            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
-                Main_Step02()
-                
-            Else
-                
-                WriteLog "Step 2: Execution failed - Timeout exceeded."
-                Main_GlobalLockout
-				Exit Sub
-				
-            End If
-        
-        Case 3
-
-            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
-                Main_Step03()
-                
-            Else
-                
-                WriteLog "Step 3: Execution failed - Timeout exceeded."
-                Main_GlobalLockout
-				Exit Sub
-                
-            End If
-
-        Case 4
-            
-            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
-                Main_Step04()
-                
-            Else
-                
-                WriteLog "Step 4: Execution failed - Timeout exceeded."
-                Main_GlobalLockout
-				Exit Sub
-				
-            End If
-        
-        Case 5
-            
-            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
-                Main_Step05()
-                
-            Else
-                
-                WriteLog "Step 5: Execution failed - Timeout exceeded."
-                Main_GlobalLockout
-				Exit Sub
-				
-            End If
-
-        Case 6
-
-            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
-                
-                Main_Step06()
-                
-            Else
-                
-                WriteLog "Step 6: Execution failed - Timeout exceeded."
-                Main_GlobalLockout
-				Exit Sub
-				
-            End If
-
-        Case 99
-			
-			Main_Completed()
-			
-	End Select
-	
-	IncrementTimer()
-
-End Sub
-
-<xatm_TMTNM.FSM.Main:Main_Step00()>
-Sub Main_Step00()
-
-	WriteLog "Starting " & DescribeAutomation()
-
-	Value = 1
-
-End Sub
-
-' Human-readable summary of the running automation for the step log,
-' using transformer names, e.g. "TM TR-01 - TR-02 out of service".
-Function DescribeAutomation()
-
-	Dim autoType
-	autoType  = Parent.Item("AutomationType").Value
-
-	Dim triggerId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-
-	Dim impedeId
-	impedeId  = ReadImpededId()
-
-	' A busbar maneuver is not about the transformer and has no
-	' contingency, so it names itself and stops there.
-	If IsBusbarMode(autoType) Then
-		DescribeAutomation = BusbarLabel(autoType)
-	ElseIf impedeId = 0 Then
-		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - no transformer out of service"
-	Else
-		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - " & TransformerName(impedeId) & " out of service"
-	End If
-
-End Function
-
-' Transformer name for an id, falling back to "ID <n>" when not found.
-Function TransformerName(id)
-
-	Dim transformer, exists
-	Set transformer = GetDeviceById(id, exists)
-
-	If exists Then
-		TransformerName = transformer.Name
-	Else
-		TransformerName = "ID " & id
-	End If
-
-End Function
-
-Sub Foo()
-
-End Sub
-
-<xatm_TMTNM.FSM.Main:Main_Step01()>
-Sub Main_Step01()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-		
-	Select Case Parent.Item("AutomationType").Value
-		
-		Case "TM"
-			
-			S1TM triggerId, impedeId
-		
-		Case "NM"
-
-			S1NM triggerId, impedeId
-		
-		' The busbar maneuvers take neither argument: which busbar and
-		' which way round is the whole of what they need, and the mode
-		' carries both.
-		Case "TMB1A", "NMB1A", "TMB2B", "NMB2B"
-
-			SBB 1, Parent.Item("AutomationType").Value
-			
-	End Select
-	
-End Sub
-
-Sub S1NM(triggerId, impedeId)
-
-	Dim breakerId, action
-	action = 2
-
-	' NM always starts by re-closing the trigger transformer's own breaker.
-	breakerId = triggerId + 20
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 1: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 1: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 2
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-Sub S1TM(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 2
-
-		Select Case triggerId
-
-			Case 100
-				If impedeId = 200 Then
-					breakerId = 700
-				Else
-					breakerId = 900
-				End If
-
-			Case 200
-				If impedeId = 100 Then
-					breakerId = 700
-				ElseIf impedeId = 300 Or impedeId = 400 Then
-					breakerId = 730
-				Else
-					breakerId = 900
-				End If
-
-			Case 300
-				If impedeId = 100 Then
-					breakerId = 720
-				ElseIf impedeId = 200 Then
-					breakerId = 700
-				ElseIf impedeId = 400 Then
-					breakerId = 900
-				Else
-					breakerId = 740
-				End If
-
-			Case 400
-				If impedeId = 100 Then
-					breakerId = 720
-				ElseIf impedeId = 200 Then
-					breakerId = 700
-				ElseIf impedeId = 300 Then
-					breakerId = 730
-				Else
-					breakerId = 740
-				End If
-
-		End Select
-
-	Else
-
-		' ================
-		' DEFAULT
-		' ================
-		action = 2
-	 	breakerId = 700
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 1: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 1: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 2
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-<xatm_TMTNM.FSM.Main:Main_Step02()>
-Sub Main_Step02()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-		
-	Select Case Parent.Item("AutomationType").Value
-		
-		Case "TM"
-			
-			S2TM triggerId, impedeId
-		
-		Case "NM"
-
-			S2NM triggerId, impedeId
-
-		' The busbar maneuvers take neither argument: which busbar and
-		' which way round is the whole of what they need, and the mode
-		' carries both.
-		Case "TMB1A", "NMB1A", "TMB2B", "NMB2B"
-
-			SBB 2, Parent.Item("AutomationType").Value
-			
-	End Select
-	
-End Sub
-
-Sub S2NM(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action, nextStep
-	nextStep = 3
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 1
-
-		Select Case triggerId
-
-			Case 100
-				If impedeId = 200 Then
-					breakerId = 700
-				Else
-					breakerId = 710
-				End If
-
-			Case 200
-				If impedeId = 100 Then
-					breakerId = 720
-				Else
-					breakerId = 710
-				End If
-
-			Case 300
-				If impedeId = 400 Then
-					breakerId = 730
-				ElseIf impedeId = 100 Or impedeId = 200 Then
-					breakerId = 740
-				Else
-					breakerId = 740
-					nextStep = 99    ' no contingency: sequence ends here
-				End If
-
-			Case 400
-				If impedeId = 300 Then
-					breakerId = 900
-				ElseIf impedeId = 100 Or impedeId = 200 Then
-					breakerId = 740
-				Else
-					breakerId = 740
-					nextStep = 99    ' no contingency: sequence ends here
-				End If
-
-		End Select
-
-	Else
-
-		' ==============
-		' DEFAULT
-		' ==============
-		action = 1
-		breakerId = 700
-		nextStep = 99
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 2: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 2: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = nextStep
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-Sub S2TM(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 1
-
-		nextStep = 3
-
-		Select Case triggerId
-
-			Case 100
-				If impedeId = 200 Then
-					breakerId = 120
-				Else
-					breakerId = 700
-				End If
-
-			Case 200
-				If impedeId = 100 Then
-					breakerId = 710
-				ElseIf impedeId = 300 Or impedeId = 400 Then
-					breakerId = 720
-				Else
-					breakerId = 700
-				End If
-
-			Case 300
-				If impedeId = 100 Then
-					breakerId = 730
-				ElseIf impedeId = 200 Then
-					breakerId = 900
-				ElseIf impedeId = 400 Then
-					breakerId = 740
-				Else
-					breakerId = 320
-					nextStep = 99    ' no contingency: sequence ends here
-				End If
-
-			Case 400
-				If impedeId = 100 Then
-					breakerId = 730
-				ElseIf impedeId = 200 Then
-					breakerId = 900
-				ElseIf impedeId = 300 Then
-					breakerId = 740
-				Else
-					breakerId = 420
-					nextStep = 99    ' no contingency: sequence ends here
-				End If
-
-		End Select
-
-	Else
-
-		' ==============
-		' DEFAULT
-		' ==============
-		action = 1
-		breakerId = triggerId + 20
-		nextStep = 99
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 2: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 2: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = nextStep
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-<xatm_TMTNM.FSM.Main:Main_Step03()>
-Sub Main_Step03()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-		
-	Select Case Parent.Item("AutomationType").Value
-		
-		Case "TM"
-			
-			S3TM triggerId, impedeId
-		
-		Case "NM"
-
-			S3NM triggerId, impedeId
-		
-	End Select
-	
-End Sub
-
-Sub S3NM(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 2
-
-		Select Case triggerId
-
-			Case 100
-				If impedeId = 200 Then
-					breakerId = 710
-				ElseIf impedeId = 300 Or impedeId = 400 Then
-					breakerId = 700
-				Else
-					breakerId = 720
-				End If
-
-			Case 200
-				If impedeId = 100 Then
-					breakerId = 710
-				Else
-					breakerId = 720
-				End If
-
-			Case 300
-				If impedeId = 100 Then
-					breakerId = 730
-				ElseIf impedeId = 200 Then
-					breakerId = 900
-				ElseIf impedeId = 400 Then
-					breakerId = 740
-				End If
-
-			Case 400
-				If impedeId = 100 Then
-					breakerId = 730
-				ElseIf impedeId = 200 Then
-					breakerId = 900
-				ElseIf impedeId = 300 Then
-					breakerId = 740
-				End If
-
-		End Select
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 3: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 3: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 4
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-Sub S3TM(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 2
-
-		Select Case triggerId
-
-			Case 100
-				If impedeId = 200 Then
-					breakerId = 720
-				ElseIf impedeId = 300 Or impedeId = 400 Then
-					breakerId = 710
-				Else
-					breakerId = 730
-				End If
-
-			Case 200
-				If impedeId = 100 Then
-					breakerId = 720
-				ElseIf impedeId = 300 Or impedeId = 400 Then
-					breakerId = 710
-				Else
-					breakerId = 730
-				End If
-
-			Case 300
-				If impedeId = 100 Or impedeId = 200 Then
-					breakerId = 740
-				ElseIf impedeId = 400 Then
-					breakerId = 730
-				End If
-
-			Case 400
-				If impedeId = 100 Or impedeId = 200 Then
-					breakerId = 740
-				ElseIf impedeId = 300 Then
-					breakerId = 900
-				End If
-
-		End Select
-
-	Else
-
-		action = 2
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 3: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 3: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 4
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-	
-End Sub
-
-<xatm_TMTNM.FSM.Main:Main_Step04()>
-Sub Main_Step04()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-		
-	Select Case Parent.Item("AutomationType").Value
-		
-		Case "TM"
-			
-			S4TM triggerId, impedeId
-		
-		Case "NM"
-
-			S4NM triggerId, impedeId
-		
-	End Select
-	
-End Sub
-
-Sub S4NM(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action, nextStep
-	nextStep = 99
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 1
-
-		Select Case triggerId
-
-			Case 100
-				If impedeId = 200 Then
-					breakerId = 720
-				ElseIf impedeId = 300 Or impedeId = 400 Then
-					breakerId = 900
-				Else
-					breakerId = 730
-					nextStep = 5    ' sequence continues
-				End If
-
-			Case 200
-				If impedeId = 100 Then
-					breakerId = 700
-				ElseIf impedeId = 300 Or impedeId = 400 Then
-					breakerId = 730
-				Else
-					breakerId = 730
-					nextStep = 5    ' sequence continues
-				End If
-
-			Case 300
-				If impedeId = 100 Then
-					breakerId = 720
-				ElseIf impedeId = 200 Then
-					breakerId = 700
-				ElseIf impedeId = 400 Then
-					breakerId = 900
-				End If
-
-			Case 400
-				If impedeId = 100 Then
-					breakerId = 720
-				ElseIf impedeId = 200 Then
-					breakerId = 700
-				ElseIf impedeId = 300 Then
-					breakerId = 730
-				End If
-
-		End Select
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 4: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 4: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = nextStep
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-Sub S4TM(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-
-	Dim nextStep
-	nextStep = 99
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 1
-
-		Select Case triggerId
-
-			Case 100
-				If impedeId = 200 Then
-					breakerId = 710
-				ElseIf impedeId = 300 Or impedeId = 400 Then
-					breakerId = 120
-				Else
-					breakerId = 720
-					nextStep = 5    ' sequence continues
-				End If
-
-			Case 200
-				If impedeId = 100 Or impedeId = 300 Or impedeId = 400 Then
-					breakerId = 220
-				Else
-					breakerId = 720
-					nextStep = 5    ' sequence continues
-				End If
-
-			Case 300
-				breakerId = 320
-
-			Case 400
-				' Ends on DJ06/420. Spec 1.4.2.23's step table writes
-				' DESLIGA DJ05, but its own prose says "Ligar DJ-10 e
-				' desligar DJ-06", its end state puts B4A back on TR1, and
-				' DJ05 is already open whenever TR3 is impeded - so the
-				' table's step is a no-op that would leave TR4 connected
-				' and report success. Same typo as 1.4.3.16 for TA.
-				breakerId = 420
-
-		End Select
-
-	Else
-
-		action = 1
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 4: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 4: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = nextStep
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-	
-End Sub
-
-<xatm_TMTNM.FSM.Main:Main_Step05()>
-Sub Main_Step05()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-		
-	Select Case Parent.Item("AutomationType").Value
-		
-		Case "TM"
-			
-			S5TM triggerId, impedeId
-		
-		Case "NM"
-
-			S5NM triggerId, impedeId
-		
-	End Select
-	
-End Sub
-
-Sub S5NM(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 2
-
-		Select Case triggerId
-
-			Case 100, 200
-				breakerId = 700
-
-		End Select
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 5: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 5: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 6
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-Sub S5TM(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 2
-
-		Select Case triggerId
-
-			Case 100, 200
-
-				breakerId = 710
-
-		End Select
-
-	Else
-
-		action = 2
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 5: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 5: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 6
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-<xatm_TMTNM.FSM.Main:Main_Step06()>
-Sub Main_Step06()
-
-	Dim triggerId, impedeId
-	triggerId = Parent.Item("TriggerTransformerId").Value
-	impedeId  = ReadImpededId()
-		
-	Select Case Parent.Item("AutomationType").Value
-		
-		Case "TM"
-			
-			S6TM triggerId, impedeId
-		
-		Case "NM"
-
-			S6NM triggerId, impedeId
-		
-	End Select
-	
-End Sub
-
-Sub S6NM(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 1
-
-		Select Case triggerId
-
-			Case 100, 200
-				breakerId = 900
-
-		End Select
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 6: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 6: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 99
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
-Sub S6TM(triggerId, impedeId)
-
-	Dim layoutType
-	layoutType = GetLayoutType()
-
-	Dim breakerId, action
-
-	If layoutType = "4TR4LV_6BB6TIERING" Then
-
-		action = 1
-
-		Select Case triggerId
-
-			Case 100
-				breakerId = 120
-
-			Case 200
-				breakerId = 220
-
-		End Select
-
-	Else
-
-		action = 1
-
-	End If
-
-	Dim breaker, breakerExists
-	Set breaker = GetDeviceById(breakerId, breakerExists)
-
-	If Not breakerExists Then
-
-		WriteLog "Step 6: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
-		Main_GlobalLockout()
-		Exit Sub
-
-	End If
-
-	If breaker.Item("Data").Item("Position").Value = action Then
-
-		WriteLog "Step 6: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
-		ResetTimer()
-		Value = 99
-		Exit Sub
-
-	End If
-
-	Select Case breaker.Item("Data").Item("CommandInProgress").Value
-
-		Case 0, 3
-
-			' Idle - issue the command
-			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
-
-		Case 1
-
-			' Command execution failed
-			Main_GlobalLockout()
-			Exit Sub
-
-		Case 2
-
-			' Command in progress
-			Exit Sub
-
-	End Select
-
-End Sub
-
 
 <xatm_Breaker.Data.CommandInProgress:CommandInProgress_OnChangedValue()>
 Sub CommandInProgress_OnChangedValue()
@@ -4086,7 +127,7 @@ Sub CommandOpenClose_OnChangedValue()
 
 	End If
 
-	' --- Flag command in progress (drives the command timer / BTC) ---
+	' --- Flag command in progress (drives the command timer / TMTNM) ---
 	If Parent.Item("CommandInProgress").Value <> 2 Then
 		Parent.Item("CommandInProgress").WriteEx 2
 	End If
@@ -4095,7 +136,7 @@ End Sub
 
 ' Whether the library driving this breaker is the demo build.
 '
-' Read off the xatm_Build the breaker carries, so the answer comes from
+' Read off the xatm_Version the breaker carries, so the answer comes from
 ' the same library file as this code - not from a constant copied into
 ' this scope, which would be a second thing to flip, and not from a
 ' singleton in another project, which a site might not have deployed.
@@ -4727,13 +768,16 @@ Sub xatm_Build_OnStartRunning()
 	' it without having to know where it came from.
 	'
 	' One of these sits inside every breaker and every disconnector, so the
-	' command gate can ask the device it is already holding rather than
-	' reach into another project for the answer.
+	' command gate can ask the device it is already holding. One more stands
+	' alone in xatm_config_data, and that is the one the console line and
+	' the screen label read.
 	'
 	' Nothing here is configured. The class comes from whichever
 	' xatm_lib.lib the domain has loaded, so swapping the file swaps what
 	' every instance says at once - which is the whole mechanism.
-	Demo = DEMO_BUILD
+	Version      = LIBRARY_VERSION
+	ReleaseNotes = RELEASE_NOTES
+	Demo         = DEMO_BUILD
 
 	' The same fact as a word, for a label to bind to. Derived rather than
 	' declared, so it cannot come to disagree with the flag - and the gate
@@ -4741,26 +785,81 @@ Sub xatm_Build_OnStartRunning()
 	' a string comparison is not a thing to put in front of a switchyard.
 	Edition = IIf(DEMO_BUILD, "DEMO", "RUNTIME")
 
+	If ShouldAnnounce() Then WriteLog Announcement()
+
 End Sub
 
 
-' Which of the two builds this is, and the only place it is written down.
+' The library's identity, and the one line that differs between the two
+' builds that ship.
 '
-' Building the pair is: flip this, export, protect the runtime one. The
-' command gate keeps no copy - it reads the instance its own breaker
-' carries - so there is no second flag to fall out of step with this one.
+' This is the only place either fact is written down. The command gate does
+' not keep a copy - it reads the instance its own breaker carries - so
+' there is no second constant to fall out of step, and no dependency on a
+' project a site might not deploy.
 '
-' Which version the library is says nothing about whether it may operate
-' anything, and lives on xatm_Version instead: one object standing in the
-' data project, rather than a copy inside every device. Two facts about
-' the same file, wanted in different places, kept apart.
-Const DEMO_BUILD = True
+' Building the pair is: flip DEMO_BUILD, export, protect the runtime one.
+Const LIBRARY_VERSION = "1.0.0"
+Const RELEASE_NOTES   = "Initial commit."
+Const DEMO_BUILD      = True
 
 
-' A scope may not end on a Function - E3 takes the script without
-' complaint and then behaves as though the last one were not there. This
-' one ends on a Const, which is no better a thing to rely on.
-Sub BuildConstants()
+' Whether this copy is the one that talks.
+'
+' A station carries one per breaker and one per disconnector - dozens of
+' them - and none of those should say anything at start. The one that does
+' is the instance standing on its own in a data server rather than inside
+' another object.
+Function ShouldAnnounce()
+
+	Dim parentType
+	parentType = ""
+
+	On Error Resume Next
+	parentType = TypeName(Parent)
+	On Error Goto 0
+
+	ShouldAnnounce = (LCase(Left(parentType & "", 5)) <> "xatm_")
+
+End Function
+
+
+' What goes on the console at start, in the two shapes it can take.
+'
+' The demo line says what is withheld rather than only that something is:
+' an engineer who reads that the build is a demo and nothing more will
+' still expect the switchyard to move.
+Function Announcement()
+
+	If DEMO_BUILD Then
+
+		Announcement = "xatm_lib " & LIBRARY_VERSION & " - DEMO build - " & _
+		               "commands reach simulated equipment only; nothing is sent to the switchyard."
+
+	Else
+
+		Announcement = "xatm_lib " & LIBRARY_VERSION & " - runtime build."
+
+	End If
+
+End Function
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+	
 End Sub
 
 <xatm_ConsoleLogEngine.WriteLine:xatm_ConsoleLogEngine_OnWriteLineChanged()>
@@ -4969,21 +1068,21 @@ Sub CommandOpenClose_OnChangedValue()
 
 	End If
 
-	' --- Flag command in progress (drives the command timer / BTC) ---
+	' --- Flag command in progress (drives the command timer / TMTNM) ---
 	If Parent.Item("CommandInProgress").Value <> 2 Then
 		Parent.Item("CommandInProgress").WriteEx 2
 	End If
 
 End Sub
 
-' Whether the library driving this disconnector is the demo build.
+' Whether the library driving this breaker is the demo build.
 '
-' Read off the xatm_Build the disconnector carries, so the answer comes
-' from the same library file as this code - not from a constant copied
-' into this scope, which would be a second thing to flip, and not from a
+' Read off the xatm_Version the breaker carries, so the answer comes from
+' the same library file as this code - not from a constant copied into
+' this scope, which would be a second thing to flip, and not from a
 ' singleton in another project, which a site might not have deployed.
 '
-' Fails closed. A disconnector with no Build inside it is one driven by a
+' Fails closed. A breaker with no Build inside it is one driven by a
 ' library too old to have the class at all, and that is not a library to
 ' let near a switchyard.
 Function IsDemoBuild()
@@ -6791,6 +2890,3953 @@ Sub Succeed()
 	
 End Sub
 
+<xatm_TA.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
+Sub OperatorBlock_CommandOperatorBlock()
+	
+	Dim v
+	v = False
+	
+	On Error Resume Next
+	v = CBool(xatm_TA.CommandOperatorBlock.Value)
+	On Error Goto 0
+	
+	xatm_TA.OperatorBlock = v
+
+End Sub
+
+<xatm_TA.Commands.OperatorBlock:OperatorBlock_OnChangedValue()>
+Sub OperatorBlock_OnChangedValue()
+	
+	If xatm_TA.OperatorBlock Then
+		WriteLog "Blocked by operator."
+	Else
+		WriteLog "Released by operator."
+	End If
+
+End Sub
+	
+Sub WriteLog(message)
+	
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+	
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+	
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+			
+End Sub
+
+<xatm_TA.Commands.Reset:Reset_OnChangedTimeStamp()>
+Sub Reset_OnChangedTimeStamp()
+	
+	If CBool(Value) Then
+		
+		Reset()
+		
+	End If
+	
+End Sub
+
+Sub Reset()
+	
+	xatm_TA.Running 		= False
+	xatm_TA.GeneralBlock	= False
+	
+	' ===============
+	' RESET ALL STEP FAIL POINTS
+	' ===============
+	Dim i
+	For i = 1 To 6
+		Dim propName
+		propName = "StepExecutionFailed" & i
+		
+		On Error Resume Next
+		Execute("xatm_TA." & propName & " = False")
+		On Error Goto 0
+	Next
+	
+	Dim tag
+	For Each tag In xatm_TA.Item("FSM")
+		
+		If TypeName(tag) = "InternalTag" Then
+
+			tag.WriteEx Empty, tag.TimeStamp
+		
+		End If
+		
+	Next
+	
+	' ================
+	' RESET ALL DEVICES
+	' ================
+	ResetDevices Application.GetObject("XATM_Data.Substation")
+	
+	WriteLog "Reset"
+
+End Sub
+
+Sub ResetDevices(folder)
+	
+	For Each obj In folder
+	
+		If TypeName(obj) = "xatm_Breaker" Then
+		
+			On Error Resume Next
+			obj.Item("Data").Item("Reset").WriteEx True
+			On Error Goto 0
+			
+		Else
+		
+			ResetDevices obj
+		
+		End If
+	
+	Next
+
+End Sub
+	
+Sub WriteLog(message)
+	
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+	
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+	
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+	
+End Sub
+
+<xatm_TA.Commands.Reset:Reset_Reset()>
+Sub Reset_Reset()
+	
+	If xatm_TA.CommandReset.Value = 0 Then Exit Sub
+	
+	WriteEx True
+		
+End Sub
+
+<xatm_TA.Commands.Start:Start_OnChangedValue()>
+Sub Start_OnChangedValue()
+
+	If Trim(Value) = "" Then Exit Sub      ' self-cleared write, ignore
+
+	Dim ts
+	ts = TimeStamp	' preserve for the silent clear
+
+	Dim parts
+	parts = Split(Me.Value, ":")
+
+	' Two fields, and only two.
+	'
+	' Nobody commands an automatic transfer - it answers a trip - so there
+	' is no third field naming a contingency, because there was no operator
+	' to pick one. Which transformer is out is read off the field instead,
+	' below. That is the whole of what separates this class from the manual
+	' one, and it is why the two were pulled apart.
+	If UBound(parts) <> 1 Then
+		Reject "Invalid Start format '" & Me.Value & "' (expected TA:trigger).", ts
+		Exit Sub
+	End If
+
+	Dim mode
+	mode = UCase(Trim(parts(0)))
+
+	If mode <> "TA" Then
+		Reject "This automation runs TA and nothing else - '" & mode & "' was asked for.", ts
+		Exit Sub
+	End If
+
+	If Not IsNumeric(parts(1)) Then
+		Reject "Invalid trigger transformer '" & parts(1) & "'.", ts
+		Exit Sub
+	End If
+
+	Dim triggerId
+	triggerId = CInt(parts(1))
+
+	' ================
+	' WHICH TRANSFORMER IS OUT
+	' ================
+	'
+	' Read off the field, because the switchyard is what asked and the
+	' switchyard says nothing.
+	Dim impedeId, outCount
+	impedeId = FieldImpediment(triggerId, outCount)
+
+	' Tabela 1 situations 6-11 are two transformers out, and no sequence
+	' leaves them. Refusing is the honest answer; picking one of the two
+	' would run a sequence whose starting state is false.
+	If outCount > 1 Then
+
+		Reject "More than one transformer is out of service - no sequence is defined from there.", ts
+		Exit Sub
+
+	End If
+
+	' ================
+	' IS THE REQUEST ITSELF COHERENT
+	' ================
+	'
+	' Ahead of the gates below, because these say the request is malformed
+	' rather than that the switchyard is not ready for it.
+
+	If Not IsConfiguredTransformer(triggerId) Then
+
+		Reject "Trigger transformer " & triggerId & " is not configured in this substation.", ts
+		Exit Sub
+
+	End If
+
+	' A transfer needs somewhere to put the load. Anything that is neither
+	' the trigger nor out of service can take it; with none left there is
+	' nothing to transfer to and no sequence to run.
+	If CountDestinations(triggerId, impedeId) = 0 Then
+
+		Reject "No transformer is left to take the load.", ts
+		Exit Sub
+
+	End If
+
+	' ================
+	' GATE CHECKS
+	' ================
+
+	If Not xatm_TA.Enabled Then
+
+		Reject "Automation disabled.", ts
+		Exit Sub
+
+	End If
+
+	If xatm_TA.Running Then
+
+		Reject "Already running.", ts
+		Exit Sub
+
+	End If
+
+	If xatm_TA.OperatorBlock Then
+
+	 	Reject "Blocked by operator.", ts
+		Exit Sub
+
+	End If
+
+	If xatm_TA.GeneralBlock Then
+
+	 	Reject "General interlock active.", ts
+	 	Exit Sub
+
+	End If
+
+	' One pair of gates, and named outright rather than built from the mode.
+	'
+	' The manual class keeps a pair per contingency because an operator
+	' picks which maneuver to run and each one closes a different path. This
+	' one is picked by a trip; there is nothing for a gate name to vary
+	' with, and a scheme that restores a dead busbar should not have five
+	' ways to be barred.
+	'
+	' Both are read before either is judged, so a manifest that has not been
+	' rebuilt is reported as the configuration fault it is rather than
+	' surfacing as a maneuver that will not start for no stated reason.
+	Dim missing, blocked, permitted
+	missing = ""
+
+	blocked   = ReadGate("AutomaticBlock", False, missing)
+	permitted = ReadGate("Preconditions",  True,  missing)
+
+	If missing <> "" Then
+
+		Reject "this automation has no " & missing & " - the manifest has not been rebuilt.", ts
+		Exit Sub
+
+	End If
+
+	If blocked Then
+
+		Reject "Blocked by field conditions (AutomaticBlock).", ts
+		Exit Sub
+
+	End If
+
+	' This one reads the other way round - the expression on it says when
+	' the maneuver may go ahead, so it is the absence of it that rejects.
+	If Not permitted Then
+
+		Reject "Preconditions are not met (Preconditions).", ts
+		Exit Sub
+
+	End If
+
+	If AnyOtherAutomationRunning() Then
+
+		Reject "Another automation is in progress.", ts
+		Exit Sub
+
+	End If
+
+	' ================
+	' START
+	' ================
+
+	xatm_TA.Item("FSM").Item("AutomationType").WriteEx mode
+	xatm_TA.Item("FSM").Item("TriggerTransformerId").WriteEx triggerId
+	xatm_TA.Item("FSM").Item("ImpededTransformerId").WriteEx impedeId
+	xatm_TA.Item("FSM").Item("StepTimer").WriteEx 0
+	xatm_TA.Item("FSM").Item("Main").WriteEx 0
+	xatm_TA.Running = True
+
+	If impedeId = 0 Then
+		WriteLog "Start - TA TR" & triggerId
+	Else
+		WriteLog "Start - TA TR" & triggerId & " with TR" & impedeId & " out of service"
+	End If
+
+	WriteEx "", ts ' clear without re-firing
+
+End Sub
+
+' True if any OTHER automation object is currently running (mutual exclusion).
+' Relies on a common Running property instead of enumerating each type.
+Function AnyOtherAutomationRunning()
+
+	AnyOtherAutomationRunning = False
+
+	Dim obj
+	For Each obj In Application.GetObject("XATM_Data.Automation")
+
+		If Not (obj Is xatm_TA) Then
+
+			Dim running
+			running = False
+			On Error Resume Next
+			running = obj.Running
+			On Error GoTo 0
+
+			If running Then
+				AnyOtherAutomationRunning = True
+				Exit Function
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+
+' Every transformer the substation has, as "<id>:<0|1>" pairs - the flag is
+' its out-of-service reading at the moment of asking.
+'
+' One walk, because the three questions below - is this Id configured, how
+' many are out, which one is out - are all answered off the same list.
+'
+' FSM.Main has GetDeviceById for the same job. E3 gives no way to call a
+' procedure in another object's scope, so this scope keeps its own, narrower
+' version: it only ever looks for transformers.
+Function TransformerStates()
+
+	Dim acc
+	acc = ""
+
+	On Error Resume Next
+	CollectTransformers Application.GetObject("XATM_Data.Substation"), acc
+	On Error Goto 0
+
+	TransformerStates = acc
+
+End Function
+
+Sub CollectTransformers(folder, ByRef acc)
+
+	Dim obj
+	For Each obj In folder
+
+		Select Case UCase(TypeName(obj))
+
+			Case "XATM_TRANSFORMER"
+
+				Dim id
+				id = Empty
+
+				On Error Resume Next
+				id = obj.Id
+				On Error Goto 0
+
+				If IsNumeric(id) Then
+
+					Dim flag
+					flag = 0
+
+					On Error Resume Next
+					If CBool(obj.OutOfService) Then flag = 1
+					On Error Goto 0
+
+					If acc <> "" Then acc = acc & ","
+					acc = acc & CInt(id) & ":" & flag
+
+				End If
+
+			Case "XATM_BREAKER", "XATM_DISCONNECTOR"
+
+				' a device, and not one this is looking for
+
+			Case Else
+
+				' Not a device -> treat as a subfolder and recurse.
+				On Error Resume Next
+				CollectTransformers obj, acc
+				On Error Goto 0
+
+		End Select
+
+	Next
+
+End Sub
+
+' True when id names a transformer this substation actually has.
+'
+' Without it a typo'd screen binding, or a command tag left unconfigured,
+' falls through every ElseIf in the step logic and lands on the Else that
+' means "nothing is out" - running a real maneuver on a live switchyard
+' under an assumption nobody made.
+Function IsConfiguredTransformer(id)
+
+	IsConfiguredTransformer = False
+
+	Dim entries, i, pair
+	entries = Split(TransformerStates(), ",")
+
+	For i = 0 To UBound(entries)
+
+		If entries(i) <> "" Then
+
+			pair = Split(entries(i), ":")
+
+			If CInt(pair(0)) = id Then
+				IsConfiguredTransformer = True
+				Exit Function
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+' How many transformers could take the load: everything that is neither the
+' trigger, nor the one declared out, nor out of service in the field.
+Function CountDestinations(triggerId, impedeId)
+
+	CountDestinations = 0
+
+	Dim entries, i, pair, id
+	entries = Split(TransformerStates(), ",")
+
+	For i = 0 To UBound(entries)
+
+		If entries(i) <> "" Then
+
+			pair = Split(entries(i), ":")
+			id   = CInt(pair(0))
+
+			If id <> triggerId And id <> impedeId And pair(1) = "0" Then
+				CountDestinations = CountDestinations + 1
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+' What StoreImpediments used to snapshot, reduced to the one Id the
+' sequences can take an argument for. This is the TA path: no operator said
+' anything, so the field is asked.
+'
+' The trigger is skipped. A transformer that has just tripped may carry the
+' out-of-service flag as well - stale, or set by whoever was about to work
+' on it - and counting it would make the maneuver its own impediment, which
+' Start then rejects. A protection-driven restoration refusing to run is the
+' worst way to be wrong: the busbars stay dead. StoreImpediments had the
+' same immunity, though by accident rather than on purpose - the step logic
+' simply never tested imp(trigger).
+'
+' outCount is how many OTHERS were found out, so the caller can tell "none
+' out" from "more out than any sequence covers" - 0 is returned for both.
+Function FieldImpediment(triggerId, ByRef outCount)
+
+	FieldImpediment = 0
+	outCount = 0
+
+	Dim entries, i, pair, id
+	entries = Split(TransformerStates(), ",")
+
+	For i = 0 To UBound(entries)
+
+		If entries(i) <> "" Then
+
+			pair = Split(entries(i), ":")
+			id   = CInt(pair(0))
+
+			If id <> triggerId And pair(1) = "1" Then
+
+				outCount = outCount + 1
+				If outCount = 1 Then FieldImpediment = id
+
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+' One gate, read by the name built for it.
+'
+' E3 gives no way to index an XObject properties, so the read is late
+' bound - the same Execute and scratch cell the configuration import uses
+' to write one.
+'
+' A property that is not there leaves the default and adds its name to
+' missing. Reported rather than assumed either way round: defaulting a
+' precondition to True would let a maneuver run on a gate nobody wrote,
+' and defaulting it to False would bar every maneuver with nothing said
+' about why.
+Function ReadGate(propertyName, defaultValue, ByRef missing)
+
+	gGateValue = defaultValue
+
+	Dim failed
+	failed = False
+
+	On Error Resume Next
+	Err.Clear
+	Execute "gGateValue = xatm_TA." & propertyName
+	If Err.Number <> 0 Then failed = True
+	Err.Clear
+	On Error Goto 0
+
+	If failed Then
+
+		If missing <> "" Then missing = missing & ", "
+		missing = missing & propertyName
+		gGateValue = defaultValue
+
+	End If
+
+	ReadGate = CBool(gGateValue)
+
+End Function
+
+' Scratch cell for the late-bound read, the way the configuration import
+' keeps one for its writes.
+Dim gGateValue
+
+
+' Logs the rejection and clears the trigger without re-firing.
+' Uses the explicit tag path (not Me) so it is safe to call from a helper.
+Sub Reject(reason, ts)
+
+	WriteLog "Not started - " & reason
+	WriteEx "", ts
+
+End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+		
+End Sub
+
+<xatm_TA.FSM.Main:Main_Completed()>
+Sub Main_Completed()
+		
+	Parent.Item("TriggerTransformerId").WriteEx  Empty, 0
+	Parent.Item("AutomationType").WriteEx Empty, 0
+	Parent.Item("StepTimer").WriteEx  Empty, 0
+	WriteEx  Empty, 0
+	
+    xatm_TA.Running = False
+    WriteLog "Automation completed successfully."
+            	
+End Sub
+
+<xatm_TA.FSM.Main:Main_Functions()>
+Sub Main_Functions()
+End Sub
+
+
+Function GetDeviceById(id, ByRef exists)
+    
+    exists = False
+    Set GetDeviceById = FindInFolder(Application.GetObject("XATM_Data.Substation"), id, exists)
+    
+End Function
+
+Function FindInFolder(folder, id, ByRef exists)
+    
+    Set FindInFolder = Nothing
+        
+    Dim obj
+
+    For Each obj In folder
+        
+        Select Case UCase(TypeName(obj))
+
+            Case "XATM_BREAKER", "XATM_TRANSFORMER", "XATM_DISCONNECTOR"
+                If obj.Id = id Then
+                    Set FindInFolder = obj
+                    exists = True
+                    Exit Function
+                End If
+
+            Case Else
+                ' Not a device -> treat as a subfolder and recurse.
+                Dim found
+                On Error Resume Next
+                Set found = FindInFolder(obj, id, exists)
+                On Error GoTo 0
+
+                If exists Then
+                    Set FindInFolder = found
+                    Exit Function
+                End If
+
+        End Select
+        
+    Next
+
+End Function
+
+Function GetLayoutType()
+
+	GetLayoutType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value & "_" & _
+					Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
+	
+End Function
+
+Sub ResetTimer()
+
+    Parent.Item("StepTimer").Value = 0
+    
+End Sub
+
+Sub IncrementTimer()
+
+    Parent.Item("StepTimer").Value = Parent.Item("StepTimer").Value + 1
+    
+End Sub
+
+Function OperationName(operation)
+	If operation = 2 Then
+		OperationName = "closed"
+	ElseIf operation = 1 Then
+		OperationName = "opened"
+	Else
+		OperationName = "operated"
+	End If
+End Function
+' Which transformer the running maneuver is treating as out of service, or 0
+' for none. Written once by Start_OnChangedValue - declared by the operator
+' for TM and NM, read off the field for TA - and constant for the whole run,
+' so no step can be handed a different contingency than the step before it.
+'
+' The spec pairs every maneuver with at most one impediment: Tabela 1
+' situations 2-5 are the states a sequence starts from, and 6-11 - two
+' transformers out - are the states they end in, with no sequence leaving
+' them. So this is one Id and not a set.
+Function ReadImpededId()
+
+	Dim id
+	id = 0
+
+	On Error Resume Next
+	id = Parent.Item("ImpededTransformerId").Value
+	On Error Goto 0
+
+	If IsEmpty(id) Or IsNull(id) Then id = 0
+	If Not IsNumeric(id) Then id = 0
+
+	ReadImpededId = CInt(id)
+
+End Function
+
+Sub WriteLog(message)
+	
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+	
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+	
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_TA.FSM.Main:Main_GlobalLockout()>
+Sub Main_GlobalLockout()
+	
+	xatm_TA.Running 		= False
+	xatm_TA.GeneralBlock 	= True
+
+	Select Case Value
+		Case 1 : xatm_TA.StepExecutionFailed1 = True
+		Case 2 : xatm_TA.StepExecutionFailed2 = True
+		Case 3 : xatm_TA.StepExecutionFailed3 = True
+		Case 4 : xatm_TA.StepExecutionFailed4 = True
+		Case 5 : xatm_TA.StepExecutionFailed5 = True
+		Case 6 : xatm_TA.StepExecutionFailed6 = True
+	End Select
+	
+	WriteLog "Global lockout activated due to automation failure."
+	
+End Sub
+
+<xatm_TA.FSM.Main:Main_Main()>
+Sub Main_Main()
+	
+	Const STEP_1_TIMER = 30
+
+	If Not xatm_TA.Enabled Then
+		
+		WriteLog "Automation not enabled."
+		xatm_TA.Running = False
+		Exit Sub
+	
+	End If
+	
+	If Not xatm_TA.Running Then
+		Exit Sub
+	End If
+	
+	Select Case Value
+		
+		Case 0
+			
+			Main_Step00()
+		
+		Case 1
+			
+			If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+				
+				Main_Step01()
+				
+			Else
+				
+				WriteLog "Step 1: Execution failed - Timeout exceeded."
+				Main_GlobalLockout
+				Exit Sub
+				
+			End If
+
+        Case 2
+
+            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+                
+                Main_Step02()
+                
+            Else
+                
+                WriteLog "Step 2: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
+				
+            End If
+        
+        Case 3
+
+            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+                
+                Main_Step03()
+                
+            Else
+                
+                WriteLog "Step 3: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
+                
+            End If
+
+        Case 4
+            
+            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+                
+                Main_Step04()
+                
+            Else
+                
+                WriteLog "Step 4: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
+				
+            End If
+        
+        Case 5
+            
+            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+                
+                Main_Step05()
+                
+            Else
+                
+                WriteLog "Step 5: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
+				
+            End If
+
+        Case 6
+
+            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+                
+                Main_Step06()
+                
+            Else
+                
+                WriteLog "Step 6: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
+				
+            End If
+
+        Case 99
+			
+			Main_Completed()
+			
+	End Select
+	
+	IncrementTimer()
+	
+End Sub
+
+<xatm_TA.FSM.Main:Main_Step00()>
+Sub Main_Step00()
+
+	WriteLog "Starting " & DescribeAutomation()
+
+	Value = 1
+
+End Sub
+
+' Human-readable summary of the running automation for the step log,
+' using transformer names, e.g. "TA TR-01 - TR-02 out of service".
+'
+' The mode is not read off the FSM the way the manual class reads it. There
+' is only one thing this automation runs, and a line that fetched the
+' answer it already knows would only be able to disagree with itself.
+Function DescribeAutomation()
+
+	Dim triggerId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+
+	Dim impedeId
+	impedeId  = ReadImpededId()
+
+	If impedeId = 0 Then
+		DescribeAutomation = "TA " & TransformerName(triggerId) & " - no transformer out of service"
+	Else
+		DescribeAutomation = "TA " & TransformerName(triggerId) & " - " & TransformerName(impedeId) & " out of service"
+	End If
+
+End Function
+
+' Transformer name for an id, falling back to "ID <n>" when not found.
+Function TransformerName(id)
+
+	Dim transformer, exists
+	Set transformer = GetDeviceById(id, exists)
+
+	If exists Then
+		TransformerName = transformer.Name
+	Else
+		TransformerName = "ID " & id
+	End If
+
+End Function
+
+Sub Foo()
+	
+End Sub
+
+<xatm_TA.FSM.Main:Main_Step01()>
+Sub Main_Step01()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+
+	S1TA triggerId, impedeId
+
+End Sub
+
+Sub S1TA(triggerId, impedeId)
+
+	Dim breakerId, action
+	action = 1
+
+	' TA always starts by opening the tripped transformer's own secondary
+	' breaker (triggerId + 20) to confirm isolation - same for every layout.
+	' TODO: (Spec 1.4.3.16 mistakenly writes CB3 for the TR4/TR3-out case; 
+	' opening the trigger's own CB is correct and makes that a non-issue.)
+	breakerId = triggerId + 20
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 1: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 1: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 2
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+	
+End Sub
+
+<xatm_TA.FSM.Main:Main_Step02()>
+Sub Main_Step02()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+
+	S2TA triggerId, impedeId
+
+End Sub
+
+Sub S2TA(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action, nextStep
+	nextStep = 3
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 1                      ' default: open a tie to isolate the dead busbar
+
+		Select Case triggerId
+
+			Case 100
+				If impedeId = 200 Then
+					breakerId = 710
+				Else
+					breakerId = 700
+				End If
+
+			Case 200
+				If impedeId = 100 Then
+					breakerId = 710
+				Else
+					breakerId = 720
+				End If
+
+			Case 300
+				If impedeId = 100 Then
+					breakerId = 730
+				ElseIf impedeId = 200 Then
+					breakerId = 900
+				ElseIf impedeId = 400 Then
+					breakerId = 740
+				Else
+					breakerId = 740        ' no contingency: 2-step restore
+					action = 2
+					nextStep = 99
+				End If
+
+			Case 400
+				If impedeId = 100 Then
+					breakerId = 730
+				ElseIf impedeId = 200 Then
+					breakerId = 900
+				ElseIf impedeId = 300 Then
+					breakerId = 740
+				Else
+					breakerId = 740        ' no contingency: 2-step restore
+					action = 2
+					nextStep = 99
+				End If
+
+		End Select
+
+	Else
+
+		' ==============
+		' DEFAULT
+		' ==============
+		action = 2
+		breakerId = 700
+		nextStep = 99
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 2: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 2: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+		
+End Sub
+
+<xatm_TA.FSM.Main:Main_Step03()>
+Sub Main_Step03()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+
+	S3TA triggerId, impedeId
+
+End Sub
+
+Sub S3TA(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+	action = 2                          ' restore step: close a tie
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		Select Case triggerId
+
+			Case 100
+				If impedeId = 200 Then
+					breakerId = 700
+				Else
+					breakerId = 900
+				End If
+
+			Case 200
+				If impedeId = 100 Then
+					breakerId = 700
+				Else
+					breakerId = 730
+				End If
+
+			Case 300
+				If impedeId = 100 Then
+					breakerId = 740
+				ElseIf impedeId = 200 Then
+					breakerId = 700
+				ElseIf impedeId = 400 Then
+					breakerId = 900
+				End If
+
+			Case 400
+				If impedeId = 300 Then
+					breakerId = 900
+				Else
+					breakerId = 740
+				End If
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 3: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 3: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 4
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+	
+End Sub
+
+<xatm_TA.FSM.Main:Main_Step04()>
+Sub Main_Step04()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+
+	S4TA triggerId, impedeId
+
+End Sub
+
+Sub S4TA(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action, nextStep
+	nextStep = 99
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		Select Case triggerId
+
+			Case 100
+				If impedeId = 200 Then
+					action = 2
+					breakerId = 720
+				ElseIf impedeId = 300 Or impedeId = 400 Then
+					action = 2
+					breakerId = 710
+				Else
+					action = 1             ' no contingency: open, sequence continues
+					breakerId = 720
+					nextStep = 5
+				End If
+
+			Case 200
+				If impedeId = 100 Then
+					action = 2
+					breakerId = 720
+				ElseIf impedeId = 300 Or impedeId = 400 Then
+					action = 2
+					breakerId = 710
+				Else
+					action = 1             ' no contingency: open, sequence continues
+					breakerId = 700
+					nextStep = 5
+				End If
+
+			Case 300
+				action = 2
+				If impedeId = 100 Then
+					breakerId = 720
+				ElseIf impedeId = 200 Then
+					breakerId = 740
+				ElseIf impedeId = 400 Then
+					breakerId = 730
+				End If
+
+			Case 400
+				action = 2
+				If impedeId = 100 Then
+					breakerId = 720
+				ElseIf impedeId = 200 Then
+					breakerId = 700
+				ElseIf impedeId = 300 Then
+					breakerId = 730
+				End If
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 4: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 4: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+<xatm_TA.FSM.Main:Main_Step05()>
+Sub Main_Step05()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+
+	S5TA triggerId, impedeId
+
+End Sub
+
+Sub S5TA(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+	action = 2
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		Select Case triggerId
+
+			Case 100
+				breakerId = 730
+
+			Case 200
+				breakerId = 900
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 5: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 5: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 6
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+<xatm_TA.FSM.Main:Main_Step06()>
+Sub Main_Step06()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+
+	S6TA triggerId, impedeId
+
+End Sub
+
+Sub S6TA(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+	action = 2
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		Select Case triggerId
+
+			Case 100, 200
+				breakerId = 710
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 6: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 6: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 99
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+		
+End Sub
+
+<xatm_TMTNM.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
+Sub OperatorBlock_CommandOperatorBlock()
+	
+	Dim v
+	v = False
+	
+	On Error Resume Next
+	v = CBool(xatm_TMTNM.CommandOperatorBlock.Value)
+	On Error Goto 0
+	
+	xatm_TMTNM.OperatorBlock = v
+
+End Sub
+
+<xatm_TMTNM.Commands.OperatorBlock:OperatorBlock_OnChangedValue()>
+Sub OperatorBlock_OnChangedValue()
+	
+	If xatm_TMTNM.OperatorBlock Then
+		WriteLog "Blocked by operator."
+	Else
+		WriteLog "Released by operator."
+	End If
+
+End Sub
+	
+Sub WriteLog(message)
+	
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+	
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+	
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+			
+End Sub
+
+<xatm_TMTNM.Commands.Reset:Reset_OnChangedTimeStamp()>
+Sub Reset_OnChangedTimeStamp()
+	
+	If CBool(Value) Then
+		
+		Reset()
+		
+	End If
+	
+End Sub
+
+Sub Reset()
+	
+	xatm_TMTNM.Running 		= False
+	xatm_TMTNM.GeneralBlock	= False
+	
+	' ===============
+	' RESET ALL STEP FAIL POINTS
+	' ===============
+	Dim i
+	For i = 1 To 6
+		Dim propName
+		propName = "StepExecutionFailed" & i
+		
+		On Error Resume Next
+		Execute("xatm_TMTNM." & propName & " = False")
+		On Error Goto 0
+	Next
+	
+	Dim tag
+	For Each tag In xatm_TMTNM.Item("FSM")
+		
+		If TypeName(tag) = "InternalTag" Then
+
+			tag.WriteEx Empty, tag.TimeStamp
+		
+		End If
+		
+	Next
+	
+	' ================
+	' RESET ALL DEVICES
+	' ================
+	ResetDevices Application.GetObject("XATM_Data.Substation")
+	
+	WriteLog "Reset"
+
+End Sub
+
+Sub ResetDevices(folder)
+	
+	For Each obj In folder
+	
+		If TypeName(obj) = "xatm_Breaker" Then
+		
+			On Error Resume Next
+			obj.Item("Data").Item("Reset").WriteEx True
+			On Error Goto 0
+			
+		Else
+		
+			ResetDevices obj
+		
+		End If
+	
+	Next
+
+End Sub
+	
+Sub WriteLog(message)
+	
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+	
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+	
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+	
+End Sub
+
+<xatm_TMTNM.Commands.Reset:Reset_Reset()>
+Sub Reset_Reset()
+	
+	If xatm_TMTNM.CommandReset.Value = 0 Then Exit Sub
+	
+	WriteEx True
+		
+End Sub
+
+<xatm_TMTNM.Commands.Start:Start_CommandStartNM()>
+Sub Start_CommandStartNM()
+	
+	If xatm_TMTNM.CommandStartNM.Value = 0 Then Exit Sub
+	
+	StartMode "NM", 0
+	
+End Sub
+
+<xatm_TMTNM.Commands.Start:Start_CommandStartNM100()>
+Sub Start_CommandStartNM100()
+
+	If xatm_TMTNM.CommandStartNM100.Value = 0 Then Exit Sub
+
+	StartMode "NM", 100
+	
+End Sub
+
+<xatm_TMTNM.Commands.Start:Start_CommandStartNM200()>
+Sub Start_CommandStartNM200()
+
+	If xatm_TMTNM.CommandStartNM200.Value = 0 Then Exit Sub
+
+	StartMode "NM", 200
+	
+End Sub
+
+<xatm_TMTNM.Commands.Start:Start_CommandStartNM300()>
+Sub Start_CommandStartNM300()
+
+	If xatm_TMTNM.CommandStartNM300.Value = 0 Then Exit Sub
+
+	StartMode "NM", 300
+	
+End Sub
+
+<xatm_TMTNM.Commands.Start:Start_CommandStartNM400()>
+Sub Start_CommandStartNM400()
+
+	If xatm_TMTNM.CommandStartNM400.Value = 0 Then Exit Sub
+
+	StartMode "NM", 400
+	
+End Sub
+
+<xatm_TMTNM.Commands.Start:Start_CommandStartTM()>
+Sub Start_CommandStartTM()
+
+	If xatm_TMTNM.CommandStartTM.Value = 0 Then Exit Sub
+
+	StartMode "TM", 0
+	
+End Sub
+
+<xatm_TMTNM.Commands.Start:Start_CommandStartTM100()>
+Sub Start_CommandStartTM100()
+
+	If xatm_TMTNM.CommandStartTM100.Value = 0 Then Exit Sub
+
+	StartMode "TM", 100
+	
+End Sub
+
+<xatm_TMTNM.Commands.Start:Start_CommandStartTM200()>
+Sub Start_CommandStartTM200()
+
+	If xatm_TMTNM.CommandStartTM200.Value = 0 Then Exit Sub
+
+	StartMode "TM", 200
+	
+End Sub
+
+<xatm_TMTNM.Commands.Start:Start_CommandStartTM300()>
+Sub Start_CommandStartTM300()
+
+	If xatm_TMTNM.CommandStartTM300.Value = 0 Then Exit Sub
+
+	StartMode "TM", 300
+	
+End Sub
+
+<xatm_TMTNM.Commands.Start:Start_CommandStartTM400()>
+Sub Start_CommandStartTM400()
+
+	If xatm_TMTNM.CommandStartTM400.Value = 0 Then Exit Sub
+
+	StartMode "TM", 400
+	
+End Sub
+
+<xatm_TMTNM.Commands.Start:Start_OnChangedValue()>
+Sub Start_OnChangedValue()
+
+	If Trim(Value) = "" Then Exit Sub      ' self-cleared write, ignore
+
+	Dim ts
+	ts = TimeStamp	' preserve for the silent clear
+
+	Dim parts
+	parts = Split(Me.Value, ":")
+
+	' Two fields or three. The third names the transformer the maneuver is
+	' to assume out of service, and is what the operator now picks; a
+	' request without it is a request with nothing out.
+	If UBound(parts) < 1 Or UBound(parts) > 2 Then
+		Reject "Invalid Start format '" & Me.Value & "' (expected MODE:trigger[:impeded]).", ts
+		Exit Sub
+	End If
+
+	Dim mode
+	mode = UCase(Trim(parts(0)))
+
+	Select Case mode
+
+		Case "TM", "NM"
+
+		Case Else
+
+			Reject "Unknown automation type '" & mode & "'.", ts
+			Exit Sub
+
+	End Select
+
+	If Not IsNumeric(parts(1)) Then
+
+		Reject "Invalid trigger transformer '" & parts(1) & "'.", ts
+		Exit Sub
+
+	End If
+
+	Dim triggerId
+	triggerId = CInt(parts(1))
+
+	' ================
+	' WHICH TRANSFORMER IS OUT
+	' ================
+	'
+	' The person asking says which one, and that is the whole of the
+	' triggering philosophy here. An automatic transfer reads the field
+	' for it instead, because the switchyard is what asked and the
+	' switchyard says nothing - which is xatm_TA's business now.
+	Dim impedeId
+	impedeId = 0
+
+	If UBound(parts) = 2 Then
+
+		If Not IsNumeric(parts(2)) Then
+
+			Reject "Invalid impeded transformer '" & parts(2) & "'.", ts
+			Exit Sub
+
+		End If
+
+		impedeId = CInt(parts(2))
+
+	End If
+
+	' ================
+	' IS THE REQUEST ITSELF COHERENT
+	' ================
+	'
+	' Ahead of the gates below, because these say the request is malformed
+	' rather than that the switchyard is not ready for it. Each one is a
+	' case the step logic cannot express: its Else branch would take a
+	' nonsense argument for "nothing is out" and run a real maneuver.
+	'
+	' Two kinds of automation asking for two different things, so they are
+	' checked apart. An instance carrying a BusbarPair moves that pair of
+	' busbars and is bound to no transformer at all - there is no busbar
+	' XObject to bind to, which is why the pair is carried as text. Every
+	' other instance moves its own transformer's load, and answers the
+	' questions that were always asked here.
+	Dim runMode
+	runMode = mode
+
+	If BusbarPair() <> "" Then
+
+		If impedeId <> 0 Then
+
+			Reject "a busbar transfer takes no impediment - it has one path and it does not vary.", ts
+			Exit Sub
+
+		End If
+
+		If GetLayoutType() <> "4TR4LV_6BB6TIERING" Then
+
+			Reject "a busbar transfer is defined only on the 4TR4LV_6BB6TIERING layout.", ts
+			Exit Sub
+
+		End If
+
+		runMode = BusbarMode(mode, BusbarPair())
+
+		If runMode = "" Then
+
+			Reject "'" & BusbarPair() & "' is not a pair of busbars that can be transferred between.", ts
+			Exit Sub
+
+		End If
+
+	Else
+
+		If Not IsConfiguredTransformer(triggerId) Then
+
+			Reject "Trigger transformer " & triggerId & " is not configured in this substation.", ts
+			Exit Sub
+
+		End If
+
+		If impedeId <> 0 Then
+
+			If impedeId = triggerId Then
+
+				Reject "Transformer " & triggerId & " cannot be both the trigger and the one out of service.", ts
+				Exit Sub
+
+			End If
+
+			If Not IsConfiguredTransformer(impedeId) Then
+
+				Reject "Impeded transformer " & impedeId & " is not configured in this substation.", ts
+				Exit Sub
+
+			End If
+
+		End If
+
+		' A transfer needs somewhere to put the load. Anything that is
+		' neither the trigger nor out of service can take it; with none
+		' left there is nothing to transfer to and no sequence to run.
+		'
+		' On the four transformer ring one impediment still leaves two, so
+		' this only bites on the small layouts - two transformers with the
+		' adjacent one impeded, which is the case the client asked to have
+		' refused.
+		If CountDestinations(triggerId, impedeId) = 0 Then
+
+			Reject "No transformer is left to take the load.", ts
+			Exit Sub
+
+		End If
+
+	End If
+
+	' ================
+	' GATE CHECKS
+	' ================
+
+	If Not xatm_TMTNM.Enabled Then
+
+		Reject "Automation disabled.", ts
+		Exit Sub
+
+	End If
+
+	If xatm_TMTNM.Running Then
+
+		Reject "Already running.", ts
+		Exit Sub
+
+	End If
+
+	If xatm_TMTNM.OperatorBlock Then
+
+	 	Reject "Blocked by operator.", ts
+		Exit Sub
+
+	End If
+
+	If xatm_TMTNM.GeneralBlock Then
+
+	 	Reject "General interlock active.", ts
+	 	Exit Sub
+
+	End If
+
+	' The switchyard withholding it and the switchyard permitting it - but
+	' asked of this maneuver own pair of gates, not of one pair standing
+	' for every maneuver the automation can run.
+	'
+	' Both are read before either is judged, so a manifest that has not
+	' been rebuilt is reported as the configuration fault it is rather than
+	' surfacing as a maneuver that will not start for no stated reason.
+	Dim gate, missing, blocked, permitted
+	gate    = GateSuffix(mode, impedeId)
+	missing = ""
+
+	blocked   = ReadGate("AutomaticBlock" & gate, False, missing)
+	permitted = ReadGate("Preconditions"  & gate, True,  missing)
+
+	If missing <> "" Then
+
+		Reject "this automation has no " & missing & " - the manifest has not been rebuilt.", ts
+		Exit Sub
+
+	End If
+
+	If blocked Then
+
+		Reject "Blocked by field conditions (AutomaticBlock" & gate & ").", ts
+		Exit Sub
+
+	End If
+
+	' This one reads the other way round - the expression on it says when
+	' the maneuver may go ahead, so it is the absence of it that rejects.
+	If Not permitted Then
+
+		Reject "Preconditions are not met (Preconditions" & gate & ").", ts
+		Exit Sub
+
+	End If
+
+	If AnyOtherAutomationRunning() Then
+
+		Reject "Another automation is in progress.", ts
+		Exit Sub
+
+	End If
+
+	' ================
+	' START
+	' ================
+
+	' The resolved maneuver and not the command: a busbar instance was
+	' asked for TM and what it runs is TMB1A, which is what every step
+	' from here on reads.
+	xatm_TMTNM.Item("FSM").Item("AutomationType").WriteEx runMode
+	xatm_TMTNM.Item("FSM").Item("TriggerTransformerId").WriteEx triggerId
+	xatm_TMTNM.Item("FSM").Item("ImpededTransformerId").WriteEx impedeId
+	xatm_TMTNM.Item("FSM").Item("StepTimer").WriteEx 0
+	xatm_TMTNM.Item("FSM").Item("Main").WriteEx 0
+	xatm_TMTNM.Running = True
+
+	If runMode <> mode Then
+		WriteLog "Start - " & BusbarLabel(runMode)
+	ElseIf impedeId = 0 Then
+		WriteLog "Start - " & mode & " TR" & triggerId
+	Else
+		WriteLog "Start - " & mode & " TR" & triggerId & " with TR" & impedeId & " out of service"
+	End If
+
+	WriteEx "", ts ' clear without re-firing
+
+End Sub
+
+' True if any OTHER automation object is currently running (mutual exclusion).
+' Relies on a common Running property instead of enumerating each type.
+Function AnyOtherAutomationRunning()
+
+	AnyOtherAutomationRunning = False
+
+	Dim obj
+	For Each obj In Application.GetObject("XATM_Data.Automation")
+
+		If Not (obj Is xatm_TMTNM) Then
+
+			Dim running
+			running = False
+			On Error Resume Next
+			running = obj.Running
+			On Error GoTo 0
+
+			If running Then
+				AnyOtherAutomationRunning = True
+				Exit Function
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+
+' Asks for a maneuver by writing the very tag this runs on.
+'
+' Start_OnChangedValue is what reads it, so every gate it keeps - enabled,
+' not already running, the three blocks, the preconditions, no other
+' automation in progress - is kept for a command off a screen too, and is
+' kept in the one place that has them all. A command that is refused is
+' logged there and says why, exactly as a written trigger is.
+'
+' impedeId is which transformer the maneuver is to treat as out of service,
+' or 0 for none. It is not read off the command tag: there is one tag per
+' maneuver, and which tag was written is what says which maneuver was asked
+' for. The value on it means nothing beyond "asked for".
+'
+' That is the shape Level 3 needs. Over IEC 60870-5-104 a command is a point
+' address and carries no argument, so an address has to mean one maneuver by
+' itself; the E3 operation screen works the same way round, a button writes
+' a tag rather than composing one. A single tag carrying which transformer
+' is out would have to be a setpoint, and a setpoint followed by an execute
+' is two telegrams with nothing binding them together - not something to put
+' under a switching sequence.
+'
+' There is no TA among the commands. That one is asked for by the
+' switchyard, through the transformer's own triggers, and never by a
+' person - which is also why TA takes no impediment argument and reads the
+' field for it instead.
+Sub StartMode(mode, impedeId)
+
+	' A busbar automation is bound to nothing, so there is nothing to
+	' look up and no trigger to name: which pair it moves is a property
+	' of its own, and that pair is the whole of what the maneuver needs.
+	If BusbarPair() <> "" Then
+
+		WriteEx mode & ":0:0"
+		Exit Sub
+
+	End If
+
+	Dim found, id
+	id = BoundTransformerId(found)
+
+	' Not something the operator did wrong: the automation has been left
+	' unbound, and Start could only reject a maneuver on transformer 0.
+	If Not found Then
+
+		WriteLog "Not started - no transformer is bound to this automation."
+		Exit Sub
+
+	End If
+
+	WriteEx mode & ":" & id & ":" & impedeId
+
+End Sub
+
+' The Id of the transformer this instance drives, which is the trigger of
+' anything asked for from a screen. found stays False where nothing is
+' bound, or where what is bound carries no Id yet - a half-configured
+' automation rather than a maneuver to reject.
+Function BoundTransformerId(ByRef found)
+
+	found = False
+	BoundTransformerId = 0
+
+	Dim transformer
+	Set transformer = Nothing
+
+	On Error Resume Next
+	Set transformer = xatm_TMTNM.Transformer
+	On Error Goto 0
+
+	If transformer Is Nothing Then Exit Function
+
+	Dim id
+	id = Empty
+
+	On Error Resume Next
+	id = transformer.Id
+	On Error Goto 0
+
+	If IsEmpty(id) Or IsNull(id) Then Exit Function
+	If Not IsNumeric(id) Then Exit Function
+
+	BoundTransformerId = CInt(id)
+	found = True
+
+End Function
+
+' Every transformer the substation has, as "<id>:<0|1>" pairs - the flag is
+' its out-of-service reading at the moment of asking.
+'
+' One walk, because the three questions below - is this Id configured, how
+' many are out, which one is out - are all answered off the same list.
+'
+' FSM.Main has GetDeviceById for the same job. E3 gives no way to call a
+' procedure in another object's scope, so this scope keeps its own, narrower
+' version: it only ever looks for transformers.
+Function TransformerStates()
+
+	Dim acc
+	acc = ""
+
+	On Error Resume Next
+	CollectTransformers Application.GetObject("XATM_Data.Substation"), acc
+	On Error Goto 0
+
+	TransformerStates = acc
+
+End Function
+
+Sub CollectTransformers(folder, ByRef acc)
+
+	Dim obj
+	For Each obj In folder
+
+		Select Case UCase(TypeName(obj))
+
+			Case "XATM_TRANSFORMER"
+
+				Dim id
+				id = Empty
+
+				On Error Resume Next
+				id = obj.Id
+				On Error Goto 0
+
+				If IsNumeric(id) Then
+
+					Dim flag
+					flag = 0
+
+					On Error Resume Next
+					If CBool(obj.OutOfService) Then flag = 1
+					On Error Goto 0
+
+					If acc <> "" Then acc = acc & ","
+					acc = acc & CInt(id) & ":" & flag
+
+				End If
+
+			Case "XATM_BREAKER", "XATM_DISCONNECTOR"
+
+				' a device, and not one this is looking for
+
+			Case Else
+
+				' Not a device -> treat as a subfolder and recurse.
+				On Error Resume Next
+				CollectTransformers obj, acc
+				On Error Goto 0
+
+		End Select
+
+	Next
+
+End Sub
+
+' True when id names a transformer this substation actually has.
+'
+' Without it a typo'd screen binding, or a command tag left unconfigured,
+' falls through every ElseIf in the step logic and lands on the Else that
+' means "nothing is out" - running a real maneuver on a live switchyard
+' under an assumption nobody made.
+Function IsConfiguredTransformer(id)
+
+	IsConfiguredTransformer = False
+
+	Dim entries, i, pair
+	entries = Split(TransformerStates(), ",")
+
+	For i = 0 To UBound(entries)
+
+		If entries(i) <> "" Then
+
+			pair = Split(entries(i), ":")
+
+			If CInt(pair(0)) = id Then
+				IsConfiguredTransformer = True
+				Exit Function
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+' How many transformers could take the load: everything that is neither the
+' trigger, nor the one declared out, nor out of service in the field.
+Function CountDestinations(triggerId, impedeId)
+
+	CountDestinations = 0
+
+	Dim entries, i, pair, id
+	entries = Split(TransformerStates(), ",")
+
+	For i = 0 To UBound(entries)
+
+		If entries(i) <> "" Then
+
+			pair = Split(entries(i), ":")
+			id   = CInt(pair(0))
+
+			If id <> triggerId And id <> impedeId And pair(1) = "0" Then
+				CountDestinations = CountDestinations + 1
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+' The pair of busbars this instance moves, or "" when it moves none.
+'
+' Text and not a link, because a busbar is not an XObject there is anything
+' to bind to - the four other properties that name equipment are links, and
+' this one could not be.
+'
+' One property and not two. A flag reading "this is a busbar automation"
+' beside a name saying which busbar would be two ways of writing one fact,
+' and two ways of writing one fact can be made to disagree; a name that is
+' either there or is not answers both questions and cannot.
+'
+' Empty is the ordinary case and the safe one: an instance nobody
+' configured, or one predating the property, is a transformer automation.
+Function BusbarPair()
+
+	BusbarPair = ""
+
+	On Error Resume Next
+	BusbarPair = Trim(xatm_TMTNM.BusbarPair & "")
+	On Error Goto 0
+
+End Function
+
+
+' Which of the four busbar sequences a TM or an NM on this instance is, and
+' "" for a pair that names none of them.
+'
+' The mode says which way round - out or back - and the pair says which
+' busbars, so the two together name one sequence: TM on B1A-B4A is TMB1A
+' and NM on B2B-B3A is NMB2B.
+Function BusbarMode(mode, pair)
+
+	BusbarMode = ""
+
+	Select Case UCase(pair)
+
+		Case "B1A-B4A"
+			BusbarMode = mode & "B1A"
+
+		Case "B2B-B3A"
+			BusbarMode = mode & "B2B"
+
+	End Select
+
+End Function
+
+
+' The maneuver as the spec writes it, for anything a person reads.
+Function BusbarLabel(mode)
+
+	Select Case mode
+
+		Case "TMB1A"
+			BusbarLabel = "TM B1A-B4A"
+
+		Case "NMB1A"
+			BusbarLabel = "NM B1A-B4A"
+
+		Case "TMB2B"
+			BusbarLabel = "TM B2B-B3A"
+
+		Case "NMB2B"
+			BusbarLabel = "NM B2B-B3A"
+
+		Case Else
+			BusbarLabel = mode
+
+	End Select
+
+End Function
+
+
+' The layout this substation is configured as, read the way the step logic
+' reads it. Written out again here because one E3 object cannot call a
+' procedure in another's scope.
+Function GetLayoutType()
+
+	GetLayoutType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value & "_" & _
+					Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
+
+End Function
+
+
+' Which pair of gates a maneuver answers to.
+'
+' The mode, and the transformer it assumes is out where there is one: TM,
+' TM200, NM400. The same names the command tags carry, so the command and
+' the gates that let it through are one string apart.
+'
+Function GateSuffix(mode, impedeId)
+
+	If impedeId = 0 Then
+		GateSuffix = mode
+	Else
+		GateSuffix = mode & impedeId
+	End If
+
+End Function
+
+
+' One gate, read by the name built for it.
+'
+' E3 gives no way to index an XObject properties, so the read is late
+' bound - the same Execute and scratch cell the configuration import uses
+' to write one.
+'
+' A property that is not there leaves the default and adds its name to
+' missing. Reported rather than assumed either way round: defaulting a
+' precondition to True would let a maneuver run on a gate nobody wrote,
+' and defaulting it to False would bar every maneuver with nothing said
+' about why.
+Function ReadGate(propertyName, defaultValue, ByRef missing)
+
+	gGateValue = defaultValue
+
+	Dim failed
+	failed = False
+
+	On Error Resume Next
+	Err.Clear
+	Execute "gGateValue = xatm_TMTNM." & propertyName
+	If Err.Number <> 0 Then failed = True
+	Err.Clear
+	On Error Goto 0
+
+	If failed Then
+
+		If missing <> "" Then missing = missing & ", "
+		missing = missing & propertyName
+		gGateValue = defaultValue
+
+	End If
+
+	ReadGate = CBool(gGateValue)
+
+End Function
+
+' Scratch cell for the late-bound read, the way the configuration import
+' keeps one for its writes.
+Dim gGateValue
+
+
+' Logs the rejection and clears the trigger without re-firing.
+' Uses the explicit tag path (not Me) so it is safe to call from a helper.
+Sub Reject(reason, ts)
+
+	WriteLog "Not started - " & reason
+	WriteEx "", ts
+
+End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_TMTNM.FSM.Main:Main_Completed()>
+Sub Main_Completed()
+	
+	Parent.Item("TriggerTransformerId").WriteEx  Empty, 0
+	Parent.Item("AutomationType").WriteEx Empty, 0
+	Parent.Item("StepTimer").WriteEx  Empty, 0
+	WriteEx  Empty, 0
+	
+    xatm_TMTNM.Running = False
+    WriteLog "Automation completed successfully."
+            	
+End Sub
+
+<xatm_TMTNM.FSM.Main:Main_Functions()>
+Sub Main_Functions()
+End Sub
+
+
+Function GetDeviceById(id, ByRef exists)
+    
+    exists = False
+    Set GetDeviceById = FindInFolder(Application.GetObject("XATM_Data.Substation"), id, exists)
+    
+End Function
+
+Function FindInFolder(folder, id, ByRef exists)
+    
+    Set FindInFolder = Nothing
+        
+    Dim obj
+
+    For Each obj In folder
+        
+        Select Case UCase(TypeName(obj))
+
+            Case "XATM_BREAKER", "XATM_TRANSFORMER", "XATM_DISCONNECTOR"
+                If obj.Id = id Then
+                    Set FindInFolder = obj
+                    exists = True
+                    Exit Function
+                End If
+
+            Case Else
+                ' Not a device -> treat as a subfolder and recurse.
+                Dim found
+                On Error Resume Next
+                Set found = FindInFolder(obj, id, exists)
+                On Error GoTo 0
+
+                If exists Then
+                    Set FindInFolder = found
+                    Exit Function
+                End If
+
+        End Select
+        
+    Next
+
+End Function
+
+Function GetLayoutType()
+
+	GetLayoutType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value & "_" & _
+					Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
+	
+End Function
+
+Sub ResetTimer()
+
+    Parent.Item("StepTimer").Value = 0
+    
+End Sub
+
+Sub IncrementTimer()
+
+    Parent.Item("StepTimer").Value = Parent.Item("StepTimer").Value + 1
+    
+End Sub
+
+Function OperationName(operation)
+	If operation = 2 Then
+		OperationName = "closed"
+	ElseIf operation = 1 Then
+		OperationName = "opened"
+	Else
+		OperationName = "operated"
+	End If
+End Function
+' Which transformer the running maneuver is treating as out of service, or 0
+' for none. Written once by Start_OnChangedValue - declared by the operator
+' for TM and NM, read off the field for TA - and constant for the whole run,
+' so no step can be handed a different contingency than the step before it.
+'
+' The spec pairs every maneuver with at most one impediment: Tabela 1
+' situations 2-5 are the states a sequence starts from, and 6-11 - two
+' transformers out - are the states they end in, with no sequence leaving
+' them. So this is one Id and not a set.
+Function ReadImpededId()
+
+	Dim id
+	id = 0
+
+	On Error Resume Next
+	id = Parent.Item("ImpededTransformerId").Value
+	On Error Goto 0
+
+	If IsEmpty(id) Or IsNull(id) Then id = 0
+	If Not IsNumeric(id) Then id = 0
+
+	ReadImpededId = CInt(id)
+
+End Function
+
+' The maneuver as the spec writes it, for anything a person reads. Its own
+' copy, because one E3 object cannot call a procedure in another's scope.
+Function BusbarLabel(mode)
+
+	Select Case mode
+
+		Case "TMB1A"
+			BusbarLabel = "TM B1A-B4A"
+
+		Case "NMB1A"
+			BusbarLabel = "NM B1A-B4A"
+
+		Case "TMB2B"
+			BusbarLabel = "TM B2B-B3A"
+
+		Case "NMB2B"
+			BusbarLabel = "NM B2B-B3A"
+
+		Case Else
+			BusbarLabel = mode
+
+	End Select
+
+End Function
+
+
+' Whether the running maneuver is one of the two busbar ones.
+Function IsBusbarMode(mode)
+
+	Select Case mode
+
+		Case "TMB1A", "NMB1A", "TMB2B", "NMB2B"
+			IsBusbarMode = True
+
+		Case Else
+			IsBusbarMode = False
+
+	End Select
+
+End Function
+
+
+' The two ties a busbar maneuver works, in the order it works them: which
+' = 1 is the one to close, which = 2 the one to open.
+'
+'   TM B1A-B4A   close DJ10 (900), open DJ20 (700)   B1A leaves TR1 for TR4
+'   NM B1A-B4A   close DJ20 (700), open DJ10 (900)   and comes back
+'   TM B2B-B3A   close DJ50 (730), open DJ40 (720)   B2B leaves TR2 for TR3
+'   NM B2B-B3A   close DJ40 (720), open DJ50 (730)   and comes back
+'
+' Make before break both ways round, and that is worth saying because the
+' spec's normalisation tables read the other way at a glance: they carry an
+' upward arrow and are read from the bottom row up, so what looks like an
+' open followed by a close is a close followed by an open. The busbar is
+' live throughout either maneuver and stays live - it is the pair of ties
+' that swaps, and all that separates a transfer from its normalisation is
+' which of the two closes first.
+'
+' 0 for a mode that names no tie, which the step reports rather than acting
+' on: a busbar maneuver that reached a step with nothing to operate is a
+' maneuver this table does not know, not a breaker that failed.
+Function BusbarTie(mode, which)
+
+	BusbarTie = 0
+
+	Select Case mode
+
+		Case "TMB1A"
+			If which = 1 Then BusbarTie = 900 Else BusbarTie = 700
+
+		Case "NMB1A"
+			If which = 1 Then BusbarTie = 700 Else BusbarTie = 900
+
+		Case "TMB2B"
+			If which = 1 Then BusbarTie = 730 Else BusbarTie = 720
+
+		Case "NMB2B"
+			If which = 1 Then BusbarTie = 720 Else BusbarTie = 730
+
+	End Select
+
+End Function
+
+
+' One step of a busbar maneuver: operate the tie this step is for, and go
+' on once it has moved.
+'
+' Both steps in one procedure because both are the same procedure - one
+' breaker taken to one position - where each transformer maneuver picks its
+' path from the trigger and the contingency and so needs a step of its own.
+' Step 1 closes and hands over to step 2; step 2 opens and the sequence is
+' done, which is why nothing beyond step 2 ever sees these modes.
+Sub SBB(stepNumber, mode)
+
+	Dim action, nextStep
+
+	If stepNumber = 1 Then
+		action   = 2
+		nextStep = 2
+	Else
+		action   = 1
+		nextStep = 99
+	End If
+
+	Dim breakerId
+	breakerId = BusbarTie(mode, stepNumber)
+
+	If breakerId = 0 Then
+
+		WriteLog "Step " & stepNumber & ": " & mode & " names no tie breaker for this step. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step " & stepNumber & ": Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step " & stepNumber & ": " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+
+Sub WriteLog(message)
+	
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+	
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+	
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+			
+End Sub
+
+<xatm_TMTNM.FSM.Main:Main_GlobalLockout()>
+Sub Main_GlobalLockout()
+	
+	xatm_TMTNM.Running 		= False
+	xatm_TMTNM.GeneralBlock 	= True
+
+	Select Case Value
+		Case 1 : xatm_TMTNM.StepExecutionFailed1 = True
+		Case 2 : xatm_TMTNM.StepExecutionFailed2 = True
+		Case 3 : xatm_TMTNM.StepExecutionFailed3 = True
+		Case 4 : xatm_TMTNM.StepExecutionFailed4 = True
+		Case 5 : xatm_TMTNM.StepExecutionFailed5 = True
+		Case 6 : xatm_TMTNM.StepExecutionFailed6 = True
+	End Select
+	
+	WriteLog "Global lockout activated due to automation failure."
+	
+End Sub
+
+<xatm_TMTNM.FSM.Main:Main_Main()>
+Sub Main_Main()
+	
+	Const STEP_1_TIMER = 30
+
+	If Not xatm_TMTNM.Enabled Then
+		
+		WriteLog "Automation not enabled."
+		xatm_TMTNM.Running = False
+		Exit Sub
+	
+	End If
+	
+	If Not xatm_TMTNM.Running Then
+		Exit Sub
+	End If
+	
+	Select Case Value
+		
+		Case 0
+			
+			Main_Step00()
+		
+		Case 1
+			
+			If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+				
+				Main_Step01()
+				
+			Else
+				
+				WriteLog "Step 1: Execution failed - Timeout exceeded."
+				Main_GlobalLockout
+				Exit Sub
+				
+			End If
+
+        Case 2
+
+            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+                
+                Main_Step02()
+                
+            Else
+                
+                WriteLog "Step 2: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
+				
+            End If
+        
+        Case 3
+
+            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+                
+                Main_Step03()
+                
+            Else
+                
+                WriteLog "Step 3: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
+                
+            End If
+
+        Case 4
+            
+            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+                
+                Main_Step04()
+                
+            Else
+                
+                WriteLog "Step 4: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
+				
+            End If
+        
+        Case 5
+            
+            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+                
+                Main_Step05()
+                
+            Else
+                
+                WriteLog "Step 5: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
+				
+            End If
+
+        Case 6
+
+            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+                
+                Main_Step06()
+                
+            Else
+                
+                WriteLog "Step 6: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
+				
+            End If
+
+        Case 99
+			
+			Main_Completed()
+			
+	End Select
+	
+	IncrementTimer()
+
+End Sub
+
+<xatm_TMTNM.FSM.Main:Main_Step00()>
+Sub Main_Step00()
+
+	WriteLog "Starting " & DescribeAutomation()
+
+	Value = 1
+
+End Sub
+
+' Human-readable summary of the running automation for the step log,
+' using transformer names, e.g. "TM TR-01 - TR-02 out of service".
+Function DescribeAutomation()
+
+	Dim autoType
+	autoType  = Parent.Item("AutomationType").Value
+
+	Dim triggerId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+
+	Dim impedeId
+	impedeId  = ReadImpededId()
+
+	' A busbar maneuver is not about the transformer and has no
+	' contingency, so it names itself and stops there.
+	If IsBusbarMode(autoType) Then
+		DescribeAutomation = BusbarLabel(autoType)
+	ElseIf impedeId = 0 Then
+		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - no transformer out of service"
+	Else
+		DescribeAutomation = autoType & " " & TransformerName(triggerId) & " - " & TransformerName(impedeId) & " out of service"
+	End If
+
+End Function
+
+' Transformer name for an id, falling back to "ID <n>" when not found.
+Function TransformerName(id)
+
+	Dim transformer, exists
+	Set transformer = GetDeviceById(id, exists)
+
+	If exists Then
+		TransformerName = transformer.Name
+	Else
+		TransformerName = "ID " & id
+	End If
+
+End Function
+
+' E3 will not take a Function as the last thing in a scope.
+Sub EndOfScope()
+
+End Sub
+
+<xatm_TMTNM.FSM.Main:Main_Step01()>
+Sub Main_Step01()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+		
+	Select Case Parent.Item("AutomationType").Value
+		
+		Case "TM"
+			
+			S1TM triggerId, impedeId
+		
+		Case "NM"
+
+			S1NM triggerId, impedeId
+		
+		' The busbar maneuvers take neither argument: which busbar and
+		' which way round is the whole of what they need, and the mode
+		' carries both.
+		Case "TMB1A", "NMB1A", "TMB2B", "NMB2B"
+
+			SBB 1, Parent.Item("AutomationType").Value
+			
+	End Select
+	
+End Sub
+
+Sub S1NM(triggerId, impedeId)
+
+	Dim breakerId, action
+	action = 2
+
+	' NM always starts by re-closing the trigger transformer's own breaker.
+	breakerId = triggerId + 20
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 1: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 1: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 2
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+Sub S1TM(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 2
+
+		Select Case triggerId
+
+			Case 100
+				If impedeId = 200 Then
+					breakerId = 700
+				Else
+					breakerId = 900
+				End If
+
+			Case 200
+				If impedeId = 100 Then
+					breakerId = 700
+				ElseIf impedeId = 300 Or impedeId = 400 Then
+					breakerId = 730
+				Else
+					breakerId = 900
+				End If
+
+			Case 300
+				If impedeId = 100 Then
+					breakerId = 720
+				ElseIf impedeId = 200 Then
+					breakerId = 700
+				ElseIf impedeId = 400 Then
+					breakerId = 900
+				Else
+					breakerId = 740
+				End If
+
+			Case 400
+				If impedeId = 100 Then
+					breakerId = 720
+				ElseIf impedeId = 200 Then
+					breakerId = 700
+				ElseIf impedeId = 300 Then
+					breakerId = 730
+				Else
+					breakerId = 740
+				End If
+
+		End Select
+
+	Else
+
+		' ================
+		' DEFAULT
+		' ================
+		action = 2
+	 	breakerId = 700
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 1: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 1: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 2
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+	
+End Sub
+
+<xatm_TMTNM.FSM.Main:Main_Step02()>
+Sub Main_Step02()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+		
+	Select Case Parent.Item("AutomationType").Value
+		
+		Case "TM"
+			
+			S2TM triggerId, impedeId
+		
+		Case "NM"
+
+			S2NM triggerId, impedeId
+		
+		' The busbar maneuvers take neither argument: which busbar and
+		' which way round is the whole of what they need, and the mode
+		' carries both.
+		Case "TMB1A", "NMB1A", "TMB2B", "NMB2B"
+
+			SBB 2, Parent.Item("AutomationType").Value
+			
+	End Select
+	
+End Sub
+
+Sub S2NM(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action, nextStep
+	nextStep = 3
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 1
+
+		Select Case triggerId
+
+			Case 100
+				If impedeId = 200 Then
+					breakerId = 700
+				Else
+					breakerId = 710
+				End If
+
+			Case 200
+				If impedeId = 100 Then
+					breakerId = 720
+				Else
+					breakerId = 710
+				End If
+
+			Case 300
+				If impedeId = 400 Then
+					breakerId = 730
+				ElseIf impedeId = 100 Or impedeId = 200 Then
+					breakerId = 740
+				Else
+					breakerId = 740
+					nextStep = 99    ' no contingency: sequence ends here
+				End If
+
+			Case 400
+				If impedeId = 300 Then
+					breakerId = 900
+				ElseIf impedeId = 100 Or impedeId = 200 Then
+					breakerId = 740
+				Else
+					breakerId = 740
+					nextStep = 99    ' no contingency: sequence ends here
+				End If
+
+		End Select
+
+	Else
+
+		' ==============
+		' DEFAULT
+		' ==============
+		action = 1
+		breakerId = 700
+		nextStep = 99
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 2: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 2: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+Sub S2TM(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 1
+
+		nextStep = 3
+
+		Select Case triggerId
+
+			Case 100
+				If impedeId = 200 Then
+					breakerId = 120
+				Else
+					breakerId = 700
+				End If
+
+			Case 200
+				If impedeId = 100 Then
+					breakerId = 710
+				ElseIf impedeId = 300 Or impedeId = 400 Then
+					breakerId = 720
+				Else
+					breakerId = 700
+				End If
+
+			Case 300
+				If impedeId = 100 Then
+					breakerId = 730
+				ElseIf impedeId = 200 Then
+					breakerId = 900
+				ElseIf impedeId = 400 Then
+					breakerId = 740
+				Else
+					breakerId = 320
+					nextStep = 99    ' no contingency: sequence ends here
+				End If
+
+			Case 400
+				If impedeId = 100 Then
+					breakerId = 730
+				ElseIf impedeId = 200 Then
+					breakerId = 900
+				ElseIf impedeId = 300 Then
+					breakerId = 740
+				Else
+					breakerId = 420
+					nextStep = 99    ' no contingency: sequence ends here
+				End If
+
+		End Select
+
+	Else
+
+		' ==============
+		' DEFAULT
+		' ==============
+		action = 1
+		breakerId = triggerId + 20
+		nextStep = 99
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 2: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 2: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+<xatm_TMTNM.FSM.Main:Main_Step03()>
+Sub Main_Step03()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+		
+	Select Case Parent.Item("AutomationType").Value
+		
+		Case "TM"
+			
+			S3TM triggerId, impedeId
+		
+		Case "NM"
+
+			S3NM triggerId, impedeId
+			
+	End Select
+	
+End Sub
+
+Sub S3NM(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 2
+
+		Select Case triggerId
+
+			Case 100
+				If impedeId = 200 Then
+					breakerId = 710
+				ElseIf impedeId = 300 Or impedeId = 400 Then
+					breakerId = 700
+				Else
+					breakerId = 720
+				End If
+
+			Case 200
+				If impedeId = 100 Then
+					breakerId = 710
+				Else
+					breakerId = 720
+				End If
+
+			Case 300
+				If impedeId = 100 Then
+					breakerId = 730
+				ElseIf impedeId = 200 Then
+					breakerId = 900
+				ElseIf impedeId = 400 Then
+					breakerId = 740
+				End If
+
+			Case 400
+				If impedeId = 100 Then
+					breakerId = 730
+				ElseIf impedeId = 200 Then
+					breakerId = 900
+				ElseIf impedeId = 300 Then
+					breakerId = 740
+				End If
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 3: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 3: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 4
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+Sub S3TM(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 2
+
+		Select Case triggerId
+
+			Case 100
+				If impedeId = 200 Then
+					breakerId = 720
+				ElseIf impedeId = 300 Or impedeId = 400 Then
+					breakerId = 710
+				Else
+					breakerId = 730
+				End If
+
+			Case 200
+				If impedeId = 100 Then
+					breakerId = 720
+				ElseIf impedeId = 300 Or impedeId = 400 Then
+					breakerId = 710
+				Else
+					breakerId = 730
+				End If
+
+			Case 300
+				If impedeId = 100 Or impedeId = 200 Then
+					breakerId = 740
+				ElseIf impedeId = 400 Then
+					breakerId = 730
+				End If
+
+			Case 400
+				If impedeId = 100 Or impedeId = 200 Then
+					breakerId = 740
+				ElseIf impedeId = 300 Then
+					breakerId = 900
+				End If
+
+		End Select
+
+	Else
+
+		action = 2
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 3: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 3: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 4
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+	
+End Sub
+
+<xatm_TMTNM.FSM.Main:Main_Step04()>
+Sub Main_Step04()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+		
+	Select Case Parent.Item("AutomationType").Value
+		
+		Case "TM"
+			
+			S4TM triggerId, impedeId
+		
+		Case "NM"
+
+			S4NM triggerId, impedeId
+			
+	End Select
+	
+End Sub
+
+Sub S4NM(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action, nextStep
+	nextStep = 99
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 1
+
+		Select Case triggerId
+
+			Case 100
+				If impedeId = 200 Then
+					breakerId = 720
+				ElseIf impedeId = 300 Or impedeId = 400 Then
+					breakerId = 900
+				Else
+					breakerId = 730
+					nextStep = 5    ' sequence continues
+				End If
+
+			Case 200
+				If impedeId = 100 Then
+					breakerId = 700
+				ElseIf impedeId = 300 Or impedeId = 400 Then
+					breakerId = 730
+				Else
+					breakerId = 730
+					nextStep = 5    ' sequence continues
+				End If
+
+			Case 300
+				If impedeId = 100 Then
+					breakerId = 720
+				ElseIf impedeId = 200 Then
+					breakerId = 700
+				ElseIf impedeId = 400 Then
+					breakerId = 900
+				End If
+
+			Case 400
+				If impedeId = 100 Then
+					breakerId = 720
+				ElseIf impedeId = 200 Then
+					breakerId = 700
+				ElseIf impedeId = 300 Then
+					breakerId = 730
+				End If
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 4: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 4: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+Sub S4TM(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	Dim nextStep
+	nextStep = 99
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 1
+
+		Select Case triggerId
+
+			Case 100
+				If impedeId = 200 Then
+					breakerId = 710
+				ElseIf impedeId = 300 Or impedeId = 400 Then
+					breakerId = 120
+				Else
+					breakerId = 720
+					nextStep = 5    ' sequence continues
+				End If
+
+			Case 200
+				If impedeId = 100 Or impedeId = 300 Or impedeId = 400 Then
+					breakerId = 220
+				Else
+					breakerId = 720
+					nextStep = 5    ' sequence continues
+				End If
+
+			Case 300
+				breakerId = 320
+
+			Case 400
+				breakerId = 420
+
+		End Select
+
+	Else
+
+		action = 1
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 4: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 4: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = nextStep
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+<xatm_TMTNM.FSM.Main:Main_Step05()>
+Sub Main_Step05()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+		
+	Select Case Parent.Item("AutomationType").Value
+		
+		Case "TM"
+			
+			S5TM triggerId, impedeId
+		
+		Case "NM"
+
+			S5NM triggerId, impedeId
+			
+	End Select
+	
+End Sub
+
+Sub S5NM(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 2
+
+		Select Case triggerId
+
+			Case 100, 200
+				breakerId = 700
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 5: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 5: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 6
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+Sub S5TM(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 2
+
+		Select Case triggerId
+
+			Case 100, 200
+
+				breakerId = 710
+
+		End Select
+
+	Else
+
+		action = 2
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 5: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 5: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 6
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+<xatm_TMTNM.FSM.Main:Main_Step06()>
+Sub Main_Step06()
+
+	Dim triggerId, impedeId
+	triggerId = Parent.Item("TriggerTransformerId").Value
+	impedeId  = ReadImpededId()
+		
+	Select Case Parent.Item("AutomationType").Value
+		
+		Case "TM"
+			
+			S6TM triggerId, impedeId
+		
+		Case "NM"
+
+			S6NM triggerId, impedeId
+			
+	End Select
+	
+End Sub
+
+Sub S6NM(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 1
+
+		Select Case triggerId
+
+			Case 100, 200
+				breakerId = 900
+
+		End Select
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 6: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 6: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 99
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
+Sub S6TM(triggerId, impedeId)
+
+	Dim layoutType
+	layoutType = GetLayoutType()
+
+	Dim breakerId, action
+
+	If layoutType = "4TR4LV_6BB6TIERING" Then
+
+		action = 1
+
+		Select Case triggerId
+
+			Case 100
+				breakerId = 120
+
+			Case 200
+				breakerId = 220
+
+		End Select
+
+	Else
+
+		action = 1
+
+	End If
+
+	Dim breaker, breakerExists
+	Set breaker = GetDeviceById(breakerId, breakerExists)
+
+	If Not breakerExists Then
+
+		WriteLog "Step 6: Circuit breaker with ID=" & breakerId & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If breaker.Item("Data").Item("Position").Value = action Then
+
+		WriteLog "Step 6: " & breaker.Name & " " & OperationName(action) & " - Proceeding to the next step."
+		ResetTimer()
+		Value = 99
+		Exit Sub
+
+	End If
+
+	Select Case breaker.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
 <xatm_Transformer.Data.Timers.UndervoltageRelay:UndervoltageRelay_Counter()>
 Sub UndervoltageRelay_Counter()
 	
@@ -6810,7 +6856,7 @@ Sub UndervoltageRelay_Counter()
 	
 	
 	' ================
-	' TRIGGER BTC
+	' TRIGGER TMTNM
 	' ================
 	
 	WriteLog "Undervoltage relay counter has reached zero - requesting TA."
@@ -6861,6 +6907,74 @@ Sub UndervoltageRelay_OnChangedValue()
 		End If
 		
 	End If
+	
+End Sub
+
+<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_Functions()>
+Sub RASEAT_Functions()
+End Sub
+
+
+' Asks the high-voltage reclosing to run, because this transformer's busbar
+' relay operated.
+'
+' Found rather than configured. There is one reclosing automation in a
+' station and it holds no references to equipment, so the transformer looks
+' for it by class - the same way RequestTMTNM looks for the transfer bound to
+' this transformer, and for the same reason: E3 gives no way to call across
+' objects, so the only way to ask for work is to write to a tag on the
+' object that does it.
+'
+' A station whose incomer layout declares no entry bays has no reclosing to
+' find, and says so once rather than failing quietly.
+Sub RequestRASEAT()
+
+	Dim obj, bound
+	Set bound = Nothing
+
+	For Each obj In Application.GetObject("XATM_Data.Automation")
+
+		If TypeName(obj) = "xatm_RASEAT" Then
+			Set bound = obj
+			Exit For
+		End If
+
+	Next
+
+	If bound Is Nothing Then
+		WriteLog "No RASEAT in this substation - reclosing request ignored."
+		Exit Sub
+	End If
+
+	WriteLog "CR operated - reclosing requested via " & bound.Name & "."
+
+	' The Id travels so the reclosing can name who asked. It reads the CR
+	' of every transformer for itself: more than one can operate together,
+	' and the sequence has to wait for all of them to isolate.
+	bound.Item("Commands").Item("Start").WriteEx xatm_Transformer.Id
+
+End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+	
+End Sub
+
+<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_OnCRTrip()>
+Sub RASEAT_OnCRTrip()
+	
+	RequestRASEAT()
 	
 End Sub
 
@@ -6921,7 +7035,7 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
-
+	
 End Sub
 
 <xatm_Transformer.Data.Triggers.TA:TA_OnLockingoutRelayTrip()>
@@ -6935,74 +7049,6 @@ End Sub
 Sub TA_OnUndervoltageTrip()
 
 	RequestTA "TA"
-	
-End Sub
-
-<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_Functions()>
-Sub RASEAT_Functions()
-End Sub
-
-
-' Asks the high-voltage reclosing to run, because this transformer's busbar
-' relay operated.
-'
-' Found rather than configured. There is one reclosing automation in a
-' station and it holds no references to equipment, so the transformer looks
-' for it by class - the same way RequestTA looks for the transfer bound to
-' this transformer, and for the same reason: E3 gives no way to call across
-' objects, so the only way to ask for work is to write to a tag on the
-' object that does it.
-'
-' A station whose incomer layout declares no entry bays has no reclosing to
-' find, and says so once rather than failing quietly.
-Sub RequestRASEAT()
-
-	Dim obj, bound
-	Set bound = Nothing
-
-	For Each obj In Application.GetObject("XATM_Data.Automation")
-
-		If TypeName(obj) = "xatm_RASEAT" Then
-			Set bound = obj
-			Exit For
-		End If
-
-	Next
-
-	If bound Is Nothing Then
-		WriteLog "No RASEAT in this substation - reclosing request ignored."
-		Exit Sub
-	End If
-
-	WriteLog "CR operated - reclosing requested via " & bound.Name & "."
-
-	' The Id travels so the reclosing can name who asked. It reads the CR
-	' of every transformer for itself: more than one can operate together,
-	' and the sequence has to wait for all of them to isolate.
-	bound.Item("Commands").Item("Start").WriteEx xatm_Transformer.Id
-
-End Sub
-
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-	
-End Sub
-
-<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_OnCRTrip()>
-Sub RASEAT_OnCRTrip()
-	
-	RequestRASEAT()
 	
 End Sub
 
@@ -7029,7 +7075,30 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
+	
+End Sub
 
+<xatm_Version.Data.Version:Version_OnChangedValue()>
+Sub Version_OnChangedValue()
+	
+	' The report is asked for by writing this tag, which is the shape every
+	' command in the library takes: one E3 object cannot call a procedure in
+	' another's scope, so a screen writes a tag and the object acts on it.
+	'
+	' The value means nothing beyond "asked for" - which tag was written is
+	' what says what was wanted.
+	If Trim(Value & "") = "" Then Exit Sub
+
+	Dim ts
+	ts = TimeStamp
+
+	ShowReport
+
+	' Cleared with the timestamp it arrived with, so emptying the tag is not
+	' itself a second command. The guard above covers the other case, where
+	' the event is driven by the value rather than by the timestamp.
+	WriteEx "", ts
+		
 End Sub
 
 <xatm_Version.Data.Version:Version_OnStartRunning()>
@@ -7184,6 +7253,6 @@ Sub FindBuild(folder, ByRef found)
 		On Error Goto 0
 
 	Next
-
+	
 End Sub
 
