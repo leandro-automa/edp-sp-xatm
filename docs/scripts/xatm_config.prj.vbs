@@ -4643,23 +4643,24 @@ Sub xatm_TA_OnStartRunning()
 		"XObject do transformador ao qual esta instância do automatismo está vinculada."
 	
 
-	' Whether step 1 opens the secondary breaker or waits for it.
+	' Whether step 1 sends the open command, or only confirms the breaker.
 	'
 	' The lockout relay trips that breaker itself on most panels, and where
 	' it does there is nothing for step 1 to command - only something to
 	' confirm. An order sent into a breaker the protection is already
-	' opening is a second order for one movement.
+	' opening is a second order for one movement, so clear it there.
 	'
-	' False where the protection does not open it, which is what every
-	' station did before this existed. The step timer bounds the wait
-	' either way: a breaker that never opens is a failed step.
+	' True by default, which is what every station did before this existed,
+	' and the forgiving direction: step 1 leaves early when the breaker is
+	' already open, so a redundant order only ever reaches one still closed,
+	' where a wait nobody satisfies runs the step to its timeout.
 	'
 	' Read at step 1 and nowhere else. It says how this transformer's panel
 	' is wired, so it belongs to the instance and not to the request - the
 	' undervoltage trigger reaches the same step and finds the same answer.
-	AddProperty bag, "WaitLowVoltageBreaker", "Boolean", False, _
-		"True when step 1 waits for the low-voltage breaker to open instead of commanding it. Set it where the lockout relay already trips that breaker.", _
-		"True quando o passo 1 aguarda a abertura do disjuntor de baixa tensão em vez de comandá-lo. Marque onde o relé de bloqueio já abre esse disjuntor."
+	AddProperty bag, "SendLowVoltageBreakerOpenCommand", "Boolean", True, _
+		"True when step 1 sends the open command to the low-voltage breaker. Clear it where the lockout relay already trips that breaker and step 1 need only confirm it.", _
+		"True quando o passo 1 envia o comando de abertura ao disjuntor de baixa tensão. Desmarque onde o relé de bloqueio já abre esse disjuntor e ao passo 1 basta confirmá-lo."
 
 	AddProperty bag, "OperatorBlock", "Boolean", False, _
 		"Operator lock. Blocks the start until the operator releases it.", _
@@ -4728,7 +4729,7 @@ Sub xatm_TA_OnStartRunning()
 	' the two have in common - the reasoning is written out there.
 	SetExposure bag, "Enabled",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "Transformer",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_SAVED
-	SetExposure bag, "WaitLowVoltageBreaker", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "SendLowVoltageBreakerOpenCommand", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "GeneralBlock",   EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 

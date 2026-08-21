@@ -3524,21 +3524,6 @@ End Function
 ' situations 2-5 are the states a sequence starts from, and 6-11 - two
 ' transformers out - are the states they end in, with no sequence leaving
 ' them. So this is one Id and not a set.
-' Whether step 1 waits for the secondary breaker rather than opening it.
-'
-' False for a class that has not been given the property, which is what
-' every station did before it existed.
-Function WaitsForBreaker()
-
-	WaitsForBreaker = False
-
-	On Error Resume Next
-	WaitsForBreaker = CBool(xatm_TA.WaitLowVoltageBreaker)
-	On Error Goto 0
-
-End Function
-
-
 Function ReadImpededId()
 
 	Dim id
@@ -3554,6 +3539,25 @@ Function ReadImpededId()
 	ReadImpededId = CInt(id)
 
 End Function
+
+
+' Whether step 1 sends the open command, or only confirms the breaker.
+'
+' True for a class that has not been given the property, which is what
+' every station did before it existed - and the forgiving direction
+' either way. Step 1 leaves early when the breaker is already open, so a
+' redundant order only ever reaches one still closed; a wait nobody
+' satisfies runs the step to its timeout instead.
+Function SendsOpenCommand()
+
+	SendsOpenCommand = True
+
+	On Error Resume Next
+	SendsOpenCommand = CBool(xatm_TA.SendLowVoltageBreakerOpenCommand)
+	On Error Goto 0
+
+End Function
+
 
 Sub WriteLog(message)
 	
@@ -3808,7 +3812,21 @@ Sub S1TA(triggerId, impedeId)
 	' Where it is not wired that way, this step is what opens it. The step
 	' timer bounds the wait either way: a breaker that never opens is a
 	' failed step and not a sequence that sits there.
-	If WaitsForBreaker() Then Exit Sub
+	If Not SendsOpenCommand() Then
+
+		' Said once, and only once the wait is long enough to look like a
+		' stall. The protection normally has the breaker open before the
+		' first tick, so there is usually nothing to say at all - and a line
+		' every second until the step times out would bury the one that
+		' matters. Three, the same figure the reclosing waits before it says
+		' what it is waiting for.
+		If Parent.Item("StepTimer").Value = 3 Then
+			WriteLog "Step 1: waiting for " & breaker.Name & " to be opened by the protection."
+		End If
+
+		Exit Sub
+
+	End If
 
 	Select Case breaker.Item("Data").Item("CommandInProgress").Value
 
