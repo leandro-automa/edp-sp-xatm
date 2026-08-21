@@ -946,6 +946,13 @@ Function IsTagProperty()
 End Function
 
 
+Function IsBooleanProperty()
+
+	IsBooleanProperty = (LCase(PropertyType & "") = "boolean")
+
+End Function
+
+
 ' Where the current value is read from, "" when there is nothing to read.
 '
 ' A command is written and never read. The manifest says so by withholding
@@ -979,7 +986,12 @@ Function LiveSource()
 	If Trim(ObjectPath & "") = "" Then Exit Function
 	If Trim(PropertyName & "") = "" Then Exit Function
 
-	LiveSource = ObjectPath & "." & PropertyName
+	' E3 renders a Boolean in the language Windows is running in
+	If IsBooleanProperty() Then
+		LiveSource = "IIf(CBool(" & LiveSource & ") = True, ""True"", ""False"")"
+	Else
+		LiveSource = ObjectPath & "." & PropertyName
+	End If
 
 End Function
 
