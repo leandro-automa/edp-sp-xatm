@@ -5627,10 +5627,14 @@ End Sub
 
 ' The maneuver that undoes one, and "" for one that is not undone.
 '
-' Only the transfers, out and back across the ring alike. A normalisation
-' is already the way home, and a failed one is not answered by transferring
-' again - that moves load away from the normal state, which is not a thing
-' to do unasked.
+' Both ways round. A transfer is undone by its normalisation and a
+' normalisation by its transfer, because what a run that stopped half way
+' leaves behind is neither of the two states anybody designed - and the way
+' out of it is whichever designed state it set out from.
+'
+' The transferred state is one of those. Tabela 1 situations 2-5 are the
+' substation running with a transformer out, a configuration it is meant to
+' sit in, so going back to it is not a retreat into a fault.
 Function RevertMode(mode)
 
 	Select Case mode
@@ -5638,11 +5642,20 @@ Function RevertMode(mode)
 		Case "TM"
 			RevertMode = "NM"
 
+		Case "NM"
+			RevertMode = "TM"
+
 		Case "TMB1A"
 			RevertMode = "NMB1A"
 
+		Case "NMB1A"
+			RevertMode = "TMB1A"
+
 		Case "TMB2B"
 			RevertMode = "NMB2B"
+
+		Case "NMB2B"
+			RevertMode = "TMB2B"
 
 		Case Else
 			RevertMode = ""

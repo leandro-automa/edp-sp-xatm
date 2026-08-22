@@ -5040,7 +5040,7 @@ Sub xatm_TMTNM_OnStartRunning()
 		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
 		
 	
-	' Whether a failed transfer unwinds itself instead of stopping where it
+	' Whether a failed maneuver unwinds itself instead of stopping where it
 	' failed.
 	'
 	' The instance runs the inverse maneuver from its own step 1. Every step
@@ -5049,16 +5049,20 @@ Sub xatm_TMTNM_OnStartRunning()
 	' is why a transfer that died half way needs no record of how far it
 	' got.
 	'
-	' Transfers only, out and back across the ring alike. A normalisation is
-	' already the way home and is never reverted; nor is a failure at step 1,
-	' where nothing has been operated yet.
+	' Both ways round: a transfer is undone by its normalisation and a
+	' normalisation by its transfer. What a run that stopped half way leaves
+	' is neither of the two states anybody designed, and the way out is
+	' whichever designed state it set out from - the transferred one being a
+	' configuration the substation is meant to sit in, not a fault.
+	'
+	' A failure at step 1 is not reverted: nothing has been operated yet.
 	'
 	' False by default. Operating breakers on their own after something has
 	' already gone wrong is not a thing to switch on for a station without
 	' being asked.
 	AddProperty bag, "RevertOnFailure", "Boolean", False, _
-		"True when a failed transfer unwinds itself instead of stopping. The instance runs the inverse maneuver, which puts the substation back the way it was; a normalisation is never reverted.", _
-		"True quando uma transferência que falha se desfaz em vez de parar. A instância executa a manobra inversa, o que devolve a subestação ao estado anterior; uma normalização nunca é revertida."
+		"True when a failed maneuver unwinds itself instead of stopping. The instance runs the inverse, which puts the substation back in the state it set out from - a transfer to the normalised one, a normalisation to the transferred one.", _
+		"True quando uma manobra que falha se desfaz em vez de parar. A instância executa a manobra inversa, o que devolve a subestação ao estado de onde ela partiu - uma transferência ao estado normalizado, uma normalização ao transferido."
 
 	' What the last run did, kept until the next one starts.
 	'
@@ -5077,8 +5081,8 @@ Sub xatm_TMTNM_OnStartRunning()
 		"True quando a última manobra não foi concluída - falhou e parou, ou falhou e se desfez."
 
 	AddProperty bag, "Reverting", "Boolean", False, _
-		"True while a failed transfer is unwinding itself. Cleared when the sequence ends, which it ends unsuccessfully.", _
-		"True enquanto uma transferência que falhou está se desfazendo. Apagada quando a sequência termina - e ela termina mal sucedida."
+		"True while a failed maneuver is unwinding itself. Cleared when the sequence ends, which it ends unsuccessfully.", _
+		"True enquanto uma manobra que falhou está se desfazendo. Apagada quando a sequência termina - e ela termina mal sucedida."
 
 
 	' --- the gates, one pair for each maneuver --------------------------
