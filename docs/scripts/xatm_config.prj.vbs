@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Fri Aug 21 09:07:06 2026
+Mon Aug 24 14:05:28 2026
 -----------------------
 
 <xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
@@ -4642,7 +4642,6 @@ Sub xatm_TA_OnStartRunning()
 		"Transformer XObject this automation instance is bound to.", _
 		"XObject do transformador ao qual esta instância do automatismo está vinculada."
 	
-
 	' Whether step 1 sends the open command, or only confirms the breaker.
 	'
 	' The lockout relay trips that breaker itself on most panels, and where
@@ -4661,6 +4660,7 @@ Sub xatm_TA_OnStartRunning()
 	AddProperty bag, "SendLowVoltageBreakerOpenCommand", "Boolean", True, _
 		"True when step 1 sends the open command to the low-voltage breaker. Clear it where the lockout relay already trips that breaker and step 1 need only confirm it.", _
 		"True quando o passo 1 envia o comando de abertura ao disjuntor de baixa tensão. Desmarque onde o relé de bloqueio já abre esse disjuntor e ao passo 1 basta confirmá-lo."
+
 
 	AddProperty bag, "OperatorBlock", "Boolean", False, _
 		"Operator lock. Blocks the start until the operator releases it.", _
@@ -5038,31 +5038,30 @@ Sub xatm_TMTNM_OnStartRunning()
 	AddProperty bag, "GeneralBlock", "Boolean", False, _
 		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
 		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
-		
 	
 	' Whether a failed maneuver unwinds itself instead of stopping where it
 	' failed.
 	'
-	' The instance runs the inverse maneuver from its own step 1. Every step
-	' checks the position it is about to command, so the inverse walks its
-	' whole length and operates only what the failed run had moved - which
-	' is why a transfer that died half way needs no record of how far it
-	' got.
+	' Every command a run issues is written down as it goes. Unwinding walks
+	' that record backwards and puts each device back, one per pass, and
+	' touches nothing else.
 	'
-	' Both ways round: a transfer is undone by its normalisation and a
-	' normalisation by its transfer. What a run that stopped half way leaves
-	' is neither of the two states anybody designed, and the way out is
-	' whichever designed state it set out from - the transferred one being a
-	' configuration the substation is meant to sit in, not a fault.
+	' Only what was operated. A step that found its device already in the
+	' position it wanted wrote nothing, so the revert has no reason to visit
+	' it - which matters, because a device that was already there is one
+	' somebody else put there, and driving it back would undo their work
+	' rather than this run's.
 	'
-	' A failure at step 1 is not reverted: nothing has been operated yet.
+	' A run that operated nothing is not reverted; there is nothing to put
+	' back, and saying so is a better account than a sequence of no-ops.
 	'
 	' False by default. Operating breakers on their own after something has
 	' already gone wrong is not a thing to switch on for a station without
 	' being asked.
 	AddProperty bag, "RevertOnFailure", "Boolean", False, _
-		"True when a failed maneuver unwinds itself instead of stopping. The instance runs the inverse, which puts the substation back in the state it set out from - a transfer to the normalised one, a normalisation to the transferred one.", _
-		"True quando uma manobra que falha se desfaz em vez de parar. A instância executa a manobra inversa, o que devolve a subestação ao estado de onde ela partiu - uma transferência ao estado normalizado, uma normalização ao transferido."
+		"True when a failed maneuver unwinds itself instead of stopping. It puts back only the devices it actually operated, in reverse order, and leaves alone anything it found already in position.", _
+		"True quando uma manobra que falha se desfaz em vez de parar. Ela devolve apenas os equipamentos que realmente operou, na ordem inversa, e não toca no que encontrou já na posição desejada."
+
 
 	' What the last run did, kept until the next one starts.
 	'
@@ -5083,8 +5082,7 @@ Sub xatm_TMTNM_OnStartRunning()
 	AddProperty bag, "Reverting", "Boolean", False, _
 		"True while a failed maneuver is unwinding itself. Cleared when the sequence ends, which it ends unsuccessfully.", _
 		"True enquanto uma manobra que falhou está se desfazendo. Apagada quando a sequência termina - e ela termina mal sucedida."
-
-
+	
 	' --- the gates, one pair for each maneuver --------------------------
 	'
 	' A pair for every command, because what has to hold before a transfer
@@ -5285,7 +5283,7 @@ Sub xatm_TMTNM_OnStartRunning()
 	SetAlarm bag, "Successful",    "MANOBRA BEM SUCEDIDA",  PAIR_ACTUATED, SEV_LOW
 	SetAlarm bag, "Unsuccessful",  "MANOBRA MAL SUCEDIDA",  PAIR_ACTUATED, SEV_HIGH
 	SetAlarm bag, "Reverting",     "REVERSÃO DE MANOBRA", PAIR_ACTUATED, SEV_HIGH
-
+	
 	' Every gate raises too, the way the single pair did.
 	'
 	' This is also what puts them in the substation folder at all:
@@ -5578,6 +5576,20 @@ Sub xatm_Transformer_OnStartRunning()
 	' The relay-failure check the specification asks for goes into the
 	' expression rather than into a property of its own: what is wanted is
 	' the message AND the messenger being healthy, which is one fact.
+	' The busbar chave rele for this transformer, and what starts the
+	' high-voltage reclosing.
+	'
+	' Not the LockingOutRelay above. That one is the transformer's own 86
+	' and trips its secondary breaker alone; this one trips the incomer as
+	' well, which is what takes the station down and what there is to
+	' reclose from.
+	'
+	' One property and not CR-1 and CR-2 apart. They differ in what they do
+	' to the medium-voltage transfer - one starts it, the other bars it -
+	' but that difference is written into the transfer's own AutomaticBlock
+	' rather than read here. All this has to say is that this transformer
+	' took the entry down, so the reclosing knows to wait for it to isolate.
+	
 	AddProperty bag, "Isolated", "Boolean", False, _
 		"Transformer is electrically isolated from the high-voltage busbars. Bound to an expression - the GOOSE its IED publishes, and that IED not having failed.", _
 		"Transformador isolado eletricamente das barras de alta tensão. Vinculada a uma expressão - a mensagem GOOSE publicada pelo seu IED, e esse IED sem defeito."
@@ -10707,7 +10719,7 @@ Function MenuKey(obj)
 End Function
 
 Sub EndOfScope()
-
+	
 End Sub
 
 <xatm_config_screens.Menu.btnTMTNM:btnTMTNM_Click()>
@@ -11099,7 +11111,7 @@ Function MenuKey(obj)
 
 End Function
 
-Sub EndOfScope()
+Sub EndOfScope()	
 	
 End Sub
 

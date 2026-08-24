@@ -600,26 +600,41 @@ beyond the one property.
 
 A run that cannot finish leaves the substation half-moved — in neither of the two
 states anybody designed. `RevertOnFailure` says what to do about that: stop where it
-failed, as it always did, or unwind and put the ring back in the state it set out
-from.
+failed, as it always did, or put back what it moved.
 
 Everything routes through one place. `Main_GlobalLockout` is where a step that
 cannot go on already landed — and so is a step timeout in `Main_Main`, and so is a
 breaker the configuration does not have — so the choice is made there and no step
 body knows about it.
 
+### It undoes what it did, not what the sequence says it should have done
+
+Every command a run issues is written down as it goes, into an FSM tag:
+
+```
+PerformedSteps = "900:2,700:1,730:2"
+```
+
+device and the action sent to it, oldest first. **A step that finds its device
+already in position writes nothing** — and that is the whole point. A device that was
+already where the step wanted it is one this run did not touch, whoever put it there.
+Driving it anywhere on the way back would be undoing somebody else's work.
+
+The revert walks that record backwards, one device per pass, issuing the opposite
+action and waiting for position exactly as a normal step does.
+
 ```mermaid
 flowchart TD
     FAIL["A step cannot go on<br/>timeout · command failed · breaker not configured"]
     LATCH["Latch StepExecutionFailed&lt;n&gt;"]
     G1{"RevertOnFailure set?"}
-    G2{"Already reverting?"}
-    G3{"Past step 1?"}
-    G4{"Maneuver has an inverse?"}
+    G2{"Already at 98?"}
+    G3{"Record non-empty?"}
 
-    REV["Reverting = True<br/>AutomationType → the inverse<br/>StepTimer = 0 · back to step 1"]
-    RUN["The inverse runs its whole length<br/>a step whose device is already right passes in a tick"]
-    OK(["Unsuccessful<br/>substation back the way it was<br/>nothing blocked"])
+    REV["Reverting = True<br/>StepTimer = 0 · Value = 98"]
+    POP["Take the last entry<br/>drive the device to the opposite position"]
+    DROP["Drop the entry · reset the timer"]
+    OK(["Unsuccessful<br/>everything this run moved is back<br/>nothing blocked"])
     LOCK(["Unsuccessful · GeneralBlock<br/>stopped where it failed"])
 
     FAIL --> LATCH --> G1
@@ -628,58 +643,41 @@ flowchart TD
     G2 -- yes --> LOCK
     G2 -- no --> G3
     G3 -- no --> LOCK
-    G3 -- yes --> G4
-    G4 -- no --> LOCK
-    G4 -- yes --> REV --> RUN --> OK
+    G3 -- yes --> REV --> POP
+    POP -->|"in position"| DROP
+    POP -->|"command failed<br/>or timed out"| LOCK
+    DROP -->|"more left"| POP
+    DROP -->|"record empty"| OK
 ```
 
-The step latch is set **before** the branch, so it is set either way. Once a revert
-has driven the ring back to normal, that latch is the only trace left of what went
-wrong.
+**98 is a state, not a step.** `Main_Main` routes 1–6 into the per-mode step subs;
+98 goes to one runner that consults nothing about the maneuver — not the mode, not
+the trigger, not the contingency. So one procedure serves a transfer, a
+normalisation, a busbar pair and anything added later, and *"am I already
+reverting?"* is answered by the FSM value itself rather than by a flag to trust.
 
-### Nothing is unwound step by step
+Each device gets its own timeout window: the step timer is reset as each one is put
+back, so one slow breaker cannot eat the budget for the rest.
 
-The instance flips `AutomationType` to the inverse maneuver and goes back to its own
-step 1. No record is kept of how far the failed run got, because none is needed:
-every step in this library checks the position it is about to command and passes when
-the device is already there. The inverse walks its whole length and operates only
-what was actually moved.
+### Details that matter
 
-TM TR1 path A, failing at step 5 — and the same table read the other way round is a
-failed NM being undone by TM:
+**Recorded on issue, not on confirmation.** A breaker that moved while its position
+feedback failed still has to be put back. The undo is position-guarded like every
+other step, so an entry for a device that never actually moved costs one tick.
 
-| | TM does | state after | NM step | finds | acts? |
-|---|---|---|---|---|---|
-| 1 | close 900 | closed | 6 | closed | **opens it** |
-| 2 | open 700 | open | 5 | open | **closes it** |
-| 3 | close 730 | closed | 4 | closed | **opens it** |
-| 4 | open 720 | open | 3 | open | **closes it** |
-| 5 | close 710 | *failed* — still open | 2 | already open | passes |
-| 6 | open 120 | never reached — still closed | 1 | already closed | passes |
+**The entry is dropped on confirmation, not on issue.** If the undo command fails,
+the entry is still there.
 
-`ImpededTransformerId` travels untouched, because it is what selects the contingency
-path on the way back as on the way out.
+**The step latch is set before the branch,** so it is set either way. Once a revert
+has finished, that latch is the only trace left of what went wrong.
 
-### What reverts, and what does not
-
-| Maneuver | Reverts as | Why |
-|----------|-----------|-----|
-| `TM` ↔ `NM` | each other | |
-| `TMB1A` ↔ `NMB1A` | each other | the busbar pairs are transfers too |
-| `TMB2B` ↔ `NMB2B` | each other | |
-| a run that is itself a revert | — | or a failed revert would start another, and that one another |
-| a failure at step 1 | — | nothing has been operated; six no-ops are a worse account than the truth |
-
-**Both ways round.** Going back to the transferred state is not a retreat into a
-fault: Tabela 1 situations 2–5 are the substation running with a transformer out,
-which is a configuration it is meant to sit in. What is *not* designed is the half
-way state a failed run leaves, and the way out of that is whichever of the two the
-run set out from.
+**A failure during the revert goes to real lockout.** It cannot recurse: the guard is
+`Value = 98`, which is true by construction while unwinding.
 
 ### How it ends
 
-No `GeneralBlock` — the substation is back where it started and nothing is barred.
-The outcome rides on the result signals instead, in the shape RASEAT already uses:
+No `GeneralBlock` — everything this run moved is back and nothing is barred. The
+outcome rides on the result signals instead, in the shape RASEAT already uses:
 
 | | Set when | Cleared |
 |---|---|---|
@@ -690,17 +688,6 @@ The outcome rides on the result signals instead, in the shape RASEAT already use
 Cleared as a run *begins* rather than as one ends, so the control room keeps seeing
 how the last attempt went until something new is asked for. A revert always ends
 `Unsuccessful`: the sequence finished, the maneuver did not.
-
-> **Worth a protection sign-off before this is armed.** The argument that it is safe
-> is that each sequence's steps collectively *define* the state it ends in, and each
-> step is position-guarded — so a sequence converges on its own end state from any
-> state its steps can reach. The contingency paths bear this out, being the same
-> operations in a different order rather than step-for-step inverses.
->
-> What that argument does not cover is the *intermediate* topologies. Each ordering
-> was designed assuming the other end state as its starting point; run from a partial
-> one it passes through states neither sequence normally produces. Paths were traced
-> by hand in both directions and land correctly, which is not the same as all of them.
 
 ---
 

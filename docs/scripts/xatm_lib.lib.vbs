@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Fri Aug 21 09:06:41 2026
+Mon Aug 24 14:05:47 2026
 -----------------------
 
 <xatm_Breaker.Data.CommandInProgress:CommandInProgress_OnChangedValue()>
@@ -764,6 +764,8 @@ End Sub
 <xatm_Build:xatm_Build_OnStartRunning()>
 Sub xatm_Build_OnStartRunning()
 
+	Const DEMO_BUILD = True
+
 	' What this build of the library is, published where anything can read
 	' it without having to know where it came from.
 	'
@@ -781,31 +783,7 @@ Sub xatm_Build_OnStartRunning()
 	' reads the flag and never this, because a typo or a stray capital in
 	' a string comparison is not a thing to put in front of a switchyard.
 	Edition = IIf(DEMO_BUILD, "DEMO", "RUNTIME")
-
-End Sub
-
-
-' Which of the two builds this is, and the only place it is written down.
-'
-' Building the pair is: flip this, export, protect the runtime one. The
-' command gate keeps no copy - it reads the instance its own breaker
-' carries - so there is no second flag to fall out of step with this one.
-'
-' Which version the library is says nothing about whether it may operate
-' anything, and lives on xatm_Version instead: one object standing in the
-' data project, rather than a copy inside every device. Two facts about
-' the same file, wanted in different places, kept apart.
-'
-' Nothing is announced from here either. xatm_Version does that, once, and
-' two objects announcing the same library is how the two release notes came
-' to disagree in the first place.
-Const DEMO_BUILD = True
-
-
-' A scope may not end on a Function - E3 takes the script without
-' complaint and then behaves as though the last one were not there. This
-' one ends on a Const, which is no better a thing to rely on.
-Sub BuildConstants()
+		
 End Sub
 
 <xatm_ConsoleLogEngine.WriteLine:xatm_ConsoleLogEngine_OnWriteLineChanged()>
@@ -1021,14 +999,14 @@ Sub CommandOpenClose_OnChangedValue()
 
 End Sub
 
-' Whether the library driving this disconnector is the demo build.
+' Whether the library driving this breaker is the demo build.
 '
-' Read off the xatm_Build the disconnector carries, so the answer comes
-' from the same library file as this code - not from a constant copied
-' into this scope, which would be a second thing to flip, and not from a
+' Read off the xatm_Build the breaker carries, so the answer comes from
+' the same library file as this code - not from a constant copied into
+' this scope, which would be a second thing to flip, and not from a
 ' singleton in another project, which a site might not have deployed.
 '
-' Fails closed. A disconnector with no Build inside it is one driven by a
+' Fails closed. A breaker with no Build inside it is one driven by a
 ' library too old to have the class at all, and that is not a library to
 ' let near a switchyard.
 Function IsDemoBuild()
@@ -1726,8 +1704,34 @@ Sub Reset()
 		End If
 
 	Next
+	
+	' ================
+	' RESET ALL DEVICES
+	' ================
+	ResetDevices Application.GetObject("XATM_Data.Substation")
 
 	WriteLog "Reset"
+
+End Sub
+
+
+Sub ResetDevices(folder)
+	
+	For Each obj In folder
+	
+		If TypeName(obj) = "xatm_Breaker" Then
+		
+			On Error Resume Next
+			obj.Item("Data").Item("Reset").WriteEx True
+			On Error Goto 0
+			
+		Else
+		
+			ResetDevices obj
+		
+		End If
+	
+	Next
 
 End Sub
 
@@ -3515,15 +3519,6 @@ Function OperationName(operation)
 End Function
 
 
-' Which transformer the running maneuver is treating as out of service, or 0
-' for none. Written once by Start_OnChangedValue - declared by the operator
-' for TM and NM, read off the field for TA - and constant for the whole run,
-' so no step can be handed a different contingency than the step before it.
-'
-' The spec pairs every maneuver with at most one impediment: Tabela 1
-' situations 2-5 are the states a sequence starts from, and 6-11 - two
-' transformers out - are the states they end in, with no sequence leaving
-' them. So this is one Id and not a set.
 Function ReadImpededId()
 
 	Dim id
@@ -3801,7 +3796,7 @@ Sub S1TA(triggerId, impedeId)
 		Exit Sub
 
 	End If
-
+	
 	' Opened here, or only confirmed here.
 	'
 	' Where the lockout relay trips the secondary breaker itself there is
@@ -4388,6 +4383,8 @@ Sub Reset()
 	xatm_TMTNM.Running 		= False
 	xatm_TMTNM.GeneralBlock	= False
 	xatm_TMTNM.Reverting	= False
+	xatm_TMTNM.Successful	= False
+	xatm_TMTNM.Unsuccessful	= False
 	
 	' ===============
 	' RESET ALL STEP FAIL POINTS
@@ -4799,10 +4796,16 @@ Sub Start_OnChangedValue()
 	xatm_TMTNM.Successful   = False
 	xatm_TMTNM.Unsuccessful = False
 	xatm_TMTNM.Reverting    = False
-
+	
 	xatm_TMTNM.Item("FSM").Item("AutomationType").WriteEx runMode
 	xatm_TMTNM.Item("FSM").Item("TriggerTransformerId").WriteEx triggerId
 	xatm_TMTNM.Item("FSM").Item("ImpededTransformerId").WriteEx impedeId
+
+	' Emptied here and not only at the end of a run. A run that stopped in
+	' lockout never reached Main_Completed, and its record appended to would
+	' make this run's revert undo that one's work as well.
+	xatm_TMTNM.Item("FSM").Item("PerformedSteps").WriteEx ""
+
 	xatm_TMTNM.Item("FSM").Item("StepTimer").WriteEx 0
 	xatm_TMTNM.Item("FSM").Item("Main").WriteEx 0
 	xatm_TMTNM.Running = True
@@ -5228,7 +5231,7 @@ End Sub
 
 <xatm_TMTNM.FSM.Main:Main_Completed()>
 Sub Main_Completed()
-
+	
 	' Read before the state is torn down, because tearing it down is what
 	' this does.
 	Dim reverted
@@ -5236,6 +5239,7 @@ Sub Main_Completed()
 
 	Parent.Item("TriggerTransformerId").WriteEx  Empty, 0
 	Parent.Item("AutomationType").WriteEx Empty, 0
+	Parent.Item("PerformedSteps").WriteEx Empty, 0
 	Parent.Item("StepTimer").WriteEx  Empty, 0
 	WriteEx  Empty, 0
 
@@ -5257,7 +5261,7 @@ Sub Main_Completed()
 		WriteLog "Automation completed successfully."
 
 	End If
-
+            	
 End Sub
 
 <xatm_TMTNM.FSM.Main:Main_Functions()>
@@ -5344,6 +5348,163 @@ End Function
 ' situations 2-5 are the states a sequence starts from, and 6-11 - two
 ' transformers out - are the states they end in, with no sequence leaving
 ' them. So this is one Id and not a set.
+' What this run has actually operated, in the order it operated it.
+'
+' "900:2,700:1" - the device and the action that was sent to it, oldest
+' first. A string and not an array because it holds at most one entry per
+' step, both fields are integers so no delimiter can collide with them, and
+' a WatchWindow shows it as the record it is. The reclosing keeps its
+' transformer list the same way.
+Function ReadPerformed()
+
+	ReadPerformed = ""
+
+	On Error Resume Next
+	ReadPerformed = Trim(Parent.Item("PerformedSteps").Value & "")
+	On Error Goto 0
+
+End Function
+
+
+' Writes a command down as it is issued, so that a revert can put back
+' exactly what was moved and nothing else.
+'
+' A step that finds its device already in position writes nothing, and that
+' is the whole point: a device that was already where the step wanted it is
+' one this run did not touch, whoever put it there and for whatever reason.
+' Driving it anywhere on the way back would be undoing somebody else's work.
+'
+' Recorded on issue rather than on confirmation. A breaker that moved while
+' its position feedback failed still has to be put back, and the undo is
+' position-guarded like every other step, so an entry for a device that
+' never actually moved costs one tick and nothing else.
+Sub RecordPerformed(id, action)
+
+	Dim list
+	list = ReadPerformed()
+
+	' Not the same device twice running. A step issues on CommandInProgress
+	' 0 or 3, so a command that completed without the position check seeing
+	' it would come back through here. Undoing twice is harmless, but the
+	' record should say what happened rather than what happened twice.
+	If LastPerformedId(list) = CLng(id) Then Exit Sub
+
+	If list <> "" Then list = list & ","
+	list = list & id & ":" & action
+
+	Parent.Item("PerformedSteps").WriteEx list
+
+End Sub
+
+
+' The device of the last entry, and 0 for an empty record.
+Function LastPerformedId(list)
+
+	LastPerformedId = 0
+
+	If list = "" Then Exit Function
+
+	Dim entries, last
+	entries = Split(list, ",")
+	last    = Split(entries(UBound(entries)), ":")
+
+	If IsNumeric(last(0)) Then LastPerformedId = CLng(last(0))
+
+End Function
+
+
+' Drops the entry the revert has just finished with.
+Sub DropLastPerformed(entries)
+
+	Dim keep, i
+	keep = ""
+
+	For i = 0 To UBound(entries) - 1
+		If keep <> "" Then keep = keep & ","
+		keep = keep & entries(i)
+	Next
+
+	Parent.Item("PerformedSteps").WriteEx keep
+
+End Sub
+
+
+' One device per pass, walking back through what the run actually did.
+'
+' Stays at 98 until the record is empty, so the FSM value itself says a
+' revert is under way - which is what keeps a failure here from starting
+' another one, without a flag to read or trust.
+'
+' Nothing about the maneuver is consulted: not the mode, not the trigger,
+' not the contingency. The record is the whole of what there is to undo,
+' which is why this one procedure serves a transfer, a normalisation, a
+' busbar pair and anything added later.
+Sub Main_Revert()
+
+	Dim list
+	list = ReadPerformed()
+
+	If list = "" Then
+
+		WriteLog "Revert: everything this run operated is back where it was."
+		Value = 99
+		Exit Sub
+
+	End If
+
+	Dim entries, entry
+	entries = Split(list, ",")
+	entry   = Split(entries(UBound(entries)), ":")
+
+	Dim id, performed, target
+	id        = CLng(entry(0))
+	performed = CLng(entry(1))
+	target    = IIf(performed = 2, 1, 2)
+
+	Dim device, exists
+	Set device = GetDeviceById(id, exists)
+
+	If Not exists Then
+
+		WriteLog "Revert: device with ID=" & id & " was not found. Please check the configuration - Global lockout"
+		Main_GlobalLockout()
+		Exit Sub
+
+	End If
+
+	If device.Item("Data").Item("Position").Value = target Then
+
+		WriteLog "Revert: " & device.Name & " " & OperationName(target) & " - " & _
+		         UBound(entries) & " left to put back."
+
+		DropLastPerformed entries
+		ResetTimer()
+		Exit Sub
+
+	End If
+
+	Select Case device.Item("Data").Item("CommandInProgress").Value
+
+		Case 0, 3
+
+			' Idle - issue the command
+			device.Item("Data").Item("CommandOpenClose").WriteEx target
+
+		Case 1
+
+			' Command execution failed
+			Main_GlobalLockout()
+			Exit Sub
+
+		Case 2
+
+			' Command in progress
+			Exit Sub
+
+	End Select
+
+End Sub
+
 Function ReadImpededId()
 
 	Dim id
@@ -5499,7 +5660,9 @@ Sub SBB(stepNumber, mode)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert can  put
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -5576,93 +5739,46 @@ End Sub
 ' a loop, a contradiction or a gesture:
 '
 '   - the instance is configured for it;
-'   - the run is not already a revert, or a revert that failed would start
-'     another one, and that one another;
-'   - something has actually been operated. A failure at step 1 has nothing
-'     to undo, and a sequence of six no-ops is a worse account of what
-'     happened than saying it stopped where it stopped;
-'   - the maneuver has an inverse at all.
+'   - the run is not already a revert, which the FSM value says by itself,
+'     or a revert that failed would start another one;
+'   - something was actually operated. A run that skipped every step it
+'     reached has nothing to put back, and saying so is a better account
+'     than a sequence of no-ops.
 Function ShouldRevert()
 
 	ShouldRevert = False
 
 	If Not RevertsOnFailure() Then Exit Function
-	If IsReverting() Then Exit Function
-	If Value <= 1 Then Exit Function
-	If RevertMode(Parent.Item("AutomationType").Value) = "" Then Exit Function
+	If Value = 98 Then Exit Function
+	If ReadPerformed() = "" Then Exit Function
 
 	ShouldRevert = True
 
 End Function
 
 
-' Hands the run to the inverse maneuver, from its own step 1.
-'
-' Nothing is unwound step by step. Every step in this library checks the
-' position it is about to command and passes when the device is already
-' there, so the inverse sequence walks its whole length and operates only
-' what the failed run had actually moved - which is why a partial transfer
-' needs no bookkeeping about how far it got.
+' Hands the run to 98, which walks the record of what it did back to front.
 '
 ' Running stays True and GeneralBlock stays clear: the maneuver is not over
-' and nothing is barred yet. The impediment travels untouched, because it
-' is what selects the contingency path on the way back as on the way out.
+' and nothing is barred yet.
+'
+' Nothing about the failed maneuver is disturbed. The mode, the trigger and
+' the contingency stay where they are - the revert has no use for them, and
+' the log still wants to be able to name what it was that failed.
 Sub StartRevert()
 
-	Dim back
-	back = RevertMode(Parent.Item("AutomationType").Value)
-
-	WriteLog "Step " & Value & " failed - reverting, running " & back & _
-	         " to put the substation back the way it was."
+	WriteLog "Step " & Value & " failed - reverting, putting back what this run operated."
 
 	xatm_TMTNM.Reverting = True
 
-	Parent.Item("AutomationType").WriteEx back
+	' Not a maneuver of its own: 98 runs the record back and consults
+	' nothing about the one that failed. The mode, the trigger and the
+	' contingency are all left where they are, for the log to name.
 	Parent.Item("StepTimer").WriteEx 0
 
-	Value = 1
+	Value = 98
 
 End Sub
-
-
-' The maneuver that undoes one, and "" for one that is not undone.
-'
-' Both ways round. A transfer is undone by its normalisation and a
-' normalisation by its transfer, because what a run that stopped half way
-' leaves behind is neither of the two states anybody designed - and the way
-' out of it is whichever designed state it set out from.
-'
-' The transferred state is one of those. Tabela 1 situations 2-5 are the
-' substation running with a transformer out, a configuration it is meant to
-' sit in, so going back to it is not a retreat into a fault.
-Function RevertMode(mode)
-
-	Select Case mode
-
-		Case "TM"
-			RevertMode = "NM"
-
-		Case "NM"
-			RevertMode = "TM"
-
-		Case "TMB1A"
-			RevertMode = "NMB1A"
-
-		Case "NMB1A"
-			RevertMode = "TMB1A"
-
-		Case "TMB2B"
-			RevertMode = "NMB2B"
-
-		Case "NMB2B"
-			RevertMode = "TMB2B"
-
-		Case Else
-			RevertMode = ""
-
-	End Select
-
-End Function
 
 
 ' The two questions asked of the class, both failing to the answer that
@@ -5689,6 +5805,7 @@ Function IsReverting()
 End Function
 
 Sub EndOfScope()
+
 End Sub
 
 <xatm_TMTNM.FSM.Main:Main_Main()>
@@ -5793,6 +5910,23 @@ Sub Main_Main()
             Else
                 
                 WriteLog "Step 6: Execution failed - Timeout exceeded."
+                Main_GlobalLockout
+				Exit Sub
+				
+            End If
+		
+		Case 98
+
+            ' The revert stays here, one device per pass, until the
+            ' record is empty. Each device gets its own window: the
+            ' timer is reset as each one is put back.
+            If Parent.Item("StepTimer").Value < STEP_1_TIMER Then
+                
+                Main_Revert()
+                
+            Else
+                
+                WriteLog "Revert: execution failed - Timeout exceeded."
                 Main_GlobalLockout
 				Exit Sub
 				
@@ -5921,7 +6055,9 @@ Sub S1NM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert can put
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -6026,7 +6162,9 @@ Sub S1TM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert canput 
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -6157,7 +6295,9 @@ Sub S2NM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert canput 
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -6267,7 +6407,9 @@ Sub S2TM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert can put
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -6381,7 +6523,9 @@ Sub S3NM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert can put
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -6476,7 +6620,9 @@ Sub S3TM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert can put
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -6595,7 +6741,9 @@ Sub S4NM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert can put
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -6685,7 +6833,9 @@ Sub S4TM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert can put
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -6768,7 +6918,9 @@ Sub S5NM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert can put
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -6835,7 +6987,9 @@ Sub S5TM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert can put
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -6918,7 +7072,9 @@ Sub S6NM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert can put
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -6987,7 +7143,9 @@ Sub S6TM(triggerId, impedeId)
 
 		Case 0, 3
 
-			' Idle - issue the command
+			' Idle - issue the command, and write it down so a revert can put
+			' back what this run moved and nothing else.
+			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
 
 		Case 1
@@ -7078,6 +7236,74 @@ Sub UndervoltageRelay_OnChangedValue()
 	
 End Sub
 
+<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_Functions()>
+Sub RASEAT_Functions()
+End Sub
+
+
+' Asks the high-voltage reclosing to run, because this transformer's busbar
+' relay operated.
+'
+' Found rather than configured. There is one reclosing automation in a
+' station and it holds no references to equipment, so the transformer looks
+' for it by class - the same way RequestTMTNM looks for the transfer bound to
+' this transformer, and for the same reason: E3 gives no way to call across
+' objects, so the only way to ask for work is to write to a tag on the
+' object that does it.
+'
+' A station whose incomer layout declares no entry bays has no reclosing to
+' find, and says so once rather than failing quietly.
+Sub RequestRASEAT()
+
+	Dim obj, bound
+	Set bound = Nothing
+
+	For Each obj In Application.GetObject("XATM_Data.Automation")
+
+		If TypeName(obj) = "xatm_RASEAT" Then
+			Set bound = obj
+			Exit For
+		End If
+
+	Next
+
+	If bound Is Nothing Then
+		WriteLog "No RASEAT in this substation - reclosing request ignored."
+		Exit Sub
+	End If
+
+	WriteLog "CR operated - reclosing requested via " & bound.Name & "."
+
+	' The Id travels so the reclosing can name who asked. It reads the CR
+	' of every transformer for itself: more than one can operate together,
+	' and the sequence has to wait for all of them to isolate.
+	bound.Item("Commands").Item("Start").WriteEx xatm_Transformer.Id
+
+End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+	
+End Sub
+
+<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_OnCRTrip()>
+Sub RASEAT_OnCRTrip()
+	
+	RequestRASEAT()
+	
+End Sub
+
 <xatm_Transformer.Data.Triggers.TA:TA_Functions()>
 Sub TA_Functions()
 End Sub
@@ -7163,7 +7389,6 @@ Sub RequestRASEAT()
 
 End Sub
 
-
 Sub WriteLog(message)
 	
 	Dim consoleLogEngine
@@ -7182,7 +7407,7 @@ End Sub
 
 <xatm_Transformer.Data.Triggers.TA:TA_OnLockingoutRelayTrip()>
 Sub TA_OnLockingoutRelayTrip()
-
+	
 	' Both, off the one relay.
 	'
 	' The lockout takes the transformer off the medium-voltage busbars
@@ -7195,7 +7420,7 @@ Sub TA_OnLockingoutRelayTrip()
 	' at the entry there, so there is nothing to reclose.
 	RequestTA "TA"
 	RequestRASEAT
-
+		
 End Sub
 
 <xatm_Transformer.Data.Triggers.TA:TA_OnUndervoltageTrip()>
@@ -7229,6 +7454,29 @@ Sub WriteLog(message)
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
 	
+End Sub
+
+<xatm_Version.Data.Version:Version_OnChangedValue()>
+Sub Version_OnChangedValue()
+	
+	' The report is asked for by writing this tag, which is the shape every
+	' command in the library takes: one E3 object cannot call a procedure in
+	' another's scope, so a screen writes a tag and the object acts on it.
+	'
+	' The value means nothing beyond "asked for" - which tag was written is
+	' what says what was wanted.
+	If Trim(Value & "") = "" Then Exit Sub
+
+	Dim ts
+	ts = TimeStamp
+
+	ShowReport
+
+	' Cleared with the timestamp it arrived with, so emptying the tag is not
+	' itself a second command. The guard above covers the other case, where
+	' the event is driven by the value rather than by the timestamp.
+	WriteEx "", ts
+		
 End Sub
 
 <xatm_Version.Data.Version:Version_OnStartRunning()>
@@ -7383,6 +7631,6 @@ Sub FindBuild(folder, ByRef found)
 		On Error Goto 0
 
 	Next
-	
+
 End Sub
 
