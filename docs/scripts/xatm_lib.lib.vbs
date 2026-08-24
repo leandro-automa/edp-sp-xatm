@@ -5660,7 +5660,7 @@ Sub SBB(stepNumber, mode)
 
 		Case 0, 3
 
-			' Idle - issue the command, and write it down so a revert can  put
+			' Idle - issue the command, and write it down so a revert can put
 			' back what this run moved and nothing else.
 			RecordPerformed breaker.Id, action
 			breaker.Item("Data").Item("CommandOpenClose").WriteEx action
@@ -7511,14 +7511,23 @@ Sub Version_OnStartRunning()
 End Sub
 
 
-' What library this is, and what it says it changed.
+' What library this is, and what it is.
 '
 ' The version lives here and the demo flag lives on xatm_Build. Two facts
 ' about the same file, kept apart because they are wanted in different
 ' places: the flag has to be inside every device for the command gate, and
 ' this has to be somewhere the interface and the distribution can walk to.
+'
+' The notes describe the library rather than list what changed in it. There
+' is no version before this one to have changed from, and somebody reading
+' a version report on a station they have just been handed wants to know
+' what the thing does. A second release turns them into the other kind.
+'
+' 1.0.0 until the release is cut. The scope has grown past what the factory
+' acceptance test validated, but a pre-release moves its number once, at
+' the end, and not with every feature that lands before it.
 Const LIBRARY_VERSION = "1.0.0"
-Const RELEASE_NOTES   = "Automatic reclosing (RASEAT); per-maneuver preconditions and blocks; one command per contingency."
+Const RELEASE_NOTES   = "Switching automation for distribution substations. Manual transfer and normalisation with contingencies, automatic transfer on a protection trip, busbar transfers, and automatic reclosing of the high-voltage entry. Maneuvers are written against an abstract layout and resolved to each station's equipment; each carries its own preconditions and blocks, its own command point for level 3, and can put back what it operated when a step fails."
 
 
 ' One number out of the version string, and 0 for anything that is not
