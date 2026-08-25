@@ -97,8 +97,28 @@ Sub objButton_Click()
 
 	End If
 
+	OpenPanel
+
+End Sub
+
+
+' Puts the configuration panel on screen, sized and dressed as a window.
+'
+' Opened into a frame and not with DoModal. A modal screen takes the viewer
+' with it - nothing else can be clicked while it is up - and this is a panel
+' somebody keeps open beside the single-line diagram, reading one and
+' setting the other. Modal would make that impossible.
+'
+' Which frame it opens into is the site's to say. This control is placed in
+' whatever project runs the station's HMI, and a library has no way to know
+' what the frames there are called.
+Sub OpenPanel()
+
 	Const CONFIG_SCREEN = "xatm_config_screens.Frame"
+	Const CONFIG_FRAME  = "xatm_ConfigPanel"
 	Const CONFIG_TITLE  = "Automation"
+	Const CONFIG_LEFT   = 0
+	Const CONFIG_TOP    = 0
 	Const CONFIG_WIDTH  = 1920
 	Const CONFIG_HEIGHT = 1080
 
@@ -108,17 +128,37 @@ Sub objButton_Click()
 	' Written as a sum rather than as 127, the way the tag picker next door
 	' writes its own: somebody changing which buttons a window has should be
 	' able to see which one to take out.
-	'
-	' The picker opens pinned and centred instead, because it is a chooser
-	' that comes back with an answer. This is a panel somebody works in, so
-	' it behaves like a window: it can be moved aside, resized, and put out
-	' of the way without being closed.
 	Dim FLAGS : FLAGS = 1 + 2 + 4 + 8 + 16 + 32 + 64
 
-	Application.DoModal	CONFIG_SCREEN, CONFIG_TITLE, _
-	                     , , _
-	                     CONFIG_WIDTH, CONFIG_HEIGHT, _
-	                     , FLAGS
+	' The frame is named here rather than asked for, and the name is the
+	' library's own. A frame this panel shares with anything else would have
+	' whatever was in it replaced the moment somebody opened the panel, so
+	' what the site owes is a frame by this name and nothing else in it.
+	Dim panel
+	Set panel = Nothing
+
+	On Error Resume Next
+	Set panel = Application.GetFrame(CONFIG_FRAME)
+	On Error Goto 0
+
+	' Said plainly rather than as a failed open. A station whose HMI has
+	' never had the frame added reads exactly like one where it was renamed,
+	' so the name is what the message carries.
+	If panel Is Nothing Then
+
+		MsgBox "This project has no frame called " & CONFIG_FRAME & ", so the " & _
+		       "configuration panel has nowhere to open. Add one to the frameset.", _
+		       vbExclamation, CONFIG_TITLE
+		Exit Sub
+
+	End If
+
+	panel.OpenScreen CONFIG_SCREEN, 0
+
+	' Sized and dressed after the screen is in it. Both belong to the frame
+	' rather than to what is showing inside it, so they outlast the open.
+	panel.MoveFrame CONFIG_LEFT, CONFIG_TOP, CONFIG_WIDTH, CONFIG_HEIGHT
+	panel.SetFrameOptions CONFIG_TITLE, FLAGS
 
 End Sub
 
