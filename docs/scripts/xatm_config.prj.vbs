@@ -3769,26 +3769,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -4185,26 +4167,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -4545,26 +4509,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -4939,26 +4885,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -5528,26 +5456,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -5820,26 +5730,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -6096,26 +5988,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
