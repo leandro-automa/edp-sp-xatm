@@ -3769,26 +3769,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -4185,26 +4167,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -4322,6 +4286,24 @@ Sub xatm_RASEAT_OnStartRunning()
 		"General interlock. Blocks the start, and is latched by a step failure until Reset clears it.", _
 		"Intertravamento geral. Impede a partida e é selado por uma falha de passo até que o Reset o apague."
 
+	' One lamp for a question that takes four properties to answer.
+	'
+	' The parts stay published - a control room that wants to know why is
+	' entitled to. This says only whether the automation could be asked to
+	' run at all, which is what somebody deciding whether to reach for it
+	' needs, and what the client's own signal list carries: one point per
+	' maneuver, LIBERADO or BLOQUEADO.
+	'
+	' Recomputed on a tick by the Gates tag. Not saved and not editable:
+	' it is a reading, and the only thing that writes it is the library.
+	'
+	' Running is not in it, nor another automation being in progress. Those
+	' say busy, which is a different thing from barred and passes on its own.
+	AddProperty bag, "Blocked", "Boolean", False, _
+		"True when the high-voltage reclosing could not start - disabled, blocked by the operator or the general interlock, or barred by the field.", _
+		"True quando o religamento de alta tensão não pode partir - desabilitado, bloqueado pelo operador ou pelo intertravamento geral, ou barrado pelo campo."
+
+
 	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
 		"Operator lock command. Written by the operator from level 1, 2 or 3 to set or release OperatorBlock.", _
 		"Comando de bloqueio do operador. Escrito pelo operador do nível 1, 2 ou 3 para marcar ou liberar o OperatorBlock."
@@ -4360,6 +4342,7 @@ Sub xatm_RASEAT_OnStartRunning()
 	' --- what the screen may do, and what leaves the station ---------------
 
 	SetExposure bag, "Enabled", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "Blocked", EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
 
 	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
@@ -4386,6 +4369,8 @@ Sub xatm_RASEAT_OnStartRunning()
 	SetAlarm bag, "Running",        "RELIGAMENTO AT",              PAIR_RUNNING,      SEV_LOW
 	SetAlarm bag, "Successful",     "RELIGAMENTO AT BEM SUCEDIDO", PAIR_ACTUATED,     SEV_LOW
 	SetAlarm bag, "Unsuccessful",   "RELIGAMENTO AT MAL SUCEDIDO", PAIR_ACTUATED,     SEV_HIGH
+
+	SetAlarm bag, "Blocked",       "RELIGAMENTO AT", PAIR_BLOCKED, SEV_MEDIUM
 
 	For i = 1 To 6
 		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
@@ -4524,26 +4509,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -4698,6 +4665,24 @@ Sub xatm_TA_OnStartRunning()
 		"Field conditions that block the automatic transfer. Bound to an expression - True keeps it from starting, alongside OperatorBlock and GeneralBlock.", _
 		"Condições de campo que bloqueiam a transferência automática. Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
 
+	' One lamp for a question that takes four properties to answer.
+	'
+	' The parts stay published - a control room that wants to know why is
+	' entitled to. This says only whether the automation could be asked to
+	' run at all, which is what somebody deciding whether to reach for it
+	' needs, and what the client's own signal list carries: one point per
+	' maneuver, LIBERADO or BLOQUEADO.
+	'
+	' Recomputed on a tick by the Gates tag. Not saved and not editable:
+	' it is a reading, and the only thing that writes it is the library.
+	'
+	' Running is not in it, nor another automation being in progress. Those
+	' say busy, which is a different thing from barred and passes on its own.
+	AddProperty bag, "Blocked", "Boolean", False, _
+		"True when an automatic transfer could not start - disabled, blocked by the operator or the general interlock, or barred by the field.", _
+		"True quando uma transferência automÁtica não pode partir - desabilitado, bloqueado pelo operador ou pelo intertravamento geral, ou barrado pelo campo."
+
+
 	' --- the command interface ------------------------------------------
 	'
 	' No CommandStart of any kind. Over IEC 60870-5-104 an address means
@@ -4736,6 +4721,7 @@ Sub xatm_TA_OnStartRunning()
 	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 
+	SetExposure bag, "Blocked", EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
 
 	For i = 1 To 6
@@ -4756,6 +4742,8 @@ Sub xatm_TA_OnStartRunning()
 
 	SetAlarm bag, "Preconditions",  "PRECONDIÇÕES TA",        PAIR_PRECONDITION, SEV_MEDIUM
 	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO TA", PAIR_BLOCKED,      SEV_MEDIUM
+
+	SetAlarm bag, "Blocked",       "TRANSFERÊNCIA AUTOMÁTICA", PAIR_BLOCKED, SEV_MEDIUM
 
 	For i = 1 To 6
 		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
@@ -4897,26 +4885,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -5137,6 +5107,33 @@ Sub xatm_TMTNM_OnStartRunning()
 	Next
 
 
+	' One lamp for a question that takes four properties to answer.
+	'
+	' The parts stay published - a control room that wants to know why is
+	' entitled to. This says only whether the automation could be asked to
+	' run at all, which is what somebody deciding whether to reach for it
+	' needs, and what the client's own signal list carries: one point per
+	' maneuver, LIBERADO or BLOQUEADO.
+	'
+	' Recomputed on a tick by the Gates tag. Not saved and not editable:
+	' it is a reading, and the only thing that writes it is the library.
+	'
+	' Running is not in it, nor another automation being in progress. Those
+	' say busy, which is a different thing from barred and passes on its own.
+	'
+	' Every contingency has to be barred before either of these is,
+	' because a transfer with TR3 out being unavailable says nothing
+	' about the plain transfer. On an instance that moves a busbar
+	' there is one gate rather than five, and only it is read.
+	AddProperty bag, "BlockedTM", "Boolean", False, _
+		"True when no manual transfer could start - disabled, blocked by the operator or the general interlock, or every contingency of it barred by the field.", _
+		"True quando nenhuma transferência manual pode partir - desabilitada, bloqueada pelo operador ou pelo intertravamento geral, ou toda contingência dela barrada pelo campo."
+
+	AddProperty bag, "BlockedNM", "Boolean", False, _
+		"True when no manual normalisation could start - disabled, blocked by the operator or the general interlock, or every contingency of it barred by the field.", _
+		"True quando nenhuma normalização manual pode partir - desabilitada, bloqueada pelo operador ou pelo intertravamento geral, ou toda contingência dela barrada pelo campo."
+
+
 	' --- the command interface -----------------------------------------
 
 	AddProperty bag, "CommandReset", "InternalTag", Empty, _
@@ -5236,6 +5233,8 @@ Sub xatm_TMTNM_OnStartRunning()
 	' so they are interfaced and nothing else.
 	SetExposure bag, "RevertOnFailure", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 
+	SetExposure bag, "BlockedTM",   EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "BlockedNM",   EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Running",      EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Successful",   EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Unsuccessful", EXPOSE_INTERFACE + EXPOSE_IOTAG
@@ -5313,6 +5312,9 @@ Sub xatm_TMTNM_OnStartRunning()
 
 		Next
 	Next
+
+	SetAlarm bag, "BlockedTM",     "TRANSFERÊNCIA",    PAIR_BLOCKED, SEV_MEDIUM
+	SetAlarm bag, "BlockedNM",     "NORMALIZAÇÃO",   PAIR_BLOCKED, SEV_MEDIUM
 
 	For i = 1 To 6
 		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
@@ -5454,26 +5456,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -5746,26 +5730,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
@@ -6022,26 +5988,8 @@ Class PropertyInfo
 		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
 	End Function
 
-	' The digital state that raises the alarm - DigitalLimit. It travels
-	' inside the pair rather than beside it, so the words and the state
-	' they describe cannot be changed independently of one another.
-	'
-	' The pair carries 1 or 0, meaning raises-when-true or
-	' raises-when-false, and this turns that into the number the tag will
-	' actually be holding. VBScript True is -1, every tag these alarms
-	' watch is a Boolean, and a DigitalAlarmSource compares its value
-	' against DigitalLimit as a number - so a limit of 1 never matches a
-	' reading of -1, and the alarm never raises. Writing 1 in the pair is
-	' still right: whoever adds one should say which state is the alarming
-	' one, not have to know what VBScript numbers True as.
 	Public Function AlarmLimit()
-
-		If CLng("0" & PairPart(2)) <> 0 Then
-			AlarmLimit = -1
-		Else
-			AlarmLimit = 0
-		End If
-
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
 	End Function
 
 	Private Function PairPart(i)
