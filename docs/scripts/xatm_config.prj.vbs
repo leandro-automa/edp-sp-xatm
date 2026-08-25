@@ -413,6 +413,21 @@ Const EXIT_FAILURE       = "EXIT_FAILURE"
 ' the manifests, and this scope cannot see them.
 Const ACK_FROM_SEVERITY  = 1     ' medium
 
+' The area an alarm is filed under, written onto the source rather than
+' left to the folder it sits in. Power gives an alarm the area of its
+' place in the tree, and this tree is shaped for the data project, not
+' for the way a control room reads its list.
+'
+'   a device       its own name - the name of the folder holding it
+'   an automation  XATM, the whole of the automation as one area
+'
+' The automation classes are the ones named, and everything else falls
+' to its own name, because a layout gains devices - another bay,
+' another transformer - and a class nobody thought of when this was
+' written should read as the equipment it is rather than be filed
+' under the automation.
+Const AUTOMATION_AREA    = "XATM"
+
 ' Where the interface was found this run, as the head of every path the
 ' alarms bind to.
 Dim gInterfaceRoot
@@ -638,6 +653,26 @@ Function BoundTag(folder, interfacePath, obj, p, problem, linkType)
 End Function
 
 
+' The alarm area for one object: the automation's own area for the
+' objects that are the automation, and the device's name for the rest.
+'
+' Compared in lower case, because a class is named once in the manifest
+' folder and TypeName answers with whatever case it was declared in.
+Function AreaOf(obj)
+
+	Select Case LCase(TypeName(obj))
+
+		Case "xatm_tmtnm", "xatm_ta", "xatm_raseat"
+			AreaOf = AUTOMATION_AREA
+
+		Case Else
+			AreaOf = obj.Name
+
+	End Select
+
+End Function
+
+
 ' One alarm for one reading: the bound tag, and the source on it that
 ' turns a change into an event.
 Sub AlarmTag(folder, interfacePath, obj, p, problem)
@@ -667,8 +702,9 @@ Sub AlarmTag(folder, interfacePath, obj, p, problem)
 	SetMember alarm, "DigitalMessageText",       p.AlarmActiveText(), where, problem
 	SetMember alarm, "DigitalReturnMessageText", p.AlarmNormalText(), where, problem
 	SetMember alarm, "DigitalSeverity",          p.AlarmSeverity,     where, problem
+	SetMember alarm, "AreaNameOverride",         AreaOf(obj),         where, problem
 	SetMember alarm, "DigitalAckRequired", _
-	          (p.AlarmSeverity <= ACK_FROM_SEVERITY), where, problem
+	          				  (p.AlarmSeverity <= ACK_FROM_SEVERITY), where, problem
 
 	gAlarms = gAlarms + 1
 
