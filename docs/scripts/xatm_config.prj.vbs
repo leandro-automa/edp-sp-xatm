@@ -7731,7 +7731,7 @@ Function TypePrefix(className)
 
 		Case "xatm_breaker"      : TypePrefix = "DJ"
 		Case "xatm_transformer"  : TypePrefix = "TR"
-		Case "xatm_disconnector" : TypePrefix = "SC"    ' seccionadora
+		Case "xatm_disconnector" : TypePrefix = "CS"    ' chave seccionadora
 
 		' A class with no tag of its own falls back to the first two
 		' letters of its name - XATM_Feeder is FE.
