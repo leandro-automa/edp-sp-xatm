@@ -78,6 +78,151 @@ Sub objButton_Click()
 	
 End Sub
 
+<xatm_OpenConfig.objButton:objButton_Click()>
+Sub objButton_Click()
+
+	' The configuration panel, and what stands between an operator and it.
+	'
+	' A demo build opens it straight away. That build drives simulated
+	' equipment only, so there is nothing behind this screen that could move
+	' a switchyard, and a password would be ceremony.
+	'
+	' A runtime build asks first. The panel edits the automation's own
+	' configuration - which maneuvers may run, what bars them, which
+	' equipment each is bound to - and a station in service is not a thing
+	' to leave one click away from that.
+	If Not IsDemoLibrary() Then
+
+		If Not PasswordAccepted() Then Exit Sub
+
+	End If
+
+	Const CONFIG_SCREEN = "xatm_config_screens.Frame"
+	Const CONFIG_TITLE  = "Automation"
+	Const CONFIG_WIDTH  = 1920
+	Const CONFIG_HEIGHT = 1080
+
+	' Title bar (1), close (2), minimize (4), maximize (8), border (16),
+	' resizable (32) and movable (64).
+	'
+	' Written as a sum rather than as 127, the way the tag picker next door
+	' writes its own: somebody changing which buttons a window has should be
+	' able to see which one to take out.
+	'
+	' The picker opens pinned and centred instead, because it is a chooser
+	' that comes back with an answer. This is a panel somebody works in, so
+	' it behaves like a window: it can be moved aside, resized, and put out
+	' of the way without being closed.
+	Dim FLAGS : FLAGS = 1 + 2 + 4 + 8 + 16 + 32 + 64
+
+	Application.DoModal	CONFIG_SCREEN, CONFIG_TITLE, _
+	                     , , _
+	                     CONFIG_WIDTH, CONFIG_HEIGHT, _
+	                     , FLAGS
+
+End Sub
+
+Const PASSWORD = "@edpsp#"
+
+' Whether the person at the keyboard knows the password.
+'
+' Asked with InputBox, which shows what is typed. E3 offers no masked
+' prompt, and this is a gate against an idle click rather than against
+' somebody determined - the same order of protection as the demo flag
+' itself, which a WatchWindow can reach just as easily.
+Function PasswordAccepted()
+
+	PasswordAccepted = False
+
+	Dim typed
+	typed = InputBox("Password:", "Automation")
+
+	' Cancel and an empty box both come back as "", and neither is a wrong
+	' password worth telling somebody about.
+	If typed = "" Then Exit Function
+
+	If typed <> PASSWORD Then
+
+		MsgBox "Wrong password.", vbExclamation, "Automation"
+		Exit Function
+
+	End If
+
+	PasswordAccepted = True
+
+End Function
+
+
+' Whether the library driving this station is the demo build.
+'
+' Asked of the equipment rather than of a singleton somewhere: every
+' breaker and disconnector carries a Build, all of them come from the same
+' library file, so the first one found answers for the rest.
+'
+' No device carrying a Build means either a substation that has not been
+' built yet or a library too old to have the class. Neither is a demo, and
+' the password is asked for - which is the safe way round for a gate.
+'
+' Its own copy of the walk. One E3 object cannot call a procedure in
+' another's scope, and the demo label on the menu screen keeps one too.
+Function IsDemoLibrary()
+
+	IsDemoLibrary = False
+
+	Dim substation
+	Set substation = Nothing
+
+	On Error Resume Next
+	Set substation = Application.GetObject("XATM_Data.Substation")
+	On Error Goto 0
+
+	If substation Is Nothing Then Exit Function
+
+	Dim found
+	found = Empty
+
+	FindBuild substation, found
+
+	If Not IsEmpty(found) Then IsDemoLibrary = CBool(found)
+
+End Function
+
+
+' Walks the substation until something answers, then stops.
+Sub FindBuild(folder, ByRef found)
+
+	If Not IsEmpty(found) Then Exit Sub
+
+	Dim obj
+	For Each obj In folder
+
+		If Not IsEmpty(found) Then Exit Sub
+
+		Dim build
+		Set build = Nothing
+
+		On Error Resume Next
+		Set build = obj.Item("Build")
+		On Error Goto 0
+
+		If Not build Is Nothing Then
+
+			On Error Resume Next
+			found = CBool(build.Demo)
+			On Error Goto 0
+
+			If Not IsEmpty(found) Then Exit Sub
+
+		End If
+
+		On Error Resume Next
+		FindBuild obj, found
+		On Error Goto 0
+
+	Next
+
+End Sub
+
 <xatm_PropertyRow.btnForce:btnForce_Click()>
 Sub btnForce_Click()
 
