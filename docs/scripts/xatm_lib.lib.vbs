@@ -1976,6 +1976,13 @@ Sub WriteLog(message)
 	
 End Sub
 
+<xatm_RASEAT.Signals.Blocked:Blocked_OnChangedValue()>
+Sub Blocked_OnChangedValue()
+
+	xatm_RASEAT.Blocked = Value
+
+End Sub
+
 <xatm_RASEAT.FSM.Main:Main_Completed()>
 Sub Main_Completed()
 
@@ -3427,6 +3434,13 @@ Sub WriteLog(message)
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
 		
+End Sub
+
+<xatm_TA.Signals.Blocked:Blocked_OnChangedValue()>
+Sub Blocked_OnChangedValue()
+
+	xatm_TA.Blocked = Value
+
 End Sub
 
 <xatm_TA.FSM.Main:Main_Completed()>
@@ -5226,6 +5240,20 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
+
+End Sub
+
+<xatm_TMTNM.Signals.BlockedTM:BlockedTM_OnChangedValue()>
+Sub BlockedTM_OnChangedValue()
+
+	xatm_TMTNM.BlockedTM = Value
+
+End Sub
+
+<xatm_TMTNM.Signals.BlockedNM:BlockedNM_OnChangedValue()>
+Sub BlockedNM_OnChangedValue()
+
+	xatm_TMTNM.BlockedNM = Value
 
 End Sub
 
