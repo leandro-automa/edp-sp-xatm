@@ -7276,8 +7276,683 @@ Sub Foo()
 			
 End Sub
 
+<xatm_config_data.Config.ExportSignalsToCsv:ExportSignalsToCsv_OnChangedValue()>
+Sub ExportSignalsToCsv_OnChangedValue()
+
+	' Every signal the automation publishes, as two files the SCADA
+	' developer pastes into the load plan the import library reads.
+	'
+	' This is the whole of what leaves here now. The alarms, the user
+	' fields and the 104 addresses are made by that library from the
+	' spreadsheet, so nothing in this project needs to make them - it
+	' needs to say, exactly and in the developer's own columns, what
+	' there is and where it lives.
+	'
+	' Run after Apply and Save and after nothing else: Save is what
+	' builds the interface tags every row points at, and a row naming a
+	' tag that is not there is a row that imports and never moves.
+	'
+	' Written inside the Sub and not above it: a scope has to open on
+	' Sub, and E3 rejects one that opens on anything else - a comment
+	' included.
+
+	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub
+	If Trim(CStr(Value)) = "" Then Exit Sub
+
+	Dim ts
+	ts = TimeStamp                         ' preserved for the silent clear
+
+	' What the operator picked in the Save dialog. One name, and two
+	' files written beside it: the columns a discrete needs and the ones
+	' a command needs are not the same list, so they cannot share a
+	' sheet - and asking twice for what is one decision is asking twice.
+	Dim chosenPath
+	chosenPath = Trim(CStr(Value))
+
+	Dim fso
+	Set fso = Nothing
+	On Error Resume Next
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	On Error Goto 0
+
+	If fso Is Nothing Then
+		Fail "this machine will not give a FileSystemObject, so nothing " & _
+		     "can be written.", ts
+		Exit Sub
+	End If
+
+	Dim folderPath, baseName
+	folderPath = ""
+	baseName   = ""
+
+	On Error Resume Next
+	folderPath = fso.GetParentFolderName(chosenPath)
+	baseName   = fso.GetBaseName(chosenPath)
+	On Error Goto 0
+
+	If folderPath = "" Or baseName = "" Then
+		Fail chosenPath & " is not a file path this can write to.", ts
+		Exit Sub
+	End If
+
+	If Not fso.FolderExists(folderPath) Then
+		Fail "there is no folder at " & folderPath & ".", ts
+		Exit Sub
+	End If
+
+	Dim root
+	Set root = Nothing
+	On Error Resume Next
+	Set root = Application.GetObject(DATA_ROOT)
+	On Error Goto 0
+
+	If root Is Nothing Then
+		Fail "the project has no " & DATA_ROOT & ".", ts
+		Exit Sub
+	End If
+
+	' Written as ANSI and not Unicode - the third argument. Excel in a
+	' Portuguese install reads a semicolon-separated ANSI file straight
+	' into columns, and reads a UTF-8 one as one column of mojibake.
+	Dim discFile, cmdFile
+	Set discFile = Nothing
+	Set cmdFile  = Nothing
+
+	On Error Resume Next
+	Dim discPath, cmdPath
+	discPath = fso.BuildPath(folderPath, baseName & DISCRETE_SUFFIX)
+	cmdPath  = fso.BuildPath(folderPath, baseName & COMMAND_SUFFIX)
+
+	Set discFile = fso.CreateTextFile(discPath, True, False)
+	Set cmdFile  = fso.CreateTextFile(cmdPath,  True, False)
+	On Error Goto 0
+
+	If discFile Is Nothing Or cmdFile Is Nothing Then
+		If Not discFile Is Nothing Then discFile.Close
+		If Not cmdFile  Is Nothing Then cmdFile.Close
+		Fail "the two files would not open under " & folderPath & _
+		     " - it may be read only, or open in Excel.", ts
+		Exit Sub
+	End If
+
+	gDiscretes = 0
+	gCommands  = 0
+	gObjects   = 0
+	gFolders   = 0
+
+	Dim problem
+	problem = ""
+
+	discFile.WriteLine DISCRETE_HEADER
+	cmdFile.WriteLine  COMMAND_HEADER
+
+	ExportFolder root, "", discFile, cmdFile, problem
+
+	On Error Resume Next
+	discFile.Close
+	cmdFile.Close
+	On Error Goto 0
+
+	If gDiscretes = 0 And gCommands = 0 Then
+		WriteLog "Export - " & gObjects & " objects under " & gFolders & _
+		         " folders of " & DATA_ROOT & ", and not one of them " & _
+		         "carries a signal to level 3. Both files are headings " & _
+		         "and no rows."
+	Else
+		WriteLog "Export - " & gDiscretes & " discretes and " & gCommands & _
+		         " commands from " & gObjects & " objects, written beside " & _
+		         chosenPath & "."
+	End If
+
+	If problem <> "" Then
+		WriteLog "Export is incomplete:" & problem
+		DocString = EXIT_FAILURE
+		WriteEx Empty, ts
+		Exit Sub
+	End If
+
+	DocString = EXIT_SUCCESS
+	WriteEx Empty, ts                      ' clear without re-firing
+
+End Sub
+
+
+' What the two files are called and what stands at the head of each.
+' The column names are the load plan's own, accents and all, so that
+' a paste lands under the heading it belongs to.
+' What is put on the end of the chosen name to tell the two apart.
+Const DISCRETE_SUFFIX = "_Discretos.csv"
+Const COMMAND_SUFFIX  = "_Comandos.csv"
+
+Const DISCRETE_HEADER = "UserField SignalName;Equip;Equip ($[EQ]);Típico;Template;Descrição;MeasurementType;Texto0;Texto1;Conversão;Atua em;Atua em ($[EQ]);XATM Property"
+Const COMMAND_HEADER  = "UserField SignalName;Equip;Equip ($[EQ]);Típico;Template;Descrição;CommandType;Ação;Conversão;Ação0;Ação1;Comandos Disparados;Comandos Disparados ($[EQ]);XATM Property"
+
+' Semicolon, because a Portuguese Excel splits on it and because a
+' decimal comma would tear a number in half if it did not.
+Const SEP            = ";"
+
+' Told to the import as the object it is standing in for. One row
+' carries both: the name as it is, for a project that lists its
+' equipment, and the placeholder, for one that expands a typical
+' across every instance. The developer keeps the column they use.
+Const EQ_PLACEHOLDER = "$[EQ]"
+
+Const DATA_ROOT      = "XATM_Data"
+Const CONFIG_DATA    = "xatm_config_data"
+Const HELPER_FOLDER  = "PropertiesHelper"
+Const INTERFACE_ROOT = "XATM_Interface"
+
+Const EXIT_SUCCESS   = "EXIT_SUCCESS"
+Const EXIT_FAILURE   = "EXIT_FAILURE"
+
+Dim gDiscretes
+Dim gCommands
+
+' What the walk met on the way, so that a run with no rows can say
+' whether it found no objects or found them and none had a point.
+Dim gObjects
+Dim gFolders
+
+
+' One folder of the data project, then whatever is under it - the
+' same walk the alarms and the distribution do, so the file comes out
+' in the order the tree reads.
+Sub ExportFolder(folder, path, discFile, cmdFile, problem)
+
+	Dim item, bag, where
+
+	For Each item In folder
+
+		Set bag = ManifestOf(TypeName(item))
+		where = ChildPath(path, item.Name)
+
+		If Not bag Is Nothing Then
+
+			gObjects = gObjects + 1
+
+			' Kept rather than dropped. One property this cannot read would
+			' otherwise abandon the object it is on and every object after
+			' it in the folder, and the run would end saying only that
+			' there was nothing to carry.
+			On Error Resume Next
+			Err.Clear
+
+			ExportObject path, item, bag, discFile, cmdFile, problem
+
+			If Err.Number <> 0 Then
+				problem = problem & vbCrLf & "  " & where & " (" & _
+				          TypeName(item) & ") - " & Err.Description
+				Err.Clear
+			End If
+
+			On Error Goto 0
+
+		Else
+
+			' Anything without a manifest is taken for a folder and walked.
+			' Something that is neither - a tag, or a class whose manifest
+			' never loaded - raises here, and that is the whole reason a
+			' run can come back empty with nothing to say about it. Said.
+			gFolders = gFolders + 1
+
+			On Error Resume Next
+			Err.Clear
+
+			ExportFolder item, where, discFile, cmdFile, problem
+
+			If Err.Number <> 0 Then
+				problem = problem & vbCrLf & "  " & where & " (" & _
+				          TypeName(item) & ") is neither a folder nor a class " & _
+				          "with a manifest - " & Err.Description
+				Err.Clear
+			End If
+
+			On Error Goto 0
+
+		End If
+
+	Next
+
+End Sub
+
+
+' One name onto a path, and the first name is the whole of it.
+Function ChildPath(path, objectName)
+
+	If path = "" Then
+		ChildPath = objectName
+	Else
+		ChildPath = path & "." & objectName
+	End If
+
+End Function
+
+
+' Every property of one object that level 3 is given a point for: a
+' Boolean is something the centre is shown and goes in the discretes,
+' an InternalTag is something it asks for and goes in the commands.
+'
+' Asked of IsIOTagged and not of the alarm table, because the two are
+' different questions - a signal can be carried without an operator
+' ever being told about it.
+Sub ExportObject(path, obj, bag, discFile, cmdFile, problem)
+
+	Dim inner
+	inner = ChildPath(path, obj.Name)
+
+	Dim tipico
+	tipico = TipicoOf(obj)
+
+	Dim key, p, litPath, phPath
+
+	For Each key In bag.Keys
+
+		Set p = bag(key)
+
+		If p.IsIOTagged() Then
+
+			litPath = INTERFACE_ROOT & "." & inner & "." & p.Name
+			phPath  = INTERFACE_ROOT & "." & _
+			          ChildPath(path, EQ_PLACEHOLDER) & "." & p.Name
+
+			Select Case LCase(p.DataType & "")
+
+				Case "boolean"
+					discFile.WriteLine DiscreteRow(obj, p, tipico, litPath, phPath)
+					gDiscretes = gDiscretes + 1
+
+				Case "internaltag"
+					cmdFile.WriteLine CommandRow(obj, p, tipico, litPath, phPath)
+					gCommands = gCommands + 1
+
+			End Select
+
+		End If
+
+	Next
+
+End Sub
+
+
+' One discrete, in the developer's columns.
+'
+' Template is left empty on purpose. TM100PC and R086 are names out
+' of the import library's own catalogue and there is no rule here
+' that produces them - a plausible wrong one binds the signal to
+' somebody else's template, which is worse than a blank the developer
+' fills. XATM Property rides along at the end so the row can always
+' be traced back to what made it.
+Function DiscreteRow(obj, p, tipico, litPath, phPath)
+
+	Dim t0, t1
+	t0 = ""
+	t1 = ""
+
+	' Which text belongs to 0 and which to 1 is decided by the state
+	' that raises the alarm, not by the order the pair is written in:
+	' a precondition raises on 0 and reads the other way round.
+	Dim parts
+	If p.AlarmPair & "" <> "" Then
+
+		parts = Split(p.AlarmPair, "|")
+
+		If UBound(parts) >= 2 Then
+			If Trim(parts(2)) = "1" Then
+				t0 = parts(0)
+				t1 = parts(1)
+			Else
+				t0 = parts(1)
+				t1 = parts(0)
+			End If
+		End If
+
+	End If
+
+	Dim measurement
+	measurement = ""
+	If t0 <> "" Then measurement = MeasurementOf(t0, t1)
+
+	DiscreteRow = Join(Array( _
+		"", _
+		Field(obj.Name), _
+		EQ_PLACEHOLDER, _
+		Field(tipico), _
+		"", _
+		Field(p.AlarmLabel), _
+		Field(measurement), _
+		Field(t0), _
+		Field(t1), _
+		"Booleano", _
+		Field(litPath), _
+		Field(phPath), _
+		Field(p.Name)), SEP)
+
+End Function
+
+
+' One command, in the developer's columns.
+'
+' The description is the property's own Portuguese help. A command
+' raises no alarm and so has no alarm label to lend, and the help is
+' the only sentence in this project that says what the command does -
+' which is what the column is for. It is a sentence and not a legend,
+' so expect it to be shortened.
+Function CommandRow(obj, p, tipico, litPath, phPath)
+
+	CommandRow = Join(Array( _
+		"", _
+		Field(obj.Name), _
+		EQ_PLACEHOLDER, _
+		Field(tipico), _
+		"", _
+		Field(p.Help("pt-BR")), _
+		"", _
+		"", _
+		"1", _
+		"Executar", _
+		"", _
+		Field(litPath), _
+		Field(phPath), _
+		Field(p.Name)), SEP)
+
+End Function
+
+
+' What kind of equipment the load plan files this under.
+Function TipicoOf(obj)
+
+	Select Case LCase(TypeName(obj))
+
+		Case "xatm_tmtnm"        : TipicoOf = "TMT"
+		Case "xatm_ta"           : TipicoOf = "TA"
+		Case "xatm_raseat"       : TipicoOf = "RASE"
+		Case "xatm_breaker"      : TipicoOf = "DJ"
+		Case "xatm_disconnector" : TipicoOf = "CS"
+		Case "xatm_transformer"  : TipicoOf = "TR"
+		Case Else                 : TipicoOf = ""
+
+	End Select
+
+End Function
+
+
+' The measurement type, which the import spells as the two state
+' texts joined - NORMAL_ATUADO, NATENDIDAS_ATENDIDAS.
+Function MeasurementOf(t0, t1)
+
+	MeasurementOf = MeasurementPart(t0) & "_" & MeasurementPart(t1)
+
+End Function
+
+
+' One half of it: no accents, no spaces, and NAO folded onto the word
+' it negates the way the catalogue already writes NATENDIDAS.
+Function MeasurementPart(text)
+
+	Dim s
+	s = Ascii(text)
+	s = Replace(s, "NAO ", "N")
+	s = Replace(s, " ", "")
+
+	MeasurementPart = s
+
+End Function
+
+
+' The Portuguese letters without their accents.
+'
+' Written as Chr() and never as the letters themselves so that this
+' scope stays plain ASCII: the dump this is kept in is cp1252, and an
+' accent typed here is a byte that any tool guessing the encoding
+' wrong will turn into a question mark.
+Function Ascii(text)
+
+	Dim s
+	s = UCase(text & "")
+
+	s = Replace(s, Chr(192), "A")    ' A grave
+	s = Replace(s, Chr(193), "A")    ' A agudo
+	s = Replace(s, Chr(194), "A")    ' A circunflexo
+	s = Replace(s, Chr(195), "A")    ' A til
+	s = Replace(s, Chr(199), "C")    ' C cedilha
+	s = Replace(s, Chr(201), "E")    ' E agudo
+	s = Replace(s, Chr(202), "E")    ' E circunflexo
+	s = Replace(s, Chr(205), "I")    ' I agudo
+	s = Replace(s, Chr(211), "O")    ' O agudo
+	s = Replace(s, Chr(212), "O")    ' O circunflexo
+	s = Replace(s, Chr(213), "O")    ' O til
+	s = Replace(s, Chr(218), "U")    ' U agudo
+	s = Replace(s, Chr(220), "U")    ' U trema
+
+	Ascii = s
+
+End Function
+
+
+' One value on its way into the file. Quoted only when it has to be,
+' which keeps the file readable in a text editor: a separator, a
+' quote or a line break inside a value is what forces it, and a help
+' sentence can carry all three.
+Function Field(text)
+
+	Dim s
+	s = text & ""
+
+	If InStr(s, SEP) > 0 Or InStr(s, """") > 0 Or _
+	   InStr(s, vbCr) > 0 Or InStr(s, vbLf) > 0 Then
+		s = """" & Replace(s, """", """""") & """"
+	End If
+
+	Field = s
+
+End Function
+
+
+' The manifest declared for a class, or Nothing where the class has
+' none - the same lookup the export, the import and the alarms do.
+Function ManifestOf(className)
+
+	Set ManifestOf = Nothing
+
+	On Error Resume Next
+	Set ManifestOf = Application.GetObject(CONFIG_DATA).Item(HELPER_FOLDER).Item(className).Value
+	On Error Goto 0
+
+End Function
+
+
+' Said, logged, and the command cleared, for an export that got
+' nowhere.
+Sub Fail(message, ts)
+
+	DocString = EXIT_FAILURE
+	WriteLog message
+	WriteEx Empty, ts
+
+End Sub
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_config_data.Config.ExportSignalsToCsv:ExportSignalsToCsv_OnStartRunning()>
+Sub ExportSignalsToCsv_OnStartRunning()
+
+	DocString = ""
+
+End Sub
+
+<xatm_config_screens.Config.btnExport:btnExport_Click()>
+Sub btnExport_Click()
+
+	' Where the two files go, asked here and not in the export: that
+	' runs as a data server event and a data server has no screen. The
+	' path travels as the payload, the way the substation does.
+	'
+	' Written inside the Sub because a scope has to open on Sub.
+
+	Dim chosenPath
+	chosenPath = ChosenFile()
+
+	If chosenPath = "" Then Exit Sub
+
+	Dim exporter
+	Set exporter = Nothing
+	On Error Resume Next
+	Set exporter = Application.GetObject(EXPORT_SIGNALS)
+	On Error Goto 0
+
+	If exporter Is Nothing Then
+		MsgBox "This project has no " & EXPORT_SIGNALS & " tag, so the " & _
+		       "signals cannot be exported.", vbCritical, EXPORT_TITLE
+		Exit Sub
+	End If
+
+	exporter.WriteEx chosenPath
+
+	If exporter.DocString <> EXIT_SUCCESS Then
+		MsgBox "The signals were not exported, or only in part - the " & _
+		       "console says which.", vbExclamation, EXPORT_TITLE
+		Exit Sub
+	End If
+
+	MsgBox "The signals were written beside:" & vbCrLf & vbCrLf & chosenPath & _
+		   vbCrLf & vbCrLf & "as _Discretos.csv and _Comandos.csv. Open them in " & _
+		   "Excel and paste the columns into the load plan.", _
+		   vbInformation, EXPORT_TITLE
+
+End Sub
+
+Const EXPORT_SIGNALS = "xatm_config_data.Config.ExportSignalsToCsv"
+Const EXIT_SUCCESS   = "EXIT_SUCCESS"
+Const EXPORT_TITLE   = "Export signals"
+
+
+' Where the files go, asked with the Viewer's own Save dialog so that a
+' folder is browsed for rather than typed out - ShowFilePicker(Open,
+' Filename, Extension, Flags, Filter), with Open False for a Save box
+' and Filename carrying the answer back out.
+'
+' Empty when the dialog is refused. Refusing is a decision and is not
+' asked again: the InputBox below is what happens when this build has
+' no picker at all, and not what happens when someone pressed Cancel.
+Function ChosenFile()
+
+	ChosenFile = ""
+
+	Dim chosen
+	chosen = DefaultPath()
+
+	Dim picked, hasPicker
+	picked    = False
+	hasPicker = True
+
+	On Error Resume Next
+	Err.Clear
+
+	picked = Application.ShowFilePicker(False, chosen, "csv||", _
+	                                    PATHMUSTEXIST + OVERWRITEPROMPT, FILE_FILTER)
+
+	If Err.Number <> 0 Then
+		hasPicker = False
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+	If hasPicker Then
+		If picked Then ChosenFile = Trim(chosen & "")
+		Exit Function
+	End If
+
+	ChosenFile = Trim(InputBox( _
+		"Full path of the file to write. Two are made from it, one ending " & _
+		"_Discretos.csv and one _Comandos.csv." & vbCrLf & vbCrLf & _
+		"They are overwritten if they are already there, so close them " & _
+		"in Excel first.", _
+		EXPORT_TITLE, DefaultPath()) & "")
+
+End Function
+
+
+' What the dialog opens on, and what the fallback box is filled with.
+Function DefaultPath()
+
+	Dim folderPath
+	folderPath = StartFolder()
+
+	If folderPath = "" Then
+		DefaultPath = DEFAULT_NAME
+		Exit Function
+	End If
+
+	If Right(folderPath, 1) <> "\" Then folderPath = folderPath & "\"
+
+	DefaultPath = folderPath & DEFAULT_NAME
+
+End Function
+
+
+' The flags ShowFilePicker takes, summed. The path has to exist
+' because nothing here creates one, and overwriting is confirmed
+' because a second export onto the same name is the ordinary case and
+' losing an edited file to it is not.
+Const PATHMUSTEXIST   = 32
+Const OVERWRITEPROMPT = 128
+
+' Description and pattern in pairs, the whole ending in two bars.
+Const FILE_FILTER = "CSV (*.csv)|*.csv|All files (*.*)|*.*||"
+Const DEFAULT_NAME = "Sinais.csv"
+
+
+' What the box opens on: where E3 was started from, which is the folder
+' the domain file sits in. The same answer XMLFilePath opens on, and
+' written out again here because a screen scope cannot call into a data
+' server one.
+Function StartFolder()
+
+	StartFolder = ""
+
+	Dim shell
+	Set shell = Nothing
+
+	On Error Resume Next
+	Err.Clear
+
+	Set shell = CreateObject("WScript.Shell")
+	If Not shell Is Nothing Then StartFolder = Trim(shell.CurrentDirectory & "")
+
+	If Err.Number <> 0 Then
+		StartFolder = ""
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+End Function
+
+Sub Foo()
+
+End Sub
+
 <xatm_config_screens.Config.btnAlarms:btnAlarms_Click()>
 Sub btnAlarms_Click()
+
+	If Not SupersededByExport(ALARMS_TITLE, "alarms") Then Exit Sub
 
 	Dim substation
 	substation = ChosenSubstation()
@@ -7326,6 +8001,29 @@ Const BUILD_ALARMS     = "xatm_config_data.Config.BuildAlarms"
 
 Const EXIT_SUCCESS     = "EXIT_SUCCESS"
 Const ALARMS_TITLE     = "Alarms"
+
+
+' Both of these built what the signal spreadsheet now builds, and
+' both are kept because a bench project with no SCADA developer on
+' it still wants its alarms. Asked rather than refused, and
+' defaulted to No: running one of them on a project that has been
+' exported leaves two sets of the same objects, one of them nobody
+' will maintain.
+'
+' Named the same in both scopes and written out twice, because a
+' screen scope cannot call into another one.
+Function SupersededByExport(title, what)
+
+	SupersededByExport = (MsgBox( _
+		"The " & what & " are now built from the signal spreadsheet, not here." & _
+		vbCrLf & vbCrLf & _
+		"Use Export signals to CSV and hand the file to the SCADA developer - " & _
+		"their import creates the alarms, the user fields and the addresses." & _
+		vbCrLf & vbCrLf & _
+		"Build them here anyway?", _
+		vbYesNo + vbExclamation + vbDefaultButton2, title) = vbYes)
+
+End Function
 
 
 ' The substation to build the alarms on, or "" when there is none to
@@ -8775,6 +9473,8 @@ End Sub
 <xatm_config_screens.Config.btnDistribution:btnDistribution_Click()>
 Sub btnDistribution_Click()
 
+	If Not SupersededByExport(DISTRIBUTION_TITLE, "signals") Then Exit Sub
+
 	Dim driver
 	driver = ChosenObject(DRIVER_CLASS)
 
@@ -8835,6 +9535,29 @@ Const BUILD_DISTRIBUTION = "xatm_config_data.Config.BuildDistribution"
 
 Const EXIT_SUCCESS       = "EXIT_SUCCESS"
 Const DISTRIBUTION_TITLE = "Distribution"
+
+
+' Both of these built what the signal spreadsheet now builds, and
+' both are kept because a bench project with no SCADA developer on
+' it still wants its alarms. Asked rather than refused, and
+' defaulted to No: running one of them on a project that has been
+' exported leaves two sets of the same objects, one of them nobody
+' will maintain.
+'
+' Named the same in both scopes and written out twice, because a
+' screen scope cannot call into another one.
+Function SupersededByExport(title, what)
+
+	SupersededByExport = (MsgBox( _
+		"The " & what & " are now built from the signal spreadsheet, not here." & _
+		vbCrLf & vbCrLf & _
+		"Use Export signals to CSV and hand the file to the SCADA developer - " & _
+		"their import creates the alarms, the user fields and the addresses." & _
+		vbCrLf & vbCrLf & _
+		"Build them here anyway?", _
+		vbYesNo + vbExclamation + vbDefaultButton2, title) = vbYes)
+
+End Function
 
 ' What the address box offers before anything is typed. The operation
 ' centre's point list decides the real one, and every substation
