@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Mon Aug 24 14:05:47 2026
+Thu Aug 27 17:04:32 2026
 -----------------------
 
 <xatm_Breaker.Data.CommandInProgress:CommandInProgress_OnChangedValue()>
@@ -1976,13 +1976,6 @@ Sub WriteLog(message)
 	
 End Sub
 
-<xatm_RASEAT.Signals.Blocked:Blocked_OnChangedValue()>
-Sub Blocked_OnChangedValue()
-
-	xatm_RASEAT.Blocked = Value
-
-End Sub
-
 <xatm_RASEAT.FSM.Main:Main_Completed()>
 Sub Main_Completed()
 
@@ -2847,6 +2840,900 @@ Sub Succeed()
 	
 End Sub
 
+<xatm_RASEAT.Signals.Blocked:Blocked_OnChangedValue()>
+Sub Blocked_OnChangedValue()
+	
+	xatm_RASEAT.Blocked = Value
+	
+End Sub
+
+<xatm_Retentive.Data.PropChange:PropChange_Functions()>
+Sub PropChange_Functions()
+
+End Sub
+
+
+' The one value that lets a change through, named here as well because
+' a tag's scopes do not see the store's.
+Const ARMED = 1
+
+' One link changed, so the store is asked to write it.
+'
+' Quiet until the load has been through and set this tag to ARMED.
+' Every link fires once as the project comes up, and writing then
+' would save a startup value over the kept one about to be restored.
+'
+' Quiet for good where the load never ran - no data project found
+' means nowhere to write anyway, so there is nothing to fall back to.
+Sub Announce(propertyId)
+
+	If Value <> ARMED Then Exit Sub
+
+	On Error Resume Next
+	Parent.Item("Store").Value = CStr(propertyId)
+	On Error Goto 0
+	
+End Sub
+
+<xatm_Retentive.Data.PropChange:PropChange_OnStartRunning()>
+Sub PropChange_OnStartRunning()
+	
+	Dim ts
+	ts = TimeStamp
+	WriteEx 0, ts
+
+End Sub
+
+<xatm_Retentive.Data.PropChange:PropChange_Prop1()>
+Sub PropChange_Prop1()
+	
+	Announce 1
+
+End Sub
+
+<xatm_Retentive.Data.PropChange:PropChange_Prop2()>
+Sub PropChange_Prop2()
+	
+	Announce 2
+	
+End Sub
+
+<xatm_Retentive.Data.PropChange:PropChange_Prop3()>
+Sub PropChange_Prop3()
+	
+	Announce 3
+	
+End Sub
+
+<xatm_Retentive.Data.PropChange:PropChange_Prop4()>
+Sub PropChange_Prop4()
+	
+	Announce 4
+	
+End Sub
+
+<xatm_Retentive.Data.PropChange:PropChange_Prop5()>
+Sub PropChange_Prop5()
+	
+	Announce 5
+	
+End Sub
+
+<xatm_Retentive.Data.Store:Store_OnChangedValue()>
+Sub Store_OnChangedValue()
+
+	' The one scope that opens the document, and the reason this object is
+	' shaped the way it is.
+	'
+	' A tag's scopes see each other and see nothing of another tag's, so
+	' anything shared between PropChange and XML has to be written twice.
+	' In the object this was built from it was, and the two copies drifted:
+	' the change path wrote no Tipo at all and set its attributes with
+	' setAttribute, while the load path used createAttribute and a .text
+	' assignment. That is how a Boolean stopped surviving a round trip -
+	' saved as True by one path, read back against "-1" by the other, and
+	' restored as False.
+	'
+	' So neither of them touches the file now. Both ask here:
+	'
+	'   LOAD   every kept value back onto its property
+	'   <n>    the value behind link Prop<n> into the document
+	'
+	' Cleared on the way out under its own TimeStamp, so clearing it does
+	' not come back through here as another request.
+
+	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub
+
+	Dim request
+	request = Trim(CStr(Value))
+	If request = "" Then Exit Sub
+
+	Dim ts
+	ts = TimeStamp
+
+	If UCase(request) = LOAD_REQUEST Then
+		LoadAll
+	ElseIf IsNumeric(request) Then
+		SaveOne CLng(request)
+	Else
+		TraceOut request & " is neither LOAD nor a link number."
+	End If
+
+	WriteEx Empty, ts
+
+End Sub
+
+
+' What a request to reload is called.
+Const LOAD_REQUEST = "LOAD"
+
+' What PropChange holds once the load has been through and saving is
+' allowed. Anything other than this and it stays quiet.
+Const ARMED = 1
+
+' How many Prop links the class carries. The load asks for each by name
+' rather than walking whatever links the object happens to have - the
+' object this was built from filled a five-slot array from every link on
+' itself, so a sixth link of any kind put it out of bounds.
+Const PROP_COUNT  = 5
+Const PROP_PREFIX = "Prop"
+
+' The document, which is shared with whatever else keeps values in it.
+Const FILE_NAME = "PropriedadesRetentivas.xml"
+
+' Where the XML tag leaves the folder it worked out.
+Const DATA_PATH_TAG = "DataPath"
+
+
+' Every kept value back onto the property it names, and every property
+' with no record yet written out for the first time.
+Sub LoadAll()
+
+	Dim filePath
+	filePath = DocumentPath()
+	If filePath = "" Then Exit Sub
+
+	Dim doc
+	Set doc = OpenDocument(filePath)
+	If doc Is Nothing Then Exit Sub
+
+	Dim objPath
+	objPath = ParentPath()
+	If objPath = "" Then Exit Sub
+
+	Dim i, propName, node, kept
+	Dim restored, written
+	restored = 0
+	written  = 0
+
+	For i = 1 To PROP_COUNT
+
+		propName = LinkedProperty(i)
+
+		If propName <> "" Then
+
+			Set node = PropNode(doc, objPath, propName)
+
+			If node Is Nothing Then
+
+				' Nothing kept for it yet, so what the property holds now
+				' becomes the first record rather than being overwritten by an
+				' empty one.
+				WriteProp doc, objPath, propName, LiveValue(objPath, propName)
+				written = written + 1
+
+			Else
+
+				' The type comes off the record and not off what the property
+				' happens to hold. At start it can hold Empty, and TypeName of
+				' Empty is not the type the record was written under - which
+				' put raw text onto a Boolean in the object this was built
+				' from.
+				kept = TypedValue(node.getAttribute("Valor") & "", _
+				                  node.getAttribute("Tipo") & "")
+
+				If ApplyValue(objPath, propName, kept) Then restored = restored + 1
+
+			End If
+
+		End If
+
+	Next
+
+	If written > 0 Then SaveDocument doc, filePath
+
+	' Saving is let through only now, and this is the whole of what
+	' holds it back.
+	'
+	' Every link fires once as the project comes up, before any of this
+	' has run. Allowed through then, a startup value would be written
+	' over the kept one this was about to restore - and each value
+	' restored just above would fire its link and be written straight
+	' back, a read and a write of the whole document per property, for
+	' no change at all.
+	'
+	' Said by the load rather than counted off a clock, because a clock
+	' would have to be set to a guess at how long this takes and would
+	' be wrong on a slow start.
+	On Error Resume Next
+	Parent.Item("PropChange").Value = ARMED
+	On Error Goto 0
+
+	TraceOut objPath & " - " & restored & " restored, " & written & " first written."
+
+End Sub
+
+
+' The value behind one link into the document.
+Sub SaveOne(propertyId)
+
+	Dim propName
+	propName = LinkedProperty(propertyId)
+	If propName = "" Then Exit Sub
+
+	Dim objPath
+	objPath = ParentPath()
+	If objPath = "" Then Exit Sub
+
+	Dim filePath
+	filePath = DocumentPath()
+	If filePath = "" Then Exit Sub
+
+	' Read, patched and written in the one call rather than held between
+	' them. The document is shared, so whatever another writer added since
+	' the last save is still on disk to be read back - which it would not
+	' be if this kept a copy and wrote the copy out.
+	Dim doc
+	Set doc = OpenDocument(filePath)
+	If doc Is Nothing Then Exit Sub
+
+	WriteProp doc, objPath, propName, LiveValue(objPath, propName)
+
+	SaveDocument doc, filePath
+
+End Sub
+
+
+' Where the document is.
+'
+' Beside xatm_data.prj, which the XML tag worked out at start and left
+' in DataPath. Not a path written down here: xatm_data.prj sits in a
+' folder of its own per substation, so a path typed in is right until
+' this library is used at the next site.
+'
+' FilePath on the class overrides it outright, for a site laid out in
+' some way this does not expect.
+Function DocumentPath()
+
+	DocumentPath = ""
+
+	Dim override
+	override = ""
+	On Error Resume Next
+	override = Trim(xatm_Retentive.FilePath & "")
+	On Error Goto 0
+
+	If override <> "" Then
+		DocumentPath = override
+		Exit Function
+	End If
+
+	Dim folder
+	folder = ""
+	On Error Resume Next
+	folder = Trim(Parent.Item(DATA_PATH_TAG).Value & "")
+	On Error Goto 0
+
+	If folder = "" Then
+		TraceOut "the data project folder is not known yet, so nothing " & _
+		         "can be kept."
+		Exit Function
+	End If
+
+	Dim fso
+	Set fso = Nothing
+	On Error Resume Next
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	On Error Goto 0
+
+	If fso Is Nothing Then
+		TraceOut "this machine will not give a FileSystemObject."
+		Exit Function
+	End If
+
+	DocumentPath = fso.BuildPath(folder, FILE_NAME)
+
+End Function
+
+
+' The parent property link Prop<n> points at, or "" where there is no
+' such link.
+Function LinkedProperty(propertyId)
+
+	LinkedProperty = ""
+
+	Dim wanted, link
+	wanted = PROP_PREFIX & CStr(propertyId)
+
+	On Error Resume Next
+
+	For Each link In xatm_Retentive.Links
+		If link.Property = wanted Then
+			LinkedProperty = PropertyNameOf(link.Source & "")
+			Exit For
+		End If
+	Next
+
+	On Error Goto 0
+
+End Function
+
+
+' A link source as the bare property name.
+'
+' Taken off the front as a prefix and not with Replace. Replace takes
+' the class name out wherever it appears, so a property whose own name
+' contained it would come back mangled - and the dot Replace leaves
+' behind was being stored as part of the name, which is why records
+' written by that object read .OperatorBlock where the rest of the file
+' reads OperatorBlock.
+Function PropertyNameOf(source)
+
+	Dim s, className
+	s = Trim(source & "")
+
+	className = ""
+	On Error Resume Next
+	className = TypeName(xatm_Retentive.Parent) & ""
+	On Error Goto 0
+
+	If className <> "" Then
+		If LCase(Left(s, Len(className))) = LCase(className) Then
+			s = Mid(s, Len(className) + 1)
+		End If
+	End If
+
+	Do While Left(s, 1) = "."
+		s = Mid(s, 2)
+	Loop
+
+	PropertyNameOf = s
+
+End Function
+
+
+' What the object this instance sits in is called.
+Function ParentPath()
+
+	ParentPath = ""
+
+	On Error Resume Next
+	ParentPath = xatm_Retentive.Parent.PathName & ""
+	On Error Goto 0
+
+End Function
+
+
+' What a property holds this instant.
+Function LiveValue(objPath, propName)
+
+	LiveValue = Empty
+
+	Dim obj
+	Set obj = Nothing
+
+	On Error Resume Next
+	Set obj = Application.GetObject(objPath)
+	If Not obj Is Nothing Then Execute "LiveValue = obj." & propName
+	On Error Goto 0
+
+End Function
+
+
+' One value onto its property. False where there is nothing at the path
+' any more, which a device renamed since the last run leaves behind.
+Function ApplyValue(objPath, propName, newValue)
+
+	ApplyValue = False
+
+	Dim obj
+	Set obj = Nothing
+
+	On Error Resume Next
+	Set obj = Application.GetObject(objPath)
+	On Error Goto 0
+
+	If obj Is Nothing Then Exit Function
+
+	gValue = newValue
+
+	On Error Resume Next
+	Err.Clear
+	Execute "obj." & propName & " = gValue"
+	If Err.Number = 0 Then ApplyValue = True
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
+' Scratch cell for the late-bound write. A property is named by a link
+' and not by this code, so the assignment has to be built as text.
+Dim gValue
+
+
+' The record for one property, or Nothing where there is none. Both
+' attributes together: one object keeps several properties and one
+' property name is kept on several objects, so neither alone names a
+' record.
+Function PropNode(doc, objPath, propName)
+
+	Set PropNode = Nothing
+
+	On Error Resume Next
+	Set PropNode = doc.selectSingleNode( _
+		"/Propriedades/Prop[@ObjPath='" & objPath & "']" & _
+		"[@Propriedade='" & propName & "']")
+	On Error Goto 0
+
+End Function
+
+
+' One record written, made where there is none. The only place a record
+' is written at all, so Valor and Tipo can never again be set one way
+' here and another way somewhere else.
+Sub WriteProp(doc, objPath, propName, v)
+
+	Dim node
+	Set node = PropNode(doc, objPath, propName)
+
+	If node Is Nothing Then
+
+		Set node = doc.createElement("Prop")
+		node.setAttribute "ObjPath", objPath
+		node.setAttribute "Propriedade", propName
+
+		' Given the tab the rest of the document is written with, so that a
+		' sync diffing two copies sees a line added and not a file
+		' reformatted end to end.
+		doc.documentElement.appendChild doc.createTextNode(vbTab)
+		doc.documentElement.appendChild node
+		doc.documentElement.appendChild doc.createTextNode(vbCrLf)
+
+	End If
+
+	node.setAttribute "Valor", ValorText(v)
+	node.setAttribute "Tipo",  TipoOf(v)
+
+End Sub
+
+
+' The value as the document keeps it.
+'
+' A Boolean goes in as -1 or 0 and never as True: the object this was
+' built from wrote one form through the change path and the other
+' through the load path, and read back only "-1" - so a True saved by a
+' change came back False on the next start.
+Function ValorText(v)
+
+	If VarType(v) = vbBoolean Then
+		If v Then ValorText = "-1" Else ValorText = "0"
+		Exit Function
+	End If
+
+	ValorText = CStr(v & "")
+
+End Function
+
+
+' What the value is, in the words the document already uses.
+Function TipoOf(v)
+
+	Select Case VarType(v)
+		Case vbBoolean          : TipoOf = "Boolean"
+		Case vbByte             : TipoOf = "Byte"
+		Case vbInteger          : TipoOf = "Integer"
+		Case vbLong             : TipoOf = "Long"
+		Case vbSingle, vbDouble : TipoOf = "Double"
+		Case vbDate             : TipoOf = "Date"
+		Case Else               : TipoOf = "String"
+	End Select
+
+End Function
+
+
+' The text back as the value the property wants.
+'
+' Read liberally where it is written strictly: -1, 1 and True all mean
+' True here, because the document may hold any of them from a writer
+' that came before this one.
+Function TypedValue(text, tipo)
+
+	Dim s
+	s = Trim(text & "")
+
+	TypedValue = s
+
+	On Error Resume Next
+	Err.Clear
+
+	Select Case LCase(Trim(tipo & ""))
+
+		Case "boolean"
+			TypedValue = (s = "-1" Or s = "1" Or LCase(s) = "true")
+
+		Case "byte"            : TypedValue = CByte(s)
+		Case "integer"         : TypedValue = CInt(s)
+		Case "long"            : TypedValue = CLng(s)
+		Case "double", "single" : TypedValue = CDbl(s)
+		Case "date"            : TypedValue = CDate(s)
+
+	End Select
+
+	If Err.Number <> 0 Then
+		TypedValue = s
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+End Function
+
+
+' The document as it stands on disk, made empty where there is no file
+' yet.
+'
+' preserveWhiteSpace is what keeps it readable. Without it every save
+' comes back reformatted, and in a file shared with another writer that
+' means every record churns in the diff and not only the one that
+' changed.
+Function OpenDocument(filePath)
+
+	Set OpenDocument = Nothing
+
+	Dim doc
+	Set doc = Nothing
+
+	On Error Resume Next
+	Set doc = CreateObject("MSXML2.DOMDocument.6.0")
+	If doc Is Nothing Then Set doc = CreateObject("MSXML2.DOMDocument")
+	On Error Goto 0
+
+	If doc Is Nothing Then
+		TraceOut "this machine will not give a DOMDocument."
+		Exit Function
+	End If
+
+	doc.async = False
+	doc.validateOnParse = False
+	doc.preserveWhiteSpace = True
+	doc.setProperty "SelectionLanguage", "XPath"
+
+	Dim fso, exists
+	exists = False
+	On Error Resume Next
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	exists = fso.FileExists(filePath)
+	On Error Goto 0
+
+	If exists Then
+
+		On Error Resume Next
+		doc.load filePath
+		On Error Goto 0
+
+		If doc.parseError.errorCode <> 0 Then
+			TraceOut filePath & " will not parse - " & _
+			         OneLine(doc.parseError.reason)
+			Exit Function
+		End If
+
+	Else
+
+		' A file that is not there is an empty one and not a failure. The
+		' declaration is written out so that what this makes reads like what
+		' everything else writes.
+		On Error Resume Next
+		doc.appendChild doc.createProcessingInstruction("xml", _
+		                "version=""1.0"" encoding=""utf-8"" standalone=""no""")
+		doc.appendChild doc.createElement("Propriedades")
+		doc.documentElement.appendChild doc.createTextNode(vbCrLf)
+		On Error Goto 0
+
+	End If
+
+	If doc.documentElement Is Nothing Then
+		TraceOut filePath & " has no Propriedades element."
+		Exit Function
+	End If
+
+	Set OpenDocument = doc
+
+End Function
+
+
+' The document back to disk. Said and not raised when it will not go: a
+' file open in an editor is the ordinary reason, and the value is right
+' in the project either way.
+Sub SaveDocument(doc, filePath)
+
+	On Error Resume Next
+	Err.Clear
+
+	doc.save filePath
+
+	If Err.Number <> 0 Then
+		TraceOut filePath & " would not be written - " & Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+End Sub
+
+
+' A parser's complaint on one line, for a trace that keeps one line per
+' message.
+Function OneLine(text)
+
+	OneLine = Trim(Replace(Replace(Replace(text & "", vbCrLf, " "), _
+	                              vbLf, " "), vbTab, " "))
+
+End Function
+
+
+' Said once, in one voice, so a search of the trace finds all of it.
+Sub TraceOut(message)
+
+	On Error Resume Next
+	Application.Trace "[Retentive] " & message
+	On Error Goto 0
+	
+End Sub
+
+<xatm_Retentive.Data.Store:Store_OnStartRunning()>
+Sub Store_OnStartRunning()
+	
+	Dim ts
+	ts = TimeStamp
+	
+	WriteEx Empty, ts
+		
+End Sub
+
+<xatm_Retentive.Data.XML:XML_Functions()>
+Sub XML_Functions()
+End Sub
+
+
+' Where the data project is, worked out once and left in the tag the
+' rest of the object reads.
+'
+' Looked for on disk rather than configured, and for the reason
+' XMLFilePath gives for doing the same: xatm_data.prj sits in a folder
+' of its own per substation - se_gul for Guarulhos - so a path written
+' down is right until this library is used at the next site. The
+' retentive document goes beside it, because that is the folder that is
+' one per substation and the values in it are one substation's.
+'
+' The library's own folder is not looked for. Nothing here needs it,
+' and finding it is a second walk of the whole tree at every start and
+' every trigger to fill a tag nobody reads.
+Const DATA_PROJECT_FILE = "xatm_data.prj"
+Const DATA_PATH_TAG     = "DataPath"
+
+' How far under the starting folder to look. The domain file sits at the
+' top and each substation is a folder under it, so the project is one
+' level down - and a couple more costs nothing.
+Const MAX_SEARCH_DEPTH = 3
+
+' Every folder holding what was asked for, in the order they were met.
+Dim gFound
+
+
+' The data project's folder into its tag. True when it was found.
+Function ResolvePaths()
+
+	ResolvePaths = False
+
+	Dim base
+	base = StartFolder()
+	If base = "" Then Exit Function
+
+	Dim dataFolder
+	dataFolder = FolderHolding(base, DATA_PROJECT_FILE)
+
+	On Error Resume Next
+	Parent.Item(DATA_PATH_TAG).Value = dataFolder
+	On Error Goto 0
+
+	ResolvePaths = (dataFolder <> "")
+
+End Function
+
+
+' The folder one file sits in, or "" where it was not found under the
+' depth looked at. The first, and said out loud when there is more than
+' one - two data projects under one domain is a domain this cannot speak
+' for, and taking whichever was met first would be a choice nobody made.
+Function FolderHolding(base, wanted)
+
+	FolderHolding = ""
+
+	Dim fso
+	Set fso = Nothing
+	On Error Resume Next
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	On Error Goto 0
+
+	If fso Is Nothing Then Exit Function
+	If Not fso.FolderExists(base) Then Exit Function
+
+	Set gFound = CreateObject("Scripting.Dictionary")
+
+	SearchFolder fso.GetFolder(base), 0, wanted
+
+	If gFound.Count = 0 Then
+		Application.Trace "[Retentive] " & wanted & " was not found under " & _
+		                  base & " within " & MAX_SEARCH_DEPTH & " folders."
+		Set gFound = Nothing
+		Exit Function
+	End If
+
+	Dim folders
+	folders = gFound.Keys
+
+	If gFound.Count > 1 Then
+		Application.Trace "[Retentive] more than one " & wanted & " is under " & _
+		                  base & " - " & Join(folders, ", ") & ". The first " & _
+		                  "is being used, which may not be the one meant."
+	End If
+
+	FolderHolding = folders(0)
+
+	Set gFound = Nothing
+
+End Function
+
+
+Sub SearchFolder(folder, depth, wanted)
+
+	If depth > MAX_SEARCH_DEPTH Then Exit Sub
+
+	On Error Resume Next
+
+	Dim theFile
+	For Each theFile In folder.Files
+		If LCase(theFile.Name) = LCase(wanted) Then
+			If Not gFound.Exists(folder.Path) Then gFound.Add folder.Path, True
+		End If
+	Next
+
+	If Err.Number <> 0 Then Err.Clear
+
+	Dim child
+	For Each child In folder.SubFolders
+		SearchFolder child, depth + 1, wanted
+	Next
+
+	If Err.Number <> 0 Then Err.Clear
+
+	On Error Goto 0
+
+End Sub
+
+
+' Where E3 was started from, which is the folder the domain file sits
+' in.
+Function StartFolder()
+
+	StartFolder = ""
+
+	Dim shell
+	Set shell = Nothing
+
+	On Error Resume Next
+	Err.Clear
+
+	Set shell = CreateObject("WScript.Shell")
+	If Not shell Is Nothing Then StartFolder = Trim(shell.CurrentDirectory & "")
+
+	If Err.Number <> 0 Then
+		StartFolder = ""
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+End Function
+
+
+' A Function may not be the last thing in a scope; E3 rejects it and says
+' nothing about why. This is the guard, not debris.
+Sub EndOfScope()
+	
+End Sub
+
+<xatm_Retentive.Data.XML:XML_OnTrigger()>
+Sub XML_OnTrigger()
+
+	' Asked for by hand, or by whatever syncs the document between
+	' servers. The paths are worked out again first: the point of asking
+	' twice is usually that something was not there the first time.
+	On Error Resume Next
+	xatm_Retentive.TriggerLoad = False
+	On Error Goto 0
+
+	If Not ResolvePaths() Then Exit Sub
+
+	On Error Resume Next
+	Parent.Item("Store").Value = "LOAD"
+	On Error Goto 0
+	
+End Sub
+
+<xatm_Retentive.Data.XML:XML_Timer()>
+Sub XML_Timer()
+
+	' The load, once, a moment after the project comes up - late enough
+	' that the object this sits in is running and can be written onto.
+	'
+	' Value goes to -1 and stays there, which is what stops it running
+	' again. A starting folder E3 has not settled yet is the one reason to
+	' come back, and that is counted so it cannot go round for ever.
+	If Value < 0 Then Exit Sub
+
+	If Value < xatm_Retentive.StartupDelay Then
+		Value = Value + 1
+		Exit Sub
+	End If
+
+	Value = -1
+
+	If Not ResolvePaths() Then
+
+		Dim tries
+		tries = Retries()
+
+		If tries >= xatm_Retentive.MaxNumOfRetries - 1 Then
+			Application.Trace "[Retentive] " & DATA_PROJECT_FILE & " was not " & _
+			                  "found after " & (tries + 1) & " tries, so nothing " & _
+			                  "was restored."
+			Exit Sub
+		End If
+
+		SetRetries tries + 1
+		Value = 0
+		Exit Sub
+
+	End If
+
+	On Error Resume Next
+	Parent.Item("Store").Value = "LOAD"
+	On Error Goto 0
+
+End Sub
+
+
+' How many times the load has come back for want of a folder.
+Function Retries()
+
+	Retries = 0
+
+	On Error Resume Next
+	Retries = CLng(Parent.Item("NumOfRetries").Value)
+	On Error Goto 0
+
+End Function
+
+
+Sub SetRetries(n)
+
+	On Error Resume Next
+	Parent.Item("NumOfRetries").Value = n
+	On Error Goto 0
+	
+End Sub
+
 <xatm_TA.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
 Sub OperatorBlock_CommandOperatorBlock()
 	
@@ -3434,13 +4321,6 @@ Sub WriteLog(message)
 		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
 	End If
 		
-End Sub
-
-<xatm_TA.Signals.Blocked:Blocked_OnChangedValue()>
-Sub Blocked_OnChangedValue()
-
-	xatm_TA.Blocked = Value
-
 End Sub
 
 <xatm_TA.FSM.Main:Main_Completed()>
@@ -4340,6 +5220,13 @@ Sub S6TA(triggerId, impedeId)
 		
 End Sub
 
+<xatm_TA.Signals.Blocked:Blocked_OnChangedValue()>
+Sub Blocked_OnChangedValue()
+	
+	xatm_AT.Blocked = Value
+	
+End Sub
+
 <xatm_TMTNM.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
 Sub OperatorBlock_CommandOperatorBlock()
 	
@@ -4814,12 +5701,6 @@ Sub Start_OnChangedValue()
 	xatm_TMTNM.Item("FSM").Item("AutomationType").WriteEx runMode
 	xatm_TMTNM.Item("FSM").Item("TriggerTransformerId").WriteEx triggerId
 	xatm_TMTNM.Item("FSM").Item("ImpededTransformerId").WriteEx impedeId
-
-	' Emptied here and not only at the end of a run. A run that stopped in
-	' lockout never reached Main_Completed, and its record appended to would
-	' make this run's revert undo that one's work as well.
-	xatm_TMTNM.Item("FSM").Item("PerformedSteps").WriteEx ""
-
 	xatm_TMTNM.Item("FSM").Item("StepTimer").WriteEx 0
 	xatm_TMTNM.Item("FSM").Item("Main").WriteEx 0
 	xatm_TMTNM.Running = True
@@ -5243,20 +6124,6 @@ Sub WriteLog(message)
 
 End Sub
 
-<xatm_TMTNM.Signals.BlockedTM:BlockedTM_OnChangedValue()>
-Sub BlockedTM_OnChangedValue()
-
-	xatm_TMTNM.BlockedTM = Value
-
-End Sub
-
-<xatm_TMTNM.Signals.BlockedNM:BlockedNM_OnChangedValue()>
-Sub BlockedNM_OnChangedValue()
-
-	xatm_TMTNM.BlockedNM = Value
-
-End Sub
-
 <xatm_TMTNM.FSM.Main:Main_Completed()>
 Sub Main_Completed()
 	
@@ -5267,7 +6134,6 @@ Sub Main_Completed()
 
 	Parent.Item("TriggerTransformerId").WriteEx  Empty, 0
 	Parent.Item("AutomationType").WriteEx Empty, 0
-	Parent.Item("PerformedSteps").WriteEx Empty, 0
 	Parent.Item("StepTimer").WriteEx  Empty, 0
 	WriteEx  Empty, 0
 
@@ -7191,6 +8057,20 @@ Sub S6TM(triggerId, impedeId)
 
 End Sub
 
+<xatm_TMTNM.Signals.BlockedNM:BlockedNM_OnChangedValue()>
+Sub BlockedNM_OnChangedValue()
+	
+	xatm_TMTNM.BlockedNM = Value
+	
+End Sub
+
+<xatm_TMTNM.Signals.BlockedTM:BlockedTM_OnChangedValue()>
+Sub BlockedTM_OnChangedValue()
+	
+	xatm_TMTNM.BlockedTM = Value
+	
+End Sub
+
 <xatm_Transformer.Data.Timers.UndervoltageRelay:UndervoltageRelay_Counter()>
 Sub UndervoltageRelay_Counter()
 	
@@ -7556,6 +8436,7 @@ End Sub
 ' the end, and not with every feature that lands before it.
 Const LIBRARY_VERSION = "1.0.0"
 Const RELEASE_NOTES   = "Switching automation for distribution substations. Manual transfer and normalisation with contingencies, automatic transfer on a protection trip, busbar transfers, and automatic reclosing of the high-voltage entry. Maneuvers are written against an abstract layout and resolved to each station's equipment; each carries its own preconditions and blocks, its own command point for level 3, and can put back what it operated when a step fails."
+
 
 
 ' One number out of the version string, and 0 for anything that is not
