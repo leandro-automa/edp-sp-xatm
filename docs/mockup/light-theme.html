@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Automation Library — Light Theme</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ==========================================================================
+   AUTOMA LIGHT THEME — token set
+   Every value below maps to one E3 colour. Flat only: the brandbook
+   forbids gradients outright, so there is not one in this file.
+   ========================================================================== */
+:root{
+  /* --- brand primaries ------------------------------------------------- */
+  --azul-escuro:      #1A3180;   /* nav, busbars, headings          */
+  --azul-claro:       #1142FF;   /* buttons, links, closed devices  */
+  --verde:            #75C800;   /* success, active, SIM mode       */
+
+  /* --- brand tints (hover / disabled / fills) --------------------------- */
+  --azul-escuro-80:   #485A99;
+  --azul-escuro-60:   #7683B3;
+  --azul-claro-80:    #4168FF;
+  --azul-claro-60:    #708EFF;
+  --verde-80:         #91D333;
+  --verde-60:         #ACDE66;
+
+  /* --- flat surface tints derived from the primaries -------------------- */
+  --azul-050:         #EEF2FF;   /* selected row, hover row         */
+  --azul-100:         #DCE4FF;   /* chip background                 */
+  --verde-050:        #F2FAE5;
+
+  /* --- status (secondary palette, sparing use) -------------------------- */
+  --vermelho:         #D61B1A;   /* alarm / failed                  */
+  --laranja:          #E77A0C;   /* warning / DEMO / out of service */
+
+  /* --- neutrals --------------------------------------------------------- */
+  --fundo:            #F4F6FA;   /* app background                  */
+  --superficie:       #FFFFFF;   /* panels, cards                   */
+  --superficie-alt:   #F8FAFC;   /* console, table stripe           */
+  --borda:            #D8DFEA;   /* panel borders — visible in light */
+  --borda-forte:      #B9C4D6;
+  --texto:            #0F172A;   /* body — 15.9:1 on white          */
+  --texto-medio:      #475569;   /* muted — 7.4:1 on white          */
+  --texto-fraco:      #64748B;   /* labels only, never body         */
+
+  /* --- typography ------------------------------------------------------- */
+  --fonte-titulo:     'Urbanist', Verdana, sans-serif;
+  --fonte-corpo:      'Montserrat', Verdana, sans-serif;
+  --fonte-mono:       ui-monospace, Consolas, 'Courier New', monospace;
+
+  /* --- geometry --------------------------------------------------------- */
+  --raio:             6px;
+  --raio-sm:          4px;
+  --barra:            196px;     /* sidebar width */
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+
+body{
+  font-family:var(--fonte-corpo);
+  font-size:14px;
+  line-height:1.55;
+  color:var(--texto);
+  background:var(--fundo);
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ==========================================================================
+   SHELL
+   ========================================================================== */
+.app{display:flex;min-height:100vh}
+
+/* --- sidebar: Azul Escuro with white text, per the brandbook ------------- */
+.barra{
+  width:var(--barra);
+  flex:0 0 var(--barra);
+  background:var(--azul-escuro);
+  color:#fff;
+  display:flex;
+  flex-direction:column;
+  padding:18px 14px;
+}
+
+.logo{display:flex;align-items:center;gap:9px;padding:2px 4px 22px}
+.logo-marca{font-family:var(--fonte-titulo);font-weight:700;font-size:20px;letter-spacing:-.02em}
+.logo-sub{
+  font-family:var(--fonte-corpo);font-size:8.5px;font-weight:500;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--verde-60);
+}
+
+.nav{display:flex;flex-direction:column;gap:5px}
+.nav-sep{height:1px;background:rgba(255,255,255,.16);margin:16px 2px}
+
+.nav-btn{
+  font-family:var(--fonte-titulo);font-size:13px;font-weight:600;
+  letter-spacing:.03em;
+  color:#DDE4F5;
+  background:transparent;
+  border:1px solid transparent;
+  border-radius:var(--raio-sm);
+  padding:9px 11px;
+  text-align:left;
+  cursor:pointer;
+  transition:background-color .18s ease,color .18s ease,border-color .18s ease;
+}
+.nav-btn:hover{background:rgba(255,255,255,.10);color:#fff}
+.nav-btn:focus-visible{outline:2px solid var(--verde);outline-offset:2px}
+/* active state is Verde, per the brandbook */
+.nav-btn[aria-current="page"]{
+  background:var(--verde);
+  border-color:var(--verde);
+  color:#12300A;
+  font-weight:700;
+}
+
+.barra-fim{margin-top:auto;display:flex;flex-direction:column;gap:14px}
+
+.demo{
+  font-family:var(--fonte-titulo);font-weight:700;font-size:26px;
+  letter-spacing:.06em;color:var(--laranja);text-align:center;padding:6px 0;
+}
+
+.sim{
+  display:flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,.09);
+  border:1px solid rgba(255,255,255,.22);
+  border-radius:999px;
+  padding:7px 12px;
+  cursor:pointer;
+  transition:background-color .18s ease;
+}
+.sim:hover{background:rgba(255,255,255,.16)}
+.sim-led{width:9px;height:9px;border-radius:50%;background:var(--verde);flex:0 0 9px}
+.sim-txt{font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase}
+
+/* --- main ---------------------------------------------------------------- */
+.principal{flex:1;min-width:0;display:flex;flex-direction:column;padding:16px 18px 0;gap:14px}
+
+/* One screen at a time. The sidebar is the only navigation, so a screen is
+   either the whole of the working area or it is not there at all.
+   Declared as classes rather than inline styles: an inline display beats a
+   class, so a screen carrying its own display:flex could never be hidden
+   by .oculto. */
+.tela{flex:1;min-height:0}
+.tela-grade{display:grid;grid-template-columns:minmax(0,1.35fr) 300px minmax(0,1.15fr);gap:14px}
+.tela-cheia{display:flex}
+.tela.oculto{display:none}
+
+/* ==========================================================================
+   PANELS
+   ========================================================================== */
+.painel{
+  background:var(--superficie);
+  border:1px solid var(--borda);
+  border-radius:var(--raio);
+  display:flex;flex-direction:column;min-height:0;
+}
+.painel-topo{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 13px;
+  border-bottom:1px solid var(--borda);
+}
+.painel-titulo{
+  font-family:var(--fonte-titulo);font-size:11px;font-weight:700;
+  letter-spacing:.10em;text-transform:uppercase;color:var(--azul-escuro);
+}
+.painel-corpo{padding:12px 13px;overflow:auto;min-height:0}
+
+.coluna{display:flex;flex-direction:column;gap:14px;min-height:0}
+
+/* ==========================================================================
+   BUTTONS
+   ========================================================================== */
+.acoes{display:flex;flex-direction:column;gap:8px}
+.btn{
+  font-family:var(--fonte-titulo);font-size:12.5px;font-weight:600;letter-spacing:.03em;
+  border-radius:var(--raio-sm);
+  padding:10px 14px;
+  cursor:pointer;
+  display:flex;align-items:center;gap:9px;
+  transition:background-color .18s ease,border-color .18s ease,color .18s ease;
+}
+.btn:focus-visible{outline:2px solid var(--azul-claro);outline-offset:2px}
+.btn svg{width:16px;height:16px;flex:0 0 16px}
+
+.btn-primario{background:var(--azul-claro);border:1px solid var(--azul-claro);color:#fff}
+.btn-primario:hover{background:var(--azul-claro-80);border-color:var(--azul-claro-80)}
+
+.btn-secundario{background:var(--superficie);border:1px solid var(--borda-forte);color:var(--azul-escuro)}
+.btn-secundario:hover{background:var(--azul-050);border-color:var(--azul-claro)}
+
+.btn-sucesso{background:var(--verde);border:1px solid var(--verde);color:#12300A}
+.btn-sucesso:hover{background:var(--verde-80);border-color:var(--verde-80)}
+
+/* ==========================================================================
+   TREE
+   ========================================================================== */
+.arvore{font-size:12.5px;list-style:none}
+.arvore ul{list-style:none;margin-left:15px;border-left:1px solid var(--borda);padding-left:9px}
+.no{
+  display:flex;align-items:center;gap:7px;
+  padding:3.5px 6px;border-radius:var(--raio-sm);cursor:pointer;
+  transition:background-color .15s ease;
+}
+.no:hover{background:var(--azul-050)}
+.no[aria-selected="true"]{background:var(--azul-100);font-weight:600}
+.no svg{width:14px;height:14px;flex:0 0 14px;color:var(--azul-claro)}
+.no-id{color:var(--texto-fraco);font-variant-numeric:tabular-nums;font-size:11.5px}
+.no-nome{color:var(--texto)}
+.no-grupo > .no svg{color:var(--azul-escuro)}
+.no-grupo > .no{font-family:var(--fonte-titulo);font-weight:600}
+
+/* ==========================================================================
+   PROPERTY GRID
+   ========================================================================== */
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{
+  font-family:var(--fonte-titulo);font-size:10.5px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--texto-medio);
+  text-align:left;padding:7px 10px;border-bottom:1px solid var(--borda);
+  background:var(--superficie-alt);
+}
+thead th.num{text-align:right}
+tbody td{padding:7px 10px;border-bottom:1px solid var(--borda)}
+tbody tr{transition:background-color .15s ease}
+tbody tr:hover{background:var(--azul-050)}
+.prop-nome{font-weight:500;color:var(--texto);white-space:nowrap}
+.prop-fonte{
+  font-family:var(--fonte-mono);font-size:11px;color:var(--azul-claro);
+  max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  cursor:pointer;
+}
+.prop-fonte:hover{text-decoration:underline}
+.prop-val{text-align:right;font-variant-numeric:tabular-nums;color:var(--texto-medio);white-space:nowrap}
+.prop-val-cfg{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--texto);white-space:nowrap}
+/* a staged edit — configured differs from current */
+.divergente{color:var(--laranja)}
+
+.acoes-linha{display:flex;gap:3px;justify-content:flex-end}
+.icone-btn{
+  width:24px;height:24px;display:grid;place-items:center;
+  border:1px solid transparent;background:transparent;border-radius:var(--raio-sm);
+  color:var(--texto-fraco);cursor:pointer;
+  transition:background-color .15s ease,color .15s ease,border-color .15s ease;
+}
+.icone-btn:hover{background:var(--azul-050);color:var(--azul-claro);border-color:var(--azul-claro)}
+.icone-btn:focus-visible{outline:2px solid var(--azul-claro);outline-offset:1px}
+.icone-btn svg{width:14px;height:14px}
+
+/* ==========================================================================
+   DIAGRAM
+   ========================================================================== */
+.diagrama{background:var(--superficie);border-radius:var(--raio);padding:6px}
+.diagrama svg{display:block;width:100%;height:auto}
+
+.sld-linha{stroke:var(--azul-escuro);stroke-width:1.6;fill:none}
+.sld-barra{stroke:var(--azul-escuro);stroke-width:4.5;stroke-linecap:round}
+.sld-nome{font-family:var(--fonte-titulo);font-size:11px;font-weight:600;fill:var(--texto)}
+.sld-id{font-family:var(--fonte-corpo);font-size:9px;fill:var(--texto-fraco)}
+.sld-barra-nome{font-family:var(--fonte-corpo);font-size:9.5px;font-weight:600;fill:var(--texto-fraco);letter-spacing:.06em}
+
+/* closed device: solid Azul Claro. open: white with a strong outline.
+   shape carries the state as well as colour, so colour is never the
+   only indicator. */
+.dj-fechado{fill:var(--azul-claro);stroke:var(--azul-claro);stroke-width:1.5}
+.dj-aberto{fill:var(--superficie);stroke:var(--azul-escuro-80);stroke-width:1.8}
+.cs-fechada{stroke:var(--azul-claro);stroke-width:2.6;stroke-linecap:round}
+.cs-aberta{stroke:var(--azul-escuro-80);stroke-width:2.6;stroke-linecap:round}
+.tr-circulo{fill:none;stroke:var(--azul-escuro);stroke-width:1.8}
+
+.chip{font-family:var(--fonte-corpo);font-size:7px;font-weight:700;letter-spacing:.04em}
+.chip-sim rect{fill:var(--verde-050);stroke:var(--verde);stroke-width:.8}
+.chip-sim text{fill:#3D6B00}
+.chip-cmd rect{fill:var(--azul-100);stroke:var(--azul-claro);stroke-width:.8}
+.chip-cmd text{fill:var(--azul-escuro)}
+.chip-al  rect{fill:#FCE9E9;stroke:var(--vermelho);stroke-width:.8}
+.chip-al  text{fill:var(--vermelho)}
+
+/* --------------------------------------------------------------------------
+   DARK MIMIC — the supervision diagram only.
+   Operations screens are dark: an operator watches this for a whole shift,
+   and an energised line reads faster as bright-on-dark than dark-on-bright.
+   The engineering screen next door stays light on purpose, so the two are
+   never mistaken for one another.
+
+   Azul Escuro is the canvas, which is the brandbook's own dark surface —
+   white text and Verde accents on it, as the rules require. That forces one
+   change of meaning: Azul Claro marks a closed device on white, but on
+   Azul Escuro it falls to 1.8:1 and disappears, so Verde carries "closed"
+   here. The shape carries it too — filled versus outlined — so nothing
+   depends on the colour alone.
+   -------------------------------------------------------------------------- */
+.diagrama-escuro{background:var(--azul-escuro);border-radius:var(--raio);padding:10px}
+.diagrama-escuro .sld-linha{stroke:#FFFFFF;stroke-width:1.5;opacity:.92}
+.diagrama-escuro .sld-barra{stroke:#FFFFFF;stroke-width:5}
+.diagrama-escuro .sld-nome{fill:#FFFFFF}
+.diagrama-escuro .sld-id{fill:#A9B6D9}
+.diagrama-escuro .sld-barra-nome{fill:#A9B6D9}
+.diagrama-escuro .dj-fechado{fill:var(--verde);stroke:var(--verde)}
+.diagrama-escuro .dj-aberto{fill:var(--azul-escuro);stroke:#A9B6D9;stroke-width:2}
+.diagrama-escuro .cs-fechada{stroke:var(--verde)}
+.diagrama-escuro .cs-aberta{stroke:#A9B6D9}
+.diagrama-escuro .tr-circulo{stroke:#FFFFFF;stroke-width:1.7}
+.diagrama-escuro .chip-sim rect{fill:none;stroke:var(--verde)}
+.diagrama-escuro .chip-sim text{fill:var(--verde-60)}
+.diagrama-escuro .chip-cmd rect{fill:none;stroke:#A9B6D9}
+.diagrama-escuro .chip-cmd text{fill:#C3CDE6}
+.diagrama-escuro .chip-al  rect{fill:none;stroke:#FF6B6A}
+.diagrama-escuro .chip-al  text{fill:#FF6B6A}
+
+.legenda{margin-left:auto;display:flex;gap:15px;font-size:11px;color:var(--texto-medio)}
+.legenda span{display:flex;align-items:center;gap:6px}
+.amostra{width:12px;height:12px;border-radius:2px;display:inline-block;flex:0 0 12px}
+
+/* ==========================================================================
+   CONSOLE
+   ========================================================================== */
+.console{
+  background:var(--superficie);
+  border:1px solid var(--borda);
+  border-radius:var(--raio) var(--raio) 0 0;
+  border-bottom:none;
+  margin-top:auto;
+  display:flex;flex-direction:column;
+  max-height:168px;
+}
+.console-topo{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 13px;border-bottom:1px solid var(--borda);
+}
+.console-linhas{
+  font-family:var(--fonte-mono);font-size:11.5px;line-height:1.75;
+  padding:6px 0;overflow:auto;background:var(--superficie-alt);
+}
+.linha{display:flex;gap:11px;padding:1px 13px;white-space:nowrap}
+.linha-sel{background:var(--azul-100)}
+.hora{color:var(--texto-fraco);font-variant-numeric:tabular-nums}
+.origem{color:var(--azul-claro);font-weight:600}
+.msg{color:var(--texto-medio)}
+.linha-sel .msg,.linha-sel .hora{color:var(--azul-escuro)}
+.linha-erro .origem{color:var(--vermelho)}
+.linha-erro .msg{color:var(--vermelho)}
+
+.relogio{font-family:var(--fonte-mono);font-size:11.5px;color:var(--texto-medio);font-variant-numeric:tabular-nums}
+
+.contagem{font-size:11px;color:var(--texto-fraco);font-variant-numeric:tabular-nums}
+
+.btn-limpar{
+  font-family:var(--fonte-titulo);font-size:11.5px;font-weight:600;
+  display:flex;align-items:center;gap:6px;
+  background:var(--superficie);border:1px solid var(--borda-forte);
+  color:var(--azul-escuro);border-radius:var(--raio-sm);
+  padding:5px 11px;cursor:pointer;
+  transition:background-color .18s ease,border-color .18s ease,color .18s ease;
+}
+.btn-limpar:hover{background:var(--azul-050);border-color:var(--azul-claro);color:var(--azul-claro)}
+.btn-limpar:focus-visible{outline:2px solid var(--azul-claro);outline-offset:2px}
+.btn-limpar svg{width:14px;height:14px}
+.btn-limpar:disabled{opacity:.45;cursor:not-allowed;background:var(--superficie);border-color:var(--borda);color:var(--texto-fraco)}
+
+/* An empty console says so, rather than leaving a blank rectangle nobody
+   can tell from a console that failed to load. */
+.console-vazio{
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  padding:24px 12px;color:var(--texto-fraco);font-size:12px;
+}
+.console-vazio svg{width:22px;height:22px;color:var(--borda-forte)}
+
+/* ==========================================================================
+   TOKEN REFERENCE — for porting the values into E3 by hand
+   ========================================================================== */
+.tokens{margin:22px 0 26px}
+.tokens-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:9px}
+.token{border:1px solid var(--borda);border-radius:var(--raio-sm);overflow:hidden;background:var(--superficie)}
+.token-cor{height:40px}
+.token-txt{padding:7px 9px}
+.token-nome{font-family:var(--fonte-titulo);font-size:11px;font-weight:700;color:var(--texto)}
+.token-hex{font-family:var(--fonte-mono);font-size:10.5px;color:var(--texto-medio)}
+.token-uso{font-size:9.5px;color:var(--texto-fraco);margin-top:2px;line-height:1.35}
+
+.oculto{display:none}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside class="barra">
+    <div class="logo">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 3 3.5 20h4.2L12 10.8 16.3 20h4.2L12 3Z" fill="#75C800"/>
+        <path d="M9.2 15.6h5.6l1.5 3H7.7l1.5-3Z" fill="#FFFFFF"/>
+      </svg>
+      <div>
+        <div class="logo-marca">Automa</div>
+        <div class="logo-sub">Power &amp; Utilities</div>
+      </div>
+    </div>
+
+    <nav class="nav" aria-label="Seções">
+      <button class="nav-btn" aria-current="page" data-ir="config">CONFIG.</button>
+      <button class="nav-btn" data-ir="superv">SUPERV.</button>
+      <div class="nav-sep"></div>
+      <button class="nav-btn">TMT / NM</button>
+      <button class="nav-btn">TA</button>
+      <button class="nav-btn">RASEAT</button>
+    </nav>
+
+    <div class="barra-fim">
+      <div class="demo" id="rotuloDemo">DEMO</div>
+      <div class="sim" role="switch" aria-checked="true" tabindex="0">
+        <span class="sim-led"></span>
+        <span class="sim-txt">Sim mode</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===================== MAIN ===================== -->
+  <div class="principal">
+
+    <!-- ---------- CONFIG ---------- -->
+    <section id="config" class="tela tela-grade" aria-label="Configuração">
+
+      <div class="coluna">
+        <div class="painel" style="flex:1">
+          <div class="painel-topo">
+            <span class="painel-titulo">Topologia</span>
+          </div>
+          <div class="painel-corpo diagrama">
+            <svg viewBox="0 0 560 420" role="img" aria-label="Diagrama unifilar reduzido da topologia configurada">
+              <!-- incomers -->
+              <line class="sld-barra" x1="120" y1="26" x2="220" y2="26"/>
+              <line class="sld-barra" x1="330" y1="26" x2="430" y2="26"/>
+              <line class="sld-linha" x1="170" y1="26" x2="170" y2="120"/>
+              <line class="sld-linha" x1="380" y1="26" x2="380" y2="120"/>
+              <line class="cs-fechada" x1="170" y1="44" x2="170" y2="62"/>
+              <line class="cs-fechada" x1="380" y1="44" x2="380" y2="62"/>
+              <text class="sld-id" x="178" y="52">012</text>
+              <text class="sld-id" x="388" y="52">022</text>
+              <rect class="dj-fechado" x="163" y="74" width="14" height="14" rx="2"/>
+              <rect class="dj-fechado" x="373" y="74" width="14" height="14" rx="2"/>
+              <text class="sld-id" x="182" y="86">010</text>
+              <text class="sld-id" x="392" y="86">020</text>
+
+              <!-- main busbars -->
+              <line class="sld-barra" x1="60" y1="132" x2="500" y2="132"/>
+              <line class="sld-barra" x1="60" y1="150" x2="500" y2="150"/>
+
+              <!-- four transformer bays -->
+              <g id="baias"></g>
+
+              <!-- lower ring busbar -->
+              <line class="sld-barra" x1="60" y1="336" x2="500" y2="336"/>
+              <g id="anel"></g>
+              <line class="sld-linha" x1="80" y1="336" x2="80" y2="386"/>
+              <rect class="dj-aberto" x="73" y="372" width="14" height="14" rx="2"/>
+              <text class="sld-id" x="92" y="384">900</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="painel">
+          <div class="painel-topo"><span class="painel-titulo">Ações</span></div>
+          <div class="painel-corpo acoes">
+            <button class="btn btn-primario">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h16M12 4v16"/></svg>
+              Aplicar topologia
+            </button>
+            <button class="btn btn-sucesso">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+              Salvar configuração
+            </button>
+            <button class="btn btn-secundario">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg>
+              Criar alarmes
+            </button>
+            <button class="btn btn-secundario">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor"/></svg>
+              Criar tags N3
+            </button>
+            <button class="btn btn-secundario">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>
+              Exportar para CSV
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="painel">
+        <div class="painel-topo"><span class="painel-titulo">Objetos</span></div>
+        <div class="painel-corpo">
+          <ul class="arvore">
+            <li class="no-grupo">
+              <div class="no">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3Z"/></svg>
+                <span class="no-nome">Automation</span>
+              </div>
+              <ul>
+                <li><div class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><span class="no-nome">RASEAT1</span></div></li>
+                <li><div class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><span class="no-nome">TA1</span></div></li>
+                <li><div class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><span class="no-nome">TA2</span></div></li>
+                <li><div class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><span class="no-nome">TMTNM1</span></div></li>
+                <li><div class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><span class="no-nome">TMTNM_B1A</span></div></li>
+              </ul>
+            </li>
+            <li class="no-grupo">
+              <div class="no">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3Z"/></svg>
+                <span class="no-nome">Substation</span>
+              </div>
+              <ul>
+                <li class="no-grupo">
+                  <div class="no">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3Z"/></svg>
+                    <span class="no-nome">Transformer</span>
+                  </div>
+                  <ul id="arvoreTr"></ul>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="painel">
+        <div class="painel-topo">
+          <span class="painel-titulo">Propriedades</span>
+          <span style="font-family:var(--fonte-mono);font-size:11px;color:var(--texto-medio)">TR01</span>
+        </div>
+        <div class="painel-corpo" style="padding:0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Propriedade</th>
+                <th scope="col">Origem</th>
+                <th scope="col" class="num">Atual</th>
+                <th scope="col" class="num">Configurado</th>
+                <th scope="col"><span class="oculto">Ações</span></th>
+              </tr>
+            </thead>
+            <tbody id="tabelaProp"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- SUPERV ---------- -->
+    <section id="superv" class="tela tela-cheia oculto" aria-label="Supervisão">
+      <div class="painel" style="flex:1">
+        <div class="painel-topo">
+          <span class="painel-titulo">Unifilar 13,8 kV</span>
+          <span class="legenda">
+            <span><span class="amostra" style="background:var(--verde)"></span>Fechado</span>
+            <span><span class="amostra" style="background:var(--azul-escuro);border:2px solid #A9B6D9"></span>Aberto</span>
+          </span>
+        </div>
+        <div class="painel-corpo diagrama-escuro">
+          <svg viewBox="0 0 1600 880" role="img" aria-label="Diagrama unifilar da subestação">
+            <g id="sld"></g>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- CONSOLE ---------- -->
+    <div class="console">
+      <div class="console-topo">
+        <span class="painel-titulo">Console</span>
+        <span class="contagem" id="contagem">8 registros</span>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:12px">
+          <span class="relogio">28/08/2026 &nbsp; 11:07:39</span>
+          <button class="btn-limpar" id="btnLimpar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            Limpar
+          </button>
+        </span>
+      </div>
+      <div class="console-linhas" id="console"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== TOKEN REFERENCE ===================== -->
+<div style="padding:0 18px 0 calc(var(--barra) + 18px)">
+  <div class="tokens">
+    <div class="painel-topo" style="border:none;padding:0 0 10px">
+      <span class="painel-titulo">Tokens — para transpor ao E3</span>
+    </div>
+    <div class="tokens-grade" id="tokens"></div>
+  </div>
+</div>
+
+<script>
+/* ---------- data ---------------------------------------------------- */
+const transformadores = [
+  {id:'100', nome:'TR01'}, {id:'120', nome:'DJ03'}, {id:'130', nome:'CS3999'},
+  {id:'180', nome:'CS4000'}, {id:'200', nome:'TR02'}, {id:'220', nome:'DJ04'},
+  {id:'230', nome:'CS4001'}, {id:'280', nome:'CS4002'}, {id:'300', nome:'TR03'}
+];
+
+const propriedades = [
+  {nome:'Name',             fonte:'',                                              atual:'TR01',  cfg:'TR01',  edit:true},
+  {nome:'OutOfService',     fonte:'XATM_Interface.Substation.Transformer.DJ03.Po…', atual:'False', cfg:'False', force:true},
+  {nome:'Id',               fonte:'',                                              atual:'100',   cfg:'100',   edit:true},
+  {nome:'LockingOutRelay',  fonte:'',                                              atual:'False', cfg:'False', force:true},
+  {nome:'UndervoltageRelay',fonte:'',                                              atual:'False', cfg:'False', force:true},
+  {nome:'Isolated',         fonte:'XATM_Interface.Substation.Transformer.DJ03.Po…', atual:'False', cfg:'False', force:true},
+  {nome:'Maintenance',      fonte:'',                                              atual:'False', cfg:'True',  force:true, divergente:true},
+  {nome:'UndervoltageDelay',fonte:'',                                              atual:'20',    cfg:'20',    edit:true}
+];
+
+const registros = [
+  {h:'09:33:17', o:'SaveXML',   m:'XML file saved to C:\\ProjDev\\edp_sp\\se_gul\\AutomationConfig.xml', sel:true},
+  {h:'09:33:11', o:'TA4',       m:'Released by operator.'},
+  {h:'09:33:11', o:'TA3',       m:'Released by operator.'},
+  {h:'09:33:11', o:'TA2',       m:'Released by operator.'},
+  {h:'09:33:11', o:'TA1',       m:'Released by operator.'},
+  {h:'09:33:11', o:'TMTNM_B2B', m:'Released by operator.'},
+  {h:'09:33:11', o:'TMTNM_B1A', m:'Released by operator.'},
+  {h:'09:33:11', o:'TMTNM4',    m:'Released by operator.'}
+];
+
+const tokens = [
+  ['Azul Escuro','#1A3180','Barra lateral, barramentos, títulos'],
+  ['Azul Claro','#1142FF','Botões, links, equipamento fechado'],
+  ['Verde','#75C800','Ativo, SIM mode, salvar'],
+  ['Vermelho','#D61B1A','Alarme, falha'],
+  ['Laranja','#E77A0C','Aviso, DEMO, edição pendente'],
+  ['Fundo','#F4F6FA','Fundo da aplicação'],
+  ['Superfície','#FFFFFF','Painéis'],
+  ['Borda','#D8DFEA','Divisórias de painel'],
+  ['Texto','#0F172A','Corpo — 15,9:1'],
+  ['Texto médio','#475569','Secundário — 7,4:1']
+];
+
+/* ---------- helpers -------------------------------------------------- */
+const ns = 'http://www.w3.org/2000/svg';
+const el = (t,a={},p) => { const n=document.createElementNS(ns,t);
+  for(const k in a) n.setAttribute(k,a[k]); if(p!=null) n.textContent=p; return n; };
+
+function chip(x,y,texto,classe){
+  const g = el('g',{class:'chip '+classe});
+  g.appendChild(el('rect',{x,y,width:20,height:9,rx:1.5}));
+  g.appendChild(el('text',{x:x+10,y:y+6.6,'text-anchor':'middle'},texto));
+  return g;
+}
+
+function disjuntor(g,x,y,nome,id,fechado,chips){
+  g.appendChild(el('rect',{x:x-9,y:y-9,width:18,height:18,rx:2.5,
+    class:fechado?'dj-fechado':'dj-aberto'}));
+  g.appendChild(el('text',{x:x-16,y:y-14,'text-anchor':'end',class:'sld-nome'},nome));
+  g.appendChild(el('text',{x:x-16,y:y-3,'text-anchor':'end',class:'sld-id'},id));
+  if(chips) chips.forEach((c,i)=>g.appendChild(chip(x+14,y-10+i*11,c[0],c[1])));
+}
+
+function seccionadora(g,x,y,nome,id,fechada){
+  g.appendChild(el('line',{x1:x,y1:y-14,x2:fechada?x:x-9,y2:y+14,
+    class:fechada?'cs-fechada':'cs-aberta'}));
+  g.appendChild(el('text',{x:x-14,y:y-16,'text-anchor':'end',class:'sld-nome'},nome));
+  g.appendChild(el('text',{x:x-14,y:y-5,'text-anchor':'end',class:'sld-id'},id));
+  g.appendChild(chip(x+8,y-6,'SIM','chip-sim'));
+}
+
+function transformador(g,x,y,nome,id){
+  g.appendChild(el('circle',{cx:x,cy:y-11,r:19,class:'tr-circulo'}));
+  g.appendChild(el('circle',{cx:x,cy:y+11,r:19,class:'tr-circulo'}));
+  g.appendChild(el('text',{x:x-26,y:y-24,'text-anchor':'end',class:'sld-nome'},nome));
+  g.appendChild(el('text',{x:x-26,y:y-13,'text-anchor':'end',class:'sld-id'},id));
+  g.appendChild(chip(x+24,y-16,'SIM','chip-sim'));
+  g.appendChild(chip(x+24,y-5,'OOS','chip-cmd'));
+  g.appendChild(chip(x+24,y+6,'86','chip-al'));
+}
+
+/* ---------- supervision diagram -------------------------------------- */
+(function(){
+  const g = document.getElementById('sld');
+  if(!g) return;
+
+  const BA2 = 300, BA1 = 330, INF = 700;
+  const bays = [
+    {x:300, tr:'TR01', trId:'100', dj:'DJ03', djId:'120', csA:'CS4000', csAId:'180', csB:'CS3999', csBId:'130', fechado:true},
+    {x:640, tr:'TR02', trId:'200', dj:'DJ04', djId:'220', csA:'CS4002', csAId:'280', csB:'CS4001', csBId:'230', fechado:true},
+    {x:1020,tr:'TR03', trId:'300', dj:'DJ05', djId:'320', csA:'CS4004', csAId:'380', csB:'CS4003', csBId:'330', fechado:true},
+    {x:1360,tr:'TR04', trId:'400', dj:'DJ06', djId:'420', csA:'CS3236', csAId:'480', csB:'CS3447', csBId:'430', fechado:true}
+  ];
+
+  /* incomers */
+  [{x:520,cs:'CS3993',csId:'12',dj:'DJ01',djId:'10',l:'CS3996',lId:'15',r:'CS3995',rId:'14'},
+   {x:1180,cs:'CS3994',csId:'22',dj:'DJ02',djId:'20',l:'CS3998',lId:'25',r:'CS3997',rId:'24'}
+  ].forEach(inc=>{
+    g.appendChild(el('line',{x1:inc.x-90,y1:40,x2:inc.x+90,y2:40,class:'sld-barra'}));
+    g.appendChild(el('line',{x1:inc.x,y1:40,x2:inc.x,y2:170,class:'sld-linha'}));
+    seccionadora(g,inc.x,90,inc.cs,inc.csId,true);
+    disjuntor(g,inc.x,170,inc.dj,inc.djId,true,[['SIM','chip-sim'],['CMD','chip-cmd']]);
+    g.appendChild(el('path',{d:`M${inc.x} 179 V210 H${inc.x-90} V${BA2}`,class:'sld-linha'}));
+    g.appendChild(el('path',{d:`M${inc.x} 179 V210 H${inc.x+0} V${BA1}`,class:'sld-linha'}));
+    seccionadora(g,inc.x-90,250,inc.l,inc.lId,true);
+    seccionadora(g,inc.x,250,inc.r,inc.rId,true);
+  });
+
+  /* main busbars */
+  g.appendChild(el('line',{x1:120,y1:BA2,x2:1500,y2:BA2,class:'sld-barra'}));
+  g.appendChild(el('line',{x1:120,y1:BA1,x2:1500,y2:BA1,class:'sld-barra'}));
+  g.appendChild(el('text',{x:106,y:BA2+4,'text-anchor':'end',class:'sld-barra-nome'},'BA-2'));
+  g.appendChild(el('text',{x:106,y:BA1+4,'text-anchor':'end',class:'sld-barra-nome'},'BA-1'));
+
+  /* transformer bays */
+  bays.forEach(b=>{
+    g.appendChild(el('path',{d:`M${b.x-70} ${BA2} V400 H${b.x} V470`,class:'sld-linha'}));
+    g.appendChild(el('path',{d:`M${b.x} ${BA1} V470`,class:'sld-linha'}));
+    seccionadora(g,b.x-70,370,b.csA,b.csAId,true);
+    seccionadora(g,b.x,370,b.csB,b.csBId,true);
+    transformador(g,b.x,520,b.tr,b.trId);
+    g.appendChild(el('line',{x1:b.x,y1:550,x2:b.x,y2:610,class:'sld-linha'}));
+    disjuntor(g,b.x,610,b.dj,b.djId,b.fechado,[['SIM','chip-sim'],['CMD','chip-cmd']]);
+    g.appendChild(el('line',{x1:b.x,y1:619,x2:b.x,y2:INF,class:'sld-linha'}));
+  });
+
+  /* lower ring */
+  const secoes = [
+    {x1:150,x2:420,nome:'1A'},{x1:470,x2:740,nome:'1B'},
+    {x1:790,x2:1060,nome:'2A'},{x1:1110,x2:1380,nome:'2B'},
+    {x1:1430,x2:1560,nome:'3A'}
+  ];
+  secoes.forEach(s=>{
+    g.appendChild(el('line',{x1:s.x1,y1:INF,x2:s.x2,y2:INF,class:'sld-barra'}));
+    g.appendChild(el('text',{x:s.x1,y:INF-12,class:'sld-barra-nome'},s.nome));
+  });
+
+  const ties = [
+    {x:190,nome:'DJ10',id:'900',f:false},{x:445,nome:'DJ20',id:'700',f:true},
+    {x:765,nome:'DJ30',id:'710',f:false},{x:1085,nome:'DJ40',id:'720',f:true},
+    {x:1405,nome:'DJ50',id:'730',f:false},{x:1520,nome:'DJ60',id:'740',f:false}
+  ];
+  ties.forEach(t=>{
+    g.appendChild(el('line',{x1:t.x,y1:INF,x2:t.x,y2:790,class:'sld-linha'}));
+    disjuntor(g,t.x,790,t.nome,t.id,t.f,[['SIM','chip-sim'],['CMD','chip-cmd']]);
+  });
+})();
+
+/* ---------- config diagram bays -------------------------------------- */
+(function(){
+  const g = document.getElementById('baias');
+  if(!g) return;
+  [130,230,330,430].forEach((x,i)=>{
+    g.appendChild(el('path',{d:`M${x-22} 132 V180 H${x} V210`,class:'sld-linha'}));
+    g.appendChild(el('path',{d:`M${x} 150 V210`,class:'sld-linha'}));
+    g.appendChild(el('circle',{cx:x,cy:222,r:11,class:'tr-circulo'}));
+    g.appendChild(el('circle',{cx:x,cy:236,r:11,class:'tr-circulo'}));
+    g.appendChild(el('text',{x:x-15,y:216,'text-anchor':'end',class:'sld-id'},(i+1)*100));
+    g.appendChild(el('line',{x1:x,y1:247,x2:x,y2:284,class:'sld-linha'}));
+    g.appendChild(el('rect',{x:x-7,y:277,width:14,height:14,rx:2,class:'dj-fechado'}));
+    g.appendChild(el('text',{x:x+12,y:289,class:'sld-id'},(i+1)*100+20));
+    g.appendChild(el('line',{x1:x,y1:291,x2:x,y2:336,class:'sld-linha'}));
+  });
+})();
+
+(function(){
+  const g = document.getElementById('anel');
+  if(!g) return;
+  [{x:150,id:'700'},{x:230,id:'710'},{x:310,id:'720'},{x:390,id:'730'},{x:460,id:'740'}]
+    .forEach(t=>{
+      g.appendChild(el('rect',{x:t.x-7,y:329,width:14,height:14,rx:2,class:'dj-fechado'}));
+      g.appendChild(el('text',{x:t.x,y:360,'text-anchor':'middle',class:'sld-id'},t.id));
+    });
+})();
+
+/* ---------- tree, table, console, tokens ------------------------------ */
+(function(){
+  const ul = document.getElementById('arvoreTr');
+  transformadores.forEach((t,i)=>{
+    const li = document.createElement('li');
+    li.innerHTML = `<div class="no" ${i===0?'aria-selected="true"':''}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+      <span class="no-id">${t.id}:</span><span class="no-nome">${t.nome}</span></div>`;
+    ul.appendChild(li);
+  });
+
+  const tb = document.getElementById('tabelaProp');
+  propriedades.forEach(p=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td class="prop-nome">${p.nome}</td>
+       <td>${p.fonte ? `<div class="prop-fonte" title="${p.fonte}">${p.fonte}</div>` : ''}</td>
+       <td class="prop-val">${p.atual}</td>
+       <td class="prop-val-cfg ${p.divergente?'divergente':''}">${p.cfg}</td>
+       <td><div class="acoes-linha">
+         ${p.edit?`<button class="icone-btn" aria-label="Editar ${p.nome}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>`:''}
+         ${p.fonte?`<button class="icone-btn" aria-label="Escolher tag para ${p.nome}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/></svg></button>`:''}
+         ${p.force?`<button class="icone-btn" aria-label="Forçar ${p.nome}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.1 12.8a1 1 0 0 0 .8 1.6H11l-1 7.6 8.9-10.8a1 1 0 0 0-.8-1.6H12Z"/></svg></button>`:''}
+       </div></td>`;
+    tb.appendChild(tr);
+  });
+
+  const c = document.getElementById('console');
+  const contagem = document.getElementById('contagem');
+  const btnLimpar = document.getElementById('btnLimpar');
+
+  function desenhaConsole(){
+    c.innerHTML = '';
+    if(registros.length === 0){
+      c.innerHTML = `<div class="console-vazio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h6M7 13h9"/></svg>
+        <span>Console limpo. Novas mensagens aparecem aqui.</span></div>`;
+    } else {
+      registros.forEach(r=>{
+        const d = document.createElement('div');
+        d.className = 'linha' + (r.sel?' linha-sel':'');
+        d.innerHTML = `<span class="hora">28/08/2026 ${r.h}</span><span class="origem">[${r.o}]</span><span class="msg">${r.m}</span>`;
+        c.appendChild(d);
+      });
+    }
+    contagem.textContent = registros.length === 1 ? '1 registro' : registros.length + ' registros';
+    btnLimpar.disabled = registros.length === 0;
+  }
+
+  btnLimpar.addEventListener('click',()=>{ registros.length = 0; desenhaConsole(); });
+  desenhaConsole();
+
+  const t = document.getElementById('tokens');
+  tokens.forEach(([nome,hex,uso])=>{
+    const d = document.createElement('div');
+    d.className = 'token';
+    d.innerHTML = `<div class="token-cor" style="background:${hex};${hex==='#FFFFFF'?'border-bottom:1px solid var(--borda)':''}"></div>
+      <div class="token-txt"><div class="token-nome">${nome}</div>
+      <div class="token-hex">${hex}</div><div class="token-uso">${uso}</div></div>`;
+    t.appendChild(d);
+  });
+})();
+
+/* ---------- navigation ------------------------------------------------
+   The sidebar is the whole of it. aria-current marks the open screen, which
+   is what the Verde highlight is drawn from - so the highlight and the
+   screen can never disagree. DEMO shows only on the operations screen. */
+function mostrar(alvo){
+  document.getElementById('config').classList.toggle('oculto', alvo !== 'config');
+  document.getElementById('superv').classList.toggle('oculto', alvo !== 'superv');
+  document.getElementById('rotuloDemo').style.visibility = alvo === 'superv' ? 'visible' : 'hidden';
+  document.querySelectorAll('.nav-btn[data-ir]').forEach(n=>{
+    if(n.dataset.ir === alvo) n.setAttribute('aria-current','page');
+    else n.removeAttribute('aria-current');
+  });
+}
+
+document.querySelectorAll('.nav-btn[data-ir]').forEach(n=>{
+  n.addEventListener('click',()=>mostrar(n.dataset.ir));
+});
+
+mostrar('config');
+</script>
+</body>
+</html>

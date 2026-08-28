@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>xatm_PropertyRow — especificação visual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --azul-escuro:#1A3180; --azul-claro:#1142FF; --verde:#75C800;
+  --azul-escuro-80:#485A99; --azul-claro-80:#4168FF; --verde-80:#91D333;
+  --azul-050:#EEF2FF; --azul-100:#DCE4FF; --verde-050:#F2FAE5;
+  --vermelho:#D61B1A; --vermelho-050:#FCECEC;
+  --laranja:#E77A0C; --laranja-050:#FDF1E3;
+  --fundo:#F4F6FA; --superficie:#FFFFFF; --superficie-alt:#F8FAFC;
+  --borda:#D8DFEA; --borda-forte:#B9C4D6;
+  --texto:#0F172A; --texto-medio:#475569; --texto-fraco:#64748B;
+  --fonte-titulo:'Urbanist',Verdana,sans-serif;
+  --fonte-corpo:'Montserrat',Verdana,sans-serif;
+  --fonte-mono:ui-monospace,Consolas,'Courier New',monospace;
+  --raio:6px; --raio-sm:4px;
+
+  /* ---- the row's own geometry — reproduce these in E3 ----------------
+     16 px is a dense inspector grid, so nothing in a cell may be taller
+     than the row: no stacked text, no bordered field, no padding above
+     or below. Everything below follows from that one number. */
+  --linha-h:16px;
+  --col-nome:170px;
+  --col-tipo:84px;
+  --col-valor:76px;
+  --col-acoes:58px;
+  --linha-fonte:11px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--fonte-corpo);font-size:14px;line-height:1.55;color:var(--texto);background:var(--fundo);padding:26px 30px 60px}
+h1{font-family:var(--fonte-titulo);font-size:22px;font-weight:700;letter-spacing:-.01em}
+h1 span{color:var(--texto-medio);font-weight:400;font-size:15px}
+h2{font-family:var(--fonte-titulo);font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--azul-escuro);margin:34px 0 12px}
+p.nota{font-size:12.5px;color:var(--texto-medio);max-width:78ch;margin-bottom:14px}
+code{font-family:var(--fonte-mono);font-size:.92em;background:var(--azul-050);color:var(--azul-escuro);padding:1px 5px;border-radius:3px}
+
+.folha{max-width:1180px;margin:0 auto}
+.cartao{background:var(--superficie);border:1px solid var(--borda);border-radius:var(--raio);overflow:hidden}
+
+/* ==========================================================================
+   THE ROW — 16 px
+   ========================================================================== */
+.grade-cab,.linha,.grade-num{
+  display:grid;
+  grid-template-columns:
+    var(--col-nome) var(--col-tipo) minmax(0,1fr)
+    var(--col-valor) var(--col-valor) var(--col-acoes);
+  align-items:center;
+}
+
+.grade-cab{
+  height:18px;
+  background:var(--superficie-alt);border-bottom:1px solid var(--borda);
+  font-family:var(--fonte-titulo);font-size:8.5px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--texto-medio);
+}
+.grade-cab > div{padding:0 6px;white-space:nowrap;overflow:hidden}
+.grade-cab .dir{text-align:right}
+
+.linha{
+  height:var(--linha-h);
+  border-bottom:1px solid var(--borda);
+  font-size:var(--linha-fonte);
+  line-height:1;
+  transition:background-color .12s ease;
+}
+.linha:last-child{border-bottom:none}
+/* no vertical padding: at 16 px there is none to give */
+.linha > div{padding:0 6px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
+/* 1 — PropertyName */
+.z-nome{font-weight:600;color:var(--texto)}
+
+/* 2 — PropertyType, now a column of its own.
+   It cannot sit under the name any more: two lines do not fit in 16 px. */
+.z-tipo{font-family:var(--fonte-mono);font-size:9.5px;color:var(--texto-fraco)}
+
+/* 3 — txtConfiguredSource */
+.fonte{font-family:var(--fonte-mono);font-size:10px;color:var(--azul-claro)}
+.fonte-expr{color:var(--azul-escuro)}
+.fonte-obj{color:#4E8500}
+.fonte-vazia{font-size:10px;color:var(--texto-fraco);font-style:italic}
+
+/* 4 and 5 — current (live) and configured (document) */
+.z-atual{text-align:right;font-variant-numeric:tabular-nums;color:var(--texto-medio)}
+.z-cfg{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--texto)}
+/* the editable field is drawn with an inset shadow and never a border:
+   a border would add 2 px the row does not have. */
+.z-cfg.editavel{cursor:text;border-radius:2px}
+.z-cfg.editavel:hover{box-shadow:inset 0 0 0 1px var(--borda-forte)}
+.vazio{color:var(--texto-fraco)}
+
+/* 6 — the buttons */
+.z-acoes{display:flex;gap:2px;justify-content:flex-end;padding:0 4px}
+.ib{
+  width:14px;height:14px;display:grid;place-items:center;
+  border:none;background:transparent;border-radius:2px;
+  color:var(--texto-fraco);cursor:pointer;
+  transition:background-color .12s ease,color .12s ease;
+}
+.ib:hover{background:var(--azul-100);color:var(--azul-claro)}
+.ib:focus-visible{outline:1.5px solid var(--azul-claro);outline-offset:1px}
+.ib svg{width:11px;height:11px;display:block}
+.ib-forca:hover{background:var(--laranja-050);color:var(--laranja)}
+
+/* row states */
+.linha:hover{background:var(--azul-050)}
+.st-sel{background:var(--azul-100)}
+.st-editando .z-cfg{box-shadow:inset 0 0 0 1px var(--azul-claro);background:var(--superficie)}
+.st-erro{background:var(--vermelho-050)}
+.st-erro .z-cfg{color:var(--vermelho)}
+.st-erro .fonte-vazia{color:var(--vermelho);font-style:normal}
+.st-desabilitada{opacity:.5}
+.st-desabilitada .ib{cursor:not-allowed}
+
+.divergente{color:var(--laranja)}
+.marca-divergente{
+  display:inline-block;width:4px;height:4px;border-radius:50%;
+  background:var(--laranja);margin-left:4px;vertical-align:middle;
+}
+
+/* ==========================================================================
+   ANATOMY — the real row, magnified so the callouts can be read
+   ========================================================================== */
+.anatomia{padding:14px 0 0;overflow:hidden}
+.lupa{transform:scale(2.6);transform-origin:0 0;width:38.46%}
+.grade-num{height:11px}
+.grade-num > div{padding:0 6px}
+.bolha{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--azul-claro);color:#fff;
+  font-family:var(--fonte-titulo);font-size:5.5px;font-weight:700;
+  display:grid;place-items:center;
+}
+.bolha-dir{margin-left:auto}
+.escala{
+  font-family:var(--fonte-mono);font-size:10.5px;color:var(--texto-fraco);
+  padding:8px 12px 0;
+}
+
+.legenda-anat{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:11px;margin-top:18px}
+.item-anat{display:flex;gap:9px;align-items:flex-start}
+.num{
+  flex:0 0 19px;width:19px;height:19px;border-radius:50%;
+  background:var(--azul-claro);color:#fff;
+  font-family:var(--fonte-titulo);font-size:11px;font-weight:700;
+  display:grid;place-items:center;margin-top:1px;
+}
+.item-anat b{font-family:var(--fonte-mono);font-size:11.5px;font-weight:600;color:var(--azul-escuro);display:block}
+.item-anat span{font-size:12px;color:var(--texto-medio);display:block;line-height:1.45}
+
+/* ==========================================================================
+   LABELS
+   ========================================================================== */
+.rotulo{
+  display:flex;align-items:baseline;gap:10px;
+  padding:8px 11px 3px;background:var(--superficie-alt);
+  border-bottom:1px solid var(--borda);
+}
+.rotulo b{font-family:var(--fonte-titulo);font-size:11.5px;font-weight:700;color:var(--azul-escuro)}
+.rotulo span{font-family:var(--fonte-mono);font-size:10px;color:var(--texto-fraco)}
+.rotulo em{font-style:normal;font-size:11px;color:var(--texto-medio);margin-left:auto;text-align:right}
+
+/* ==========================================================================
+   TABLES
+   ========================================================================== */
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{
+  font-family:var(--fonte-titulo);font-size:10px;font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--texto-medio);text-align:left;
+  padding:9px 11px;border-bottom:1px solid var(--borda);background:var(--superficie-alt);
+}
+th.c,td.c{text-align:center}
+td{padding:8px 11px;border-bottom:1px solid var(--borda);color:var(--texto-medio)}
+tr:last-child td{border-bottom:none}
+td.flag{font-family:var(--fonte-mono);font-size:11px;color:var(--azul-escuro);white-space:nowrap}
+td.bit{font-family:var(--fonte-mono);font-size:11px;color:var(--texto-fraco);text-align:right}
+.sim-marca{color:var(--verde);font-weight:700}
+.nao-marca{color:var(--borda-forte)}
+
+.medidas{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:10px}
+.medida{border:1px solid var(--borda);border-radius:var(--raio-sm);padding:10px 12px;background:var(--superficie)}
+.medida b{font-family:var(--fonte-mono);font-size:12px;color:var(--azul-escuro);display:block}
+.medida span{font-size:11px;color:var(--texto-fraco)}
+.medida.aviso{border-color:var(--laranja);background:var(--laranja-050)}
+.medida.aviso b{color:var(--laranja)}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="folha">
+
+<h1>xatm_PropertyRow <span>— especificação visual</span></h1>
+<p class="nota" style="margin-top:8px">
+  Um único XControl. O que ele mostra é decidido por <code>PropertyType</code> e pelos bits de
+  <code>Exposure</code>. A linha tem <b>16 px</b> — uma grade densa de inspetor, e é essa altura
+  que decide todo o resto: nada empilhado, nenhum campo com borda, nenhum espaçamento vertical.
+</p>
+
+<!-- ============================ ANATOMY ============================ -->
+<h2>Anatomia</h2>
+<div class="cartao">
+  <div class="escala">ampliado 2,6× — a linha real tem 16 px de altura</div>
+  <div class="anatomia">
+    <div class="lupa">
+      <div class="grade-num">
+        <div><span class="bolha">1</span></div>
+        <div><span class="bolha">2</span></div>
+        <div><span class="bolha">3</span></div>
+        <div><span class="bolha bolha-dir">4</span></div>
+        <div><span class="bolha bolha-dir">5</span></div>
+        <div><span class="bolha bolha-dir">6</span></div>
+      </div>
+      <div class="grade-cab">
+        <div>Propriedade</div><div>Tipo</div><div>Origem</div>
+        <div class="dir">Atual</div><div class="dir">Config.</div><div class="dir">Ações</div>
+      </div>
+      <div class="linha">
+        <div class="z-nome">PositionOpen</div>
+        <div class="z-tipo">IOTag</div>
+        <div><span class="fonte">GTW.GUL.DJ03.52a.Value</span></div>
+        <div class="z-atual">True</div>
+        <div class="z-cfg">True</div>
+        <div class="z-acoes">
+          <button class="ib" aria-label="Escolher tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/></svg></button>
+          <button class="ib ib-forca" aria-label="Forçar valor"><svg viewBox="0 -960 960 960" fill="currentColor"><path d="M419-80q-28 0-52.5-12T325-126L107-403l19-20q20-21 48-25t52 11l74 45v-328q0-17 11.5-28.5T340-760q17 0 29 11.5t12 28.5v472l-97-60 104 133q6 7 14 11t17 4h221q33 0 56.5-23.5T720-240v-160q0-17-11.5-28.5T680-440H461v-80h219q50 0 85 35t35 85v160q0 66-47 113T640-80H419ZM167-620q-13-22-20-47.5t-7-52.5q0-83 58.5-141.5T340-920q83 0 141.5 58.5T540-720q0 27-7 52.5T513-620l-69-40q8-14 12-28.5t4-31.5q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 17 4 31.5t12 28.5l-69 40Zm335 280Z"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="legenda-anat">
+  <div class="item-anat"><span class="num">1</span><div>
+    <b>PropertyName</b>
+    <span>O nome como o manifesto o declara. Semibold, para ancorar a varredura vertical da lista.</span></div></div>
+  <div class="item-anat"><span class="num">2</span><div>
+    <b>PropertyType</b>
+    <span>Coluna própria — em 16 px não cabe uma segunda linha sob o nome. É o tipo que decide quais botões aparecem, então merece estar visível e não só no <code>Tip</code>.</span></div></div>
+  <div class="item-anat"><span class="num">3</span><div>
+    <b>txtConfiguredSource</b>
+    <span>A tag de um IOTag, a expressão de uma propriedade vinculável, ou o caminho de outro objeto. Somente leitura; <code>Tip</code> mostra o caminho inteiro quando as reticências cortam.</span></div></div>
+  <div class="item-anat"><span class="num">4</span><div>
+    <b>txtCurrentValue</b>
+    <span>O que a planta tem neste instante, vinculado ao vivo. Nunca editável: a única coisa que escreve aqui é um force.</span></div></div>
+  <div class="item-anat"><span class="num">5</span><div>
+    <b>txtConfiguredValue</b>
+    <span>O que o documento diz que deveria ter. Sem link — vincular sobrescreveria uma edição ainda não salva. A moldura de edição é sombra interna, nunca borda: uma borda somaria 2 px que a linha não tem.</span></div></div>
+  <div class="item-anat"><span class="num">6</span><div>
+    <b>btnPickTag · btnBuildExpression · btnForce</b>
+    <span>14 × 14 px. Os dois primeiros são exclusivos entre si; o force não é exclusivo de nenhum, então o pior caso são dois botões.</span></div></div>
+</div>
+
+<!-- ============================ VARIANTS ============================ -->
+<h2>Variantes por tipo e exposição</h2>
+<p class="nota">
+  Cada linha abaixo é o mesmo controle, em tamanho real. O que muda é <code>PropertyType</code>
+  e o valor de <code>Exposure</code> — a soma dos bits que o manifesto concede.
+</p>
+
+<div class="cartao">
+  <div class="grade-cab">
+    <div>Propriedade</div><div>Tipo</div><div>Origem</div>
+    <div class="dir">Atual</div><div class="dir">Config.</div><div class="dir">Ações</div>
+  </div>
+
+  <div class="rotulo"><b>Nome</b><span>String · VIEW+VALUE+EDIT</span><em>Sem origem. Único campo cuja edição renomeia o objeto.</em></div>
+  <div class="linha">
+    <div class="z-nome">Name</div><div class="z-tipo">String</div>
+    <div><span class="fonte-vazia">—</span></div>
+    <div class="z-atual">TR01</div><div class="z-cfg editavel">TR01</div>
+    <div class="z-acoes"></div>
+  </div>
+
+  <div class="rotulo"><b>Identificador</b><span>Integer · VIEW+VALUE+SAVED</span><em>Mostrado e nunca editado: o layout é que o atribui.</em></div>
+  <div class="linha">
+    <div class="z-nome">Id</div><div class="z-tipo">Integer</div>
+    <div><span class="fonte-vazia">—</span></div>
+    <div class="z-atual">100</div><div class="z-cfg">100</div>
+    <div class="z-acoes"></div>
+  </div>
+
+  <div class="rotulo"><b>Ajuste</b><span>Integer · +EDIT+SAVED</span><em>Um número digitado. Sem origem e sem force.</em></div>
+  <div class="linha">
+    <div class="z-nome">UndervoltageDelay</div><div class="z-tipo">Integer</div>
+    <div><span class="fonte-vazia">—</span></div>
+    <div class="z-atual">20</div><div class="z-cfg editavel">20</div>
+    <div class="z-acoes"></div>
+  </div>
+
+  <div class="rotulo"><b>Porta / bloqueio</b><span>Boolean · +EXPRESSION+FORCE</span><em>Vinculável a uma expressão e forçável para teste.</em></div>
+  <div class="linha">
+    <div class="z-nome">PreconditionsTM</div><div class="z-tipo">Boolean</div>
+    <div><span class="fonte fonte-expr">DJ03.Position=2 AND TR01.Isolated=False</span></div>
+    <div class="z-atual">True</div><div class="z-cfg">True</div>
+    <div class="z-acoes">
+      <button class="ib" aria-label="Abrir diagrama de intertravamento"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h6v6H4zM14 13h6v6h-6z"/><path d="M10 8h4v8"/></svg></button>
+      <button class="ib ib-forca" aria-label="Forçar valor"><svg viewBox="0 -960 960 960" fill="currentColor"><path d="M419-80q-28 0-52.5-12T325-126L107-403l19-20q20-21 48-25t52 11l74 45v-328q0-17 11.5-28.5T340-760q17 0 29 11.5t12 28.5v472l-97-60 104 133q6 7 14 11t17 4h221q33 0 56.5-23.5T720-240v-160q0-17-11.5-28.5T680-440H461v-80h219q50 0 85 35t35 85v160q0 66-47 113T640-80H419ZM167-620q-13-22-20-47.5t-7-52.5q0-83 58.5-141.5T340-920q83 0 141.5 58.5T540-720q0 27-7 52.5T513-620l-69-40q8-14 12-28.5t4-31.5q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 17 4 31.5t12 28.5l-69 40Zm335 280Z"/></svg></button>
+    </div>
+  </div>
+
+  <div class="rotulo"><b>Entrada de campo</b><span>IOTag · +SAVED+FORCE</span><em>Escolhe-se a tag; o valor vem dela.</em></div>
+  <div class="linha">
+    <div class="z-nome">PositionClosed</div><div class="z-tipo">IOTag</div>
+    <div><span class="fonte">GTW.GUL.DJ03.52b.Value</span></div>
+    <div class="z-atual">False</div><div class="z-cfg">False</div>
+    <div class="z-acoes">
+      <button class="ib" aria-label="Escolher tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/></svg></button>
+      <button class="ib ib-forca" aria-label="Forçar valor"><svg viewBox="0 -960 960 960" fill="currentColor"><path d="M419-80q-28 0-52.5-12T325-126L107-403l19-20q20-21 48-25t52 11l74 45v-328q0-17 11.5-28.5T340-760q17 0 29 11.5t12 28.5v472l-97-60 104 133q6 7 14 11t17 4h221q33 0 56.5-23.5T720-240v-160q0-17-11.5-28.5T680-440H461v-80h219q50 0 85 35t35 85v160q0 66-47 113T640-80H419ZM167-620q-13-22-20-47.5t-7-52.5q0-83 58.5-141.5T340-920q83 0 141.5 58.5T540-720q0 27-7 52.5T513-620l-69-40q8-14 12-28.5t4-31.5q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 17 4 31.5t12 28.5l-69 40Zm335 280Z"/></svg></button>
+    </div>
+  </div>
+
+  <div class="rotulo"><b>Saída de comando</b><span>IOTag · SEM VALUE</span><em>Escreve-se e nunca se lê — ler de volta mostraria o último comando como se fosse estado.</em></div>
+  <div class="linha">
+    <div class="z-nome">CommandOpen</div><div class="z-tipo">IOTag</div>
+    <div><span class="fonte">GTW.GUL.DJ03.Trip</span></div>
+    <div class="z-atual vazio">—</div><div class="z-cfg vazio">—</div>
+    <div class="z-acoes">
+      <button class="ib" aria-label="Escolher tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/></svg></button>
+      <button class="ib ib-forca" aria-label="Enviar comando"><svg viewBox="0 -960 960 960" fill="currentColor"><path d="M419-80q-28 0-52.5-12T325-126L107-403l19-20q20-21 48-25t52 11l74 45v-328q0-17 11.5-28.5T340-760q17 0 29 11.5t12 28.5v472l-97-60 104 133q6 7 14 11t17 4h221q33 0 56.5-23.5T720-240v-160q0-17-11.5-28.5T680-440H461v-80h219q50 0 85 35t35 85v160q0 66-47 113T640-80H419ZM167-620q-13-22-20-47.5t-7-52.5q0-83 58.5-141.5T340-920q83 0 141.5 58.5T540-720q0 27-7 52.5T513-620l-69-40q8-14 12-28.5t4-31.5q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 17 4 31.5t12 28.5l-69 40Zm335 280Z"/></svg></button>
+    </div>
+  </div>
+
+  <div class="rotulo"><b>Vínculo a objeto</b><span>xatm_Transformer</span><em>O caminho chega em <code>Value</code> e não em <code>PropertySource</code>.</em></div>
+  <div class="linha">
+    <div class="z-nome">Transformer</div><div class="z-tipo">xatm_Transformer</div>
+    <div><span class="fonte fonte-obj">XATM_Data.Substation.Transformer.TR01</span></div>
+    <div class="z-atual vazio">—</div><div class="z-cfg vazio">—</div>
+    <div class="z-acoes">
+      <button class="ib" aria-label="Escolher objeto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3Z"/></svg></button>
+    </div>
+  </div>
+
+  <div class="rotulo"><b>Leitura do automatismo</b><span>Boolean · INTERFACE+IOTAG</span><em>Só se olha. Nada a configurar, nada a forçar.</em></div>
+  <div class="linha">
+    <div class="z-nome">Running</div><div class="z-tipo">Boolean</div>
+    <div><span class="fonte-vazia">—</span></div>
+    <div class="z-atual">False</div><div class="z-cfg vazio">—</div>
+    <div class="z-acoes"></div>
+  </div>
+</div>
+
+<!-- ============================ STATES ============================ -->
+<h2>Estados</h2>
+<div class="cartao">
+  <div class="grade-cab">
+    <div>Propriedade</div><div>Tipo</div><div>Origem</div>
+    <div class="dir">Atual</div><div class="dir">Config.</div><div class="dir">Ações</div>
+  </div>
+
+  <div class="rotulo"><b>Repouso e hover</b><span></span><em>O hover cobre a linha inteira, não só a célula.</em></div>
+  <div class="linha">
+    <div class="z-nome">OperatorBlock</div><div class="z-tipo">Boolean</div>
+    <div><span class="fonte-vazia">—</span></div>
+    <div class="z-atual">False</div><div class="z-cfg">False</div>
+    <div class="z-acoes"><button class="ib ib-forca" aria-label="Forçar"><svg viewBox="0 -960 960 960" fill="currentColor"><path d="M419-80q-28 0-52.5-12T325-126L107-403l19-20q20-21 48-25t52 11l74 45v-328q0-17 11.5-28.5T340-760q17 0 29 11.5t12 28.5v472l-97-60 104 133q6 7 14 11t17 4h221q33 0 56.5-23.5T720-240v-160q0-17-11.5-28.5T680-440H461v-80h219q50 0 85 35t35 85v160q0 66-47 113T640-80H419ZM167-620q-13-22-20-47.5t-7-52.5q0-83 58.5-141.5T340-920q83 0 141.5 58.5T540-720q0 27-7 52.5T513-620l-69-40q8-14 12-28.5t4-31.5q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 17 4 31.5t12 28.5l-69 40Zm335 280Z"/></svg></button></div>
+  </div>
+
+  <div class="rotulo"><b>Selecionada</b><span>.st-sel</span><em>A linha em que o painel está posicionado.</em></div>
+  <div class="linha st-sel">
+    <div class="z-nome">OperatorBlock</div><div class="z-tipo">Boolean</div>
+    <div><span class="fonte-vazia">—</span></div>
+    <div class="z-atual">False</div><div class="z-cfg">False</div>
+    <div class="z-acoes"><button class="ib ib-forca" aria-label="Forçar"><svg viewBox="0 -960 960 960" fill="currentColor"><path d="M419-80q-28 0-52.5-12T325-126L107-403l19-20q20-21 48-25t52 11l74 45v-328q0-17 11.5-28.5T340-760q17 0 29 11.5t12 28.5v472l-97-60 104 133q6 7 14 11t17 4h221q33 0 56.5-23.5T720-240v-160q0-17-11.5-28.5T680-440H461v-80h219q50 0 85 35t35 85v160q0 66-47 113T640-80H419ZM167-620q-13-22-20-47.5t-7-52.5q0-83 58.5-141.5T340-920q83 0 141.5 58.5T540-720q0 27-7 52.5T513-620l-69-40q8-14 12-28.5t4-31.5q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 17 4 31.5t12 28.5l-69 40Zm335 280Z"/></svg></button></div>
+  </div>
+
+  <div class="rotulo"><b>Em edição</b><span>.st-editando</span><em>Sombra interna, não borda — a linha não tem 2 px de sobra.</em></div>
+  <div class="linha st-editando">
+    <div class="z-nome">UndervoltageDelay</div><div class="z-tipo">Integer</div>
+    <div><span class="fonte-vazia">—</span></div>
+    <div class="z-atual">20</div><div class="z-cfg editavel">25</div>
+    <div class="z-acoes"></div>
+  </div>
+
+  <div class="rotulo"><b>Edição pendente</b><span>.divergente</span><em>Configurado difere da planta: encenado e ainda não salvo.</em></div>
+  <div class="linha">
+    <div class="z-nome">UndervoltageDelay</div><div class="z-tipo">Integer</div>
+    <div><span class="fonte-vazia">—</span></div>
+    <div class="z-atual">20</div><div class="z-cfg editavel divergente">25<span class="marca-divergente"></span></div>
+    <div class="z-acoes"></div>
+  </div>
+
+  <div class="rotulo"><b>Recusada</b><span>.st-erro</span><em>O motivo ocupa a coluna Origem, que numa propriedade digitada está vazia.</em></div>
+  <div class="linha st-erro">
+    <div class="z-nome">UndervoltageDelay</div><div class="z-tipo">Integer</div>
+    <div><span class="fonte-vazia">'abcd' não é um número inteiro</span></div>
+    <div class="z-atual">20</div><div class="z-cfg editavel">abcd</div>
+    <div class="z-acoes"></div>
+  </div>
+
+  <div class="rotulo"><b>Sem tag</b><span></span><em>Uma propriedade IOTag ainda não ligada a nada.</em></div>
+  <div class="linha">
+    <div class="z-nome">PositionOpenAlt</div><div class="z-tipo">IOTag</div>
+    <div><span class="fonte-vazia">nenhuma tag escolhida</span></div>
+    <div class="z-atual vazio">—</div><div class="z-cfg vazio">—</div>
+    <div class="z-acoes"><button class="ib" aria-label="Escolher tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/></svg></button></div>
+  </div>
+
+  <div class="rotulo"><b>Sem comunicação</b><span>.st-desabilitada</span><em>A tag existe mas o objeto não responde.</em></div>
+  <div class="linha st-desabilitada">
+    <div class="z-nome">PositionClosed</div><div class="z-tipo">IOTag</div>
+    <div><span class="fonte">GTW.GUL.DJ03.52b.Value</span></div>
+    <div class="z-atual vazio">?</div><div class="z-cfg">False</div>
+    <div class="z-acoes"><button class="ib" aria-label="Escolher tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/></svg></button></div>
+  </div>
+</div>
+
+<!-- ============================ IN CONTEXT ============================ -->
+<h2>Em contexto — 24 linhas de um disjuntor</h2>
+<p class="nota">A 16 px, um disjuntor inteiro cabe sem rolagem. É esse o ganho que justifica a densidade.</p>
+<div class="cartao">
+  <div class="grade-cab">
+    <div>Propriedade</div><div>Tipo</div><div>Origem</div>
+    <div class="dir">Atual</div><div class="dir">Config.</div><div class="dir">Ações</div>
+  </div>
+  <div id="lista"></div>
+</div>
+
+<!-- ============================ FLAGS ============================ -->
+<h2>O que cada bit liga</h2>
+<div class="cartao">
+  <table>
+    <thead><tr>
+      <th>Constante</th><th class="bit" style="text-align:right">Bit</th><th>O que faz na linha</th>
+      <th class="c">Atual</th><th class="c">Config.</th><th class="c">Botão</th>
+    </tr></thead>
+    <tbody>
+      <tr><td class="flag">EXPOSE_VIEW</td><td class="bit">1</td><td>A linha existe. Sem ele não há linha nenhuma.</td><td class="c nao-marca">—</td><td class="c nao-marca">—</td><td class="c nao-marca">—</td></tr>
+      <tr><td class="flag">EXPOSE_VALUE</td><td class="bit">2</td><td>A coluna Atual é vinculada ao vivo.</td><td class="c sim-marca">✓</td><td class="c nao-marca">—</td><td class="c nao-marca">—</td></tr>
+      <tr><td class="flag">EXPOSE_EDIT</td><td class="bit">4</td><td>A coluna Config. aceita digitação.</td><td class="c nao-marca">—</td><td class="c sim-marca">✓</td><td class="c nao-marca">—</td></tr>
+      <tr><td class="flag">EXPOSE_EXPRESSION</td><td class="bit">8</td><td>Mostra <code>btnBuildExpression</code>.</td><td class="c nao-marca">—</td><td class="c nao-marca">—</td><td class="c sim-marca">✓</td></tr>
+      <tr><td class="flag">EXPOSE_FORCE</td><td class="bit">16</td><td>Mostra <code>btnForce</code>. Nunca é salvo.</td><td class="c nao-marca">—</td><td class="c nao-marca">—</td><td class="c sim-marca">✓</td></tr>
+      <tr><td class="flag">EXPOSE_SAVED</td><td class="bit">32</td><td>Com tipo IOTag, mostra <code>btnPickTag</code>.</td><td class="c nao-marca">—</td><td class="c nao-marca">—</td><td class="c sim-marca">✓</td></tr>
+      <tr><td class="flag">EXPOSE_INTERFACE</td><td class="bit">64</td><td>Nada visual. A aplicação ganha uma tag.</td><td class="c nao-marca">—</td><td class="c nao-marca">—</td><td class="c nao-marca">—</td></tr>
+      <tr><td class="flag">EXPOSE_IOTAG</td><td class="bit">128</td><td>Nada visual. O nível 3 ganha um ponto.</td><td class="c nao-marca">—</td><td class="c nao-marca">—</td><td class="c nao-marca">—</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============================ MEASUREMENTS ============================ -->
+<h2>Medidas</h2>
+<div class="medidas">
+  <div class="medida"><b>16 px</b><span>altura da linha, borda inclusa</span></div>
+  <div class="medida"><b>18 px</b><span>altura do cabeçalho</span></div>
+  <div class="medida"><b>0 / 6 px</b><span>padding vertical / horizontal</span></div>
+  <div class="medida"><b>170 px</b><span>coluna Propriedade</span></div>
+  <div class="medida"><b>84 px</b><span>coluna Tipo</span></div>
+  <div class="medida"><b>1fr</b><span>coluna Origem (reticências)</span></div>
+  <div class="medida"><b>76 px</b><span>Atual e Config.</span></div>
+  <div class="medida"><b>58 px</b><span>coluna Ações — cabe 3 botões</span></div>
+  <div class="medida"><b>14 × 14 px</b><span>botão de ícone, gap 2 px</span></div>
+  <div class="medida"><b>11 px</b><span>ícone traçado, viewBox 24×24, traço 2,4</span></div>
+  <div class="medida"><b>touch_app</b><span>force — Material Symbols Outlined, preenchido, viewBox 0 −960 960 960</span></div>
+  <div class="medida"><b>11 px / 1,0</b><span>texto da linha (Montserrat)</span></div>
+  <div class="medida"><b>10 px</b><span>origem (mono)</span></div>
+  <div class="medida"><b>9,5 px</b><span>tipo (mono)</span></div>
+  <div class="medida"><b>8,5 px</b><span>cabeçalho (Urbanist)</span></div>
+  <div class="medida aviso"><b>1 px inset</b><span>moldura de edição — sombra, nunca borda</span></div>
+  <div class="medida"><b>120 ms</b><span>transição de hover</span></div>
+</div>
+
+<p class="nota" style="margin-top:26px">
+  <b>O que 16 px custa.</b> O botão de ícone cai para 14 px, muito abaixo dos 44 px recomendados
+  para toque — aceitável só porque este painel é operado com mouse em estação de engenharia.
+  O texto da linha cai para 11 px, abaixo dos 16 px recomendados para corpo de texto; vale para
+  uma grade de inspetor lida em varredura, não para leitura corrida. O contraste, esse, não cede:
+  <code>#0F172A</code> e <code>#475569</code> continuam em 15,9:1 e 7,4:1.
+  Numa tela sensível ao toque, subir a linha para 28–32 px e o botão para 24 px.
+</p>
+
+</div>
+
+<script>
+/* the in-context list — one breaker's worth of rows at real size */
+const props = [
+  ['Name','String','','DJ03','DJ03',['e']],
+  ['Id','Integer','','120','120',[]],
+  ['PositionOpen','IOTag','GTW.GUL.DJ03.52a.Value','False','False',['t','f']],
+  ['PositionClosed','IOTag','GTW.GUL.DJ03.52b.Value','True','True',['t','f']],
+  ['PositionOpenAlt','IOTag','','—','—',['t']],
+  ['PositionClosedAlt','IOTag','','—','—',['t']],
+  ['CommandOpen','IOTag','GTW.GUL.DJ03.Trip','—','—',['t','f']],
+  ['CommandClose','IOTag','GTW.GUL.DJ03.Close','—','—',['t','f']],
+  ['CommandSBOOpen','IOTag','','—','—',['t','f']],
+  ['CommandSBOClose','IOTag','','—','—',['t','f']],
+  ['RawValueCommandOpen','Integer','','1','1',['e']],
+  ['RawValueCommandClose','Integer','','2','2',['e']],
+  ['CommandTimeout','Integer','','10','10',['e']],
+  ['CommandOpenFailed','Boolean','','False','False',['f']],
+  ['CommandCloseFailed','Boolean','','False','False',['f']],
+  ['CommunicationFailure','Boolean','','False','False',['f']],
+  ['SimulationModeEnabled','Boolean','','True','True',['f']],
+  ['SimulateCommandFailure','Boolean','','False','False',['f']],
+  ['Defective','Boolean','','False','—',[]],
+  ['Motorised','Boolean','','True','True',['f']],
+  ['Interlock','Boolean','DJ04.Position=1 AND CS3999.Position=1','True','True',['x','f']],
+  ['MemorizedPosition','Integer','','2','—',[]],
+  ['Build','xatm_Build','XATM_Data.Substation.Transformer.DJ03.Build','—','—',['o']],
+  ['Version','xatm_Version','','—','—',['o']]
+];
+
+/* Two icon families, and they are drawn differently.
+   The force button is Material Symbols Outlined touch_app — a filled glyph
+   on a 0 -960 960 960 viewBox. The other three are stroked on 0 0 24 24.
+   Mixing them is deliberate: touch_app is the one gesture here that moves
+   the switchyard, and a filled mark carries more weight at 11 px than any
+   stroked one. */
+const icones = {
+  t:{vb:'0 0 24 24', traco:true, rotulo:'Escolher tag',
+     d:'<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/>'},
+  f:{vb:'0 -960 960 960', traco:false, rotulo:'Forçar valor',
+     d:'<path d="M419-80q-28 0-52.5-12T325-126L107-403l19-20q20-21 48-25t52 11l74 45v-328q0-17 11.5-28.5T340-760q17 0 29 11.5t12 28.5v472l-97-60 104 133q6 7 14 11t17 4h221q33 0 56.5-23.5T720-240v-160q0-17-11.5-28.5T680-440H461v-80h219q50 0 85 35t35 85v160q0 66-47 113T640-80H419ZM167-620q-13-22-20-47.5t-7-52.5q0-83 58.5-141.5T340-920q83 0 141.5 58.5T540-720q0 27-7 52.5T513-620l-69-40q8-14 12-28.5t4-31.5q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 17 4 31.5t12 28.5l-69 40Zm335 280Z"/>'},
+  x:{vb:'0 0 24 24', traco:true, rotulo:'Diagrama de intertravamento',
+     d:'<path d="M4 5h6v6H4zM14 13h6v6h-6z"/><path d="M10 8h4v8"/>'},
+  o:{vb:'0 0 24 24', traco:true, rotulo:'Escolher objeto',
+     d:'<path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3Z"/>'}
+};
+
+const lista = document.getElementById('lista');
+props.forEach(([nome,tipo,fonte,atual,cfg,botoes])=>{
+  const editavel = botoes.includes('e');
+  const acoes = botoes.filter(b=>b!=='e').map(b=>{
+    const ic = icones[b];
+    const attrs = ic.traco
+      ? 'fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"'
+      : 'fill="currentColor"';
+    return `<button class="ib ${b==='f'?'ib-forca':''}" aria-label="${ic.rotulo} — ${nome}">
+       <svg viewBox="${ic.vb}" ${attrs}>${ic.d}</svg>
+     </button>`;
+  }).join('');
+
+  const classeFonte = fonte.includes(' ') ? 'fonte fonte-expr'
+                    : fonte.startsWith('XATM_Data') ? 'fonte fonte-obj' : 'fonte';
+
+  const d = document.createElement('div');
+  d.className = 'linha';
+  d.innerHTML =
+    `<div class="z-nome">${nome}</div>
+     <div class="z-tipo">${tipo}</div>
+     <div>${fonte ? `<span class="${classeFonte}" title="${fonte}">${fonte}</span>` : '<span class="fonte-vazia">—</span>'}</div>
+     <div class="z-atual ${atual==='—'?'vazio':''}">${atual}</div>
+     <div class="z-cfg ${cfg==='—'?'vazio':''} ${editavel?'editavel':''}">${cfg}</div>
+     <div class="z-acoes">${acoes}</div>`;
+  lista.appendChild(d);
+});
+</script>
+</body>
+</html>
