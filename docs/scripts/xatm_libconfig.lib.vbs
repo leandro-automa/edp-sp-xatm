@@ -527,6 +527,178 @@ Sub SendRawValue(obj)
 
 End Sub
 
+<xatm_PropertyRow.btnBuildExpression:btnBuildExpression_Click()>
+Sub btnBuildExpression_Click()
+
+	' The conditions behind a bound property, drawn rather than read.
+	'
+	' A property the manifest lets be bound carries an expression instead
+	' of a value - the field conditions that have to hold before a
+	' maneuver may start, written as one line of E3 expression over the
+	' interface tags. As text that line is a wall of ANDs and nobody can
+	' see which term is the one holding the maneuver back. InterlockDiagram
+	' draws it as the tree it is, a lamp against each term.
+	'
+	' Shown and not written. The expression itself is bound in Studio,
+	' where there is room for it; this button is how somebody standing at
+	' the panel finds out why a start is refused.
+
+	If Not Can(EXPOSE_EXPRESSION) Then Exit Sub
+
+	' PropertySource is where a bound property keeps its expression - the
+	' same column that holds the tag path for an IOTag row, because both
+	' answer where the value comes from.
+	Dim expression
+	expression = Trim(xatm_PropertyRow.PropertySource & "")
+
+	If expression = "" Then
+		MsgBox xatm_PropertyRow.PropertyName & " is not bound to an " & _
+		       "expression yet, so there are no conditions to draw.", _
+		       vbInformation, DIAGRAM_TITLE
+		Exit Sub
+	End If
+
+	OpenDiagram expression
+
+End Sub
+
+
+' What the module is called and how it is asked to open.
+'
+' The control is added to the screen, given its argument and taken away
+' again - opening is a side effect of Abrir changing, so the object only
+' has to exist for the instant it takes to flip it.
+Const DIAGRAM_OPENER_CLASS = "interlockdiagram.ild_AbrirIntertravamento"
+Const DIAGRAM_OPENER_NAME  = "ild_AbrirIntertravamento"
+
+' The way in for a project that has the screen but not the control.
+'
+' A frame of this library's own, named here rather than worked out from
+' the path the way the module's own example does. That example builds a
+' frame name by striking the dots out of a CommandUnit path, which has
+' nothing sensible to say when what is being drawn is an expression
+' rather than a command unit.
+Const DIAGRAM_SCREEN = "ild_DiagramScreen"
+Const DIAGRAM_FRAME  = "xatm_InterlockDiagram"
+Const DIAGRAM_TITLE  = "Intertravamentos"
+
+' Title bar (1), close (2), border (16), movable (64), and the two the
+' module's own example asks for (256, 512).
+Dim FRAME_FLAGS : FRAME_FLAGS = 1 + 2 + 16 + 64 + 256 + 512
+
+' Which of the module's four modes this application is.
+'
+'   1  OTS
+'   2  IHM or SCADA on Elipse Power
+'   3  Elipse E3, expressions built from IOTags or InternalTags
+'   4  Elipse E3, the CPFL Renovaveis standard
+'
+' Three, because that is what these expressions are: they are written
+' over the interface tags, which are InternalTags, and not over Power
+' measurements. The module's own example picks 4 for anything that is
+' not a PowerCommandUnit, which is the CPFL standard and not this one.
+'
+' If the diagram comes up empty this is the first thing to try.
+Const EXECUTION_MODE = 3
+
+' The module's high performance drawing, and the flag that tells it to
+' read calculated properties rather than SCADA ones (1 scada, 5
+' calculated).
+Const HIGH_PERFORMANCE = True
+Const USE_CALCULATED   = 5
+
+' The one flag this button asks about, written out again because one E3
+' object cannot call another's and the row's own copy lives in the
+' control's scope rather than in this button's.
+Const EXPOSE_EXPRESSION = 8
+
+
+' Puts the diagram on screen for one expression.
+'
+' Two ways in, and which one a station has is the site's business: the
+' control where InterlockDiagram is installed as a library, and the
+' screen in a frame where it is not. The control is tried first because
+' it needs nothing of the site at all.
+Sub OpenDiagram(expression)
+
+	Dim opener
+	Set opener = Nothing
+
+	On Error Resume Next
+	Set opener = Screen.AddObject(DIAGRAM_OPENER_CLASS, True, DIAGRAM_OPENER_NAME)
+	On Error Goto 0
+
+	If Not opener Is Nothing Then
+
+		On Error Resume Next
+
+		opener.Arg = Array(expression, EXECUTION_MODE, HIGH_PERFORMANCE, _
+		                   TreeView(), USE_CALCULATED)
+
+		' Opening is the change and not the value, so this is flipped rather
+		' than set - asking twice for the same diagram has to open it twice.
+		opener.Abrir = Not opener.Abrir
+
+		Screen.DeleteObject opener.Name
+
+		On Error Goto 0
+
+		Exit Sub
+
+	End If
+
+	Dim panel
+	Set panel = Nothing
+
+	On Error Resume Next
+	Set panel = Application.GetFrame(DIAGRAM_FRAME)
+	On Error Goto 0
+
+	' Said plainly rather than as a failed open, the way the configuration
+	' panel says it: a station that never had InterlockDiagram added reads
+	' exactly like one where the frame was renamed, so both names are in
+	' the message.
+	If panel Is Nothing Then
+		MsgBox "There is nowhere to draw the interlock diagram. This " & _
+		       "project has neither the " & DIAGRAM_OPENER_CLASS & " " & _
+		       "control nor a frame called " & DIAGRAM_FRAME & ".", _
+		       vbExclamation, DIAGRAM_TITLE
+		Exit Sub
+	End If
+
+	panel.SetFrameOptions DIAGRAM_TITLE, FRAME_FLAGS
+	panel.OpenScreen DIAGRAM_SCREEN, Array(expression, EXECUTION_MODE)
+
+End Sub
+
+
+' The WatchWindow's tree, which the module is handed so that clicking a
+' term in the diagram can find it in the domain. Nothing where this
+' viewer has no WatchWindow - the diagram draws either way.
+Function TreeView()
+
+	Set TreeView = Nothing
+
+	On Error Resume Next
+	Set TreeView = Application.Item("WatchWindowViewerObjects") _
+	                          .Item("Global").Item("XML_TreeView").Value
+	On Error Goto 0
+
+End Function
+
+
+Function Can(flag)
+
+	Can = ((xatm_PropertyRow.Exposure And flag) <> 0)
+
+End Function
+
+
+' A Function may not be the last thing in a scope; E3 rejects it and
+' says nothing about why. This is the guard, not debris.
+Sub EndOfScope()
+End Sub
+
 <xatm_PropertyRow.btnPickTag:btnPickTag_Click()>
 Sub btnPickTag_Click()
 
