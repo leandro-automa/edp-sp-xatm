@@ -6469,6 +6469,8 @@ Function NewRow(kind, key, objectPath, objectType, propertyName, propertyType, v
 
 	row.X = Himetric(ROW_LEFT_PX)
 	row.Y = y
+
+	row.BringToFront()
 	
 	row.Kind         = kind
 	row.Source       = key
