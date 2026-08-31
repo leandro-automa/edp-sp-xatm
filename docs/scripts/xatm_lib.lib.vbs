@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Thu Aug 27 17:04:32 2026
+Mon Aug 31 17:31:22 2026
 -----------------------
 
 <xatm_Breaker.Data.CommandInProgress:CommandInProgress_OnChangedValue()>
@@ -8196,11 +8196,11 @@ Sub WriteLog(message)
 
 	On Error Resume Next
 	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	Application.Trace "[" & Parent.Parent.Parent.Name & "] - " & message
 	On Error Goto 0
 
 	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Parent.Name & "] - " & message
 	End If
 	
 End Sub
@@ -8304,11 +8304,11 @@ Sub WriteLog(message)
 	
 	On Error Resume Next
 	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	Application.Trace "[" & Parent.Parent.Parent.Name & "] - " & message
 	On Error Goto 0
 	
 	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Parent.Name & "] - " & message
 	End If
 	
 End Sub
