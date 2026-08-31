@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Mon Aug 31 11:10:09 2026
+Mon Aug 31 17:10:01 2026
 -----------------------
 
 <xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
@@ -9728,7 +9728,7 @@ Sub btnSave_Click()
 	' have written some of the document before it stopped.
 	Dim layoutFolder
 	Set layoutFolder = Application.GetObject("XATM_Data.Automation.Layout")
-
+	
 	layoutFolder.Item("Incomer").WriteEx Screen.Item("SelectLayoutIncomer").Index
 	layoutFolder.Item("Transformer").WriteEx Screen.Item("SelectLayoutTransformer").Index
 	layoutFolder.Item("Busbar").WriteEx Screen.Item("SelectLayoutBusbar").Index
@@ -10207,6 +10207,280 @@ Sub Config_OnPreShow(Arg)
 		
 End Sub
 
+<xatm_config_screens.DomainBrowser.TreeView:TreeView_Expand(Node)>
+Sub TreeView_Expand(Node)
+
+	' The children of one node, fetched the moment it is opened.
+	'
+	' Runs once per node: the placeholder is taken out and never comes
+	' back, so a node already filled falls out at the first line.
+
+	If Not OnlyPlaceholder(Node) Then Exit Sub
+
+	Dim doc
+	Set doc = CatalogDoc()
+	If doc Is Nothing Then Exit Sub
+
+	' The root stands for the document itself; everything else is found by
+	' the path its Tag carries.
+	Dim xmlParent
+	Set xmlParent = Nothing
+
+	On Error Resume Next
+	If Node.Parent Is Nothing Then
+		Set xmlParent = doc.documentElement
+	Else
+		Set xmlParent = FindXmlByPath(doc, TreeNodeTagPath(Node.Tag))
+	End If
+	On Error GoTo 0
+
+	If xmlParent Is Nothing Then
+		Application.Trace "TreeView expand found nothing at " & CStr(Node.Tag)
+		Exit Sub
+	End If
+
+	Dim tree
+	Set tree = Screen.Item("TreeView")
+
+	' A folder can hold hundreds, and each Add repaints.
+	On Error Resume Next
+	tree.Visible = False
+	On Error GoTo 0
+
+	On Error Resume Next
+	tree.Nodes.Remove "p" & Node.Key
+	Err.Clear
+	On Error GoTo 0
+
+	Dim useImages
+	useImages = BindTreeImageList(tree)
+
+	Dim child, added
+	added = 0
+
+	For Each child In xmlParent.childNodes
+		If child.nodeName = "Object" Then
+			AddChildNode tree, Node.Key, child, useImages
+			added = added + 1
+		End If
+	Next
+
+	On Error Resume Next
+	tree.Visible = True
+	On Error GoTo 0
+
+	Application.Trace "TreeView expanded " & CStr(Node.Text) & " with " & _
+	                  CStr(added) & " nodes."
+
+End Sub
+
+
+' The catalogue, parsed once and kept.
+'
+' Held for the life of the screen rather than parsed per expand: the
+' document is the same every time and parsing twenty thousand objects is
+' the one cost that would undo the whole point of loading lazily.
+Dim gDoc
+
+Function CatalogDoc()
+
+	Set CatalogDoc = Nothing
+
+	If IsObject(gDoc) Then
+		If Not (gDoc Is Nothing) Then
+			Set CatalogDoc = gDoc
+			Exit Function
+		End If
+	End If
+
+	Dim xmlText
+	xmlText = CatalogXmlText()
+	If Len(xmlText) = 0 Then
+		Application.Trace "Catalog XML is empty; nothing to expand."
+		Exit Function
+	End If
+
+	Dim doc
+	Set doc = CreateObject("MSXML2.DOMDocument.6.0")
+	doc.async = False
+	doc.loadXML xmlText
+
+	If doc.parseError.errorCode <> 0 Then
+		Application.Trace "Catalog XML parse failed: " & doc.parseError.reason
+		Exit Function
+	End If
+
+	Set gDoc = doc
+	Set CatalogDoc = gDoc
+
+End Function
+
+
+' Whether a node is still holding its stand-in, and so has never been
+' opened. One child, keyed with a p in front, is the whole test.
+Function OnlyPlaceholder(Node)
+
+	OnlyPlaceholder = False
+
+	On Error Resume Next
+	If Node.Children <> 1 Then Exit Function
+	If Left(CStr(Node.Child.Key), 1) = "p" Then OnlyPlaceholder = True
+	Err.Clear
+	On Error GoTo 0
+
+End Function
+
+
+' The catalogue entry at one path.
+'
+' A plain walk of every Object rather than an XPath: a path can carry a
+' bracket or a quote, and there is no escaping either inside an XPath
+' literal. One pass over the document per expand is cheap beside the
+' twenty thousand adds this replaced.
+Function FindXmlByPath(doc, path)
+
+	Set FindXmlByPath = Nothing
+	If Len(path) = 0 Then Exit Function
+
+	Dim nodes, i
+	Set nodes = doc.getElementsByTagName("Object")
+
+	For i = 0 To nodes.length - 1
+		If nodes.item(i).getAttribute("path") = path Then
+			Set FindXmlByPath = nodes.item(i)
+			Exit Function
+		End If
+	Next
+
+End Function
+
+
+' One child under an opened node, with a stand-in of its own where the
+' catalogue says it has children to come.
+Sub AddChildNode(tree, parentKey, xmlNode, useImages)
+
+	gSeq = gSeq + 1
+
+	Dim key
+	key = "x" & CStr(gSeq)
+
+	Dim text
+	text = XmlNodeText(xmlNode)
+
+	Dim imageKey
+	imageKey = ""
+	If useImages Then imageKey = XmlNodeImageKey(xmlNode, tree.ImageList)
+
+	Dim treeNode
+	Set treeNode = Nothing
+
+	On Error Resume Next
+	If useImages And Len(CStr(imageKey)) > 0 Then
+		Set treeNode = tree.Nodes.Add(parentKey, 4, key, text, imageKey, imageKey)
+	End If
+	Err.Clear
+	If treeNode Is Nothing Then Set treeNode = tree.Nodes.Add(parentKey, 4, key, text)
+	If Err.Number <> 0 Then
+		Application.Trace "TreeView add failed: " & xmlNode.getAttribute("path") & _
+		                  " - " & Err.Description
+		Err.Clear
+		On Error GoTo 0
+		Exit Sub
+	End If
+
+	treeNode.Tag = xmlNode.getAttribute("path")
+	treeNode.ToolTipText = xmlNode.getAttribute("path")
+	Err.Clear
+	On Error GoTo 0
+
+	If HasObjectChildren(xmlNode) Then
+		On Error Resume Next
+		tree.Nodes.Add key, 4, "p" & key, "..."
+		Err.Clear
+		On Error GoTo 0
+	End If
+
+End Sub
+
+' Keys have to be unique across the whole control, and the root already
+' took n1 in the other scope - so these are x1, x2, and cannot collide.
+Dim gSeq
+
+
+Function HasObjectChildren(xmlNode)
+
+	HasObjectChildren = False
+
+	Dim child
+	For Each child In xmlNode.childNodes
+		If child.nodeName = "Object" Then
+			HasObjectChildren = True
+			Exit Function
+		End If
+	Next
+
+End Function
+
+
+' What the node is called, and which picture it gets. Named apart from
+' the copies in the screen's scope because that scope cannot be seen from
+' here, and a name shared with a local would shadow it.
+Function XmlNodeText(xmlNode)
+
+	XmlNodeText = xmlNode.getAttribute("name")
+	If Len(XmlNodeText) = 0 Then XmlNodeText = xmlNode.getAttribute("path")
+	If Len(XmlNodeText) = 0 Then XmlNodeText = "[object]"
+
+End Function
+
+
+Function XmlNodeImageKey(xmlNode, imageList)
+
+	Dim className
+	className = xmlNode.getAttribute("type")
+
+	Dim imageValue
+	imageValue = ImageListValueForTag(imageList, className)
+
+	If Len(CStr(imageValue)) = 0 Then
+		imageValue = ImageListValueForTag(imageList, "default")
+	End If
+
+	If Len(CStr(imageValue)) > 0 Then
+		XmlNodeImageKey = imageValue
+	ElseIf Len(className) = 0 Then
+		XmlNodeImageKey = "Object"
+	Else
+		XmlNodeImageKey = className
+	End If
+
+End Function
+
+
+Function BindTreeImageList(tree)
+
+	BindTreeImageList = False
+
+	On Error Resume Next
+	Dim imageList
+	Set imageList = Screen.Item("TreeImages")
+	If Err.Number <> 0 Then
+		Err.Clear
+		Exit Function
+	End If
+
+	Set tree.ImageList = imageList
+	If Err.Number = 0 Then BindTreeImageList = True
+	Err.Clear
+	On Error GoTo 0
+
+End Function
+
+' A Function may not be the last thing in a scope.
+Sub EndOfScope()
+	
+End Sub
+
 <xatm_config_screens.DomainBrowser.TreeView:TreeView_NodeClick(Node)>
 Sub TreeView_NodeClick(Node)
 
@@ -10651,43 +10925,6 @@ Function CatalogXmlText()
 
 End Function
 
-Function TreeNodeText(xmlNode)
-
-	Dim text
-	text = xmlNode.getAttribute("name")
-
-	If Len(text) = 0 Then
-		text = xmlNode.getAttribute("path")
-	End If
-	If Len(text) = 0 Then
-		text = "[object]"
-	End If
-
-	TreeNodeText = text
-
-End Function
-
-Function TreeNodeImageKey(xmlNode, imageList)
-
-	Dim className
-	className = xmlNode.getAttribute("type")
-
-	Dim imageValue
-	imageValue = ImageListValueForTag(imageList, className)
-
-	If Len(CStr(imageValue)) = 0 Then
-		imageValue = ImageListValueForTag(imageList, "default")
-	End If
-
-	If Len(CStr(imageValue)) > 0 Then
-		TreeNodeImageKey = imageValue
-	ElseIf Len(className) = 0 Then
-		TreeNodeImageKey = "Object"
-	Else
-		TreeNodeImageKey = className
-	End If
-
-End Function
 
 Function ImageListValueForTag(imageList, tagName)
 
@@ -10768,86 +11005,6 @@ Function BindTreeImageList(tree)
 
 End Function
 
-Function AddTreeNode(tree, parentKey, xmlNode, sequence, useImages)
-
-	sequence = sequence + 1
-
-	Dim key
-	key = "n" & CStr(sequence)
-
-	Dim text
-	text = TreeNodeText(xmlNode)
-
-	Dim imageKey
-	imageKey = ""
-	If useImages Then
-		imageKey = TreeNodeImageKey(xmlNode, tree.ImageList)
-	End If
-
-	On Error Resume Next
-	Dim treeNode
-	Set treeNode = Nothing
-	If useImages Then
-		If Len(parentKey) = 0 Then
-			Set treeNode = tree.Nodes.Add(, , key, text, imageKey, imageKey)
-		Else
-			Set treeNode = tree.Nodes.Add(parentKey, 4, key, text, imageKey, imageKey)
-		End If
-	End If
-	If Err.Number <> 0 Then
-		Application.Trace "TreeView image key failed: " & imageKey & " - " & Err.Description
-		Err.Clear
-	End If
-	If treeNode Is Nothing Then
-		If Len(parentKey) = 0 Then
-			Set treeNode = tree.Nodes.Add(, , key, text)
-		Else
-			Set treeNode = tree.Nodes.Add(parentKey, 4, key, text)
-		End If
-	End If
-	If Err.Number <> 0 Then
-		Application.Trace "TreeView add failed: " & xmlNode.getAttribute("path") & " - " & Err.Description
-		Err.Clear
-		AddTreeNode = ""
-		Exit Function
-	End If
-	On Error GoTo 0
-
-	If useImages Then
-		On Error Resume Next
-		treeNode.Image = imageKey
-		treeNode.SelectedImage = imageKey
-		If Err.Number <> 0 Then
-			Application.Trace "TreeView image assign failed: " & imageKey & " - " & Err.Description
-			Err.Clear
-		End If
-		On Error GoTo 0
-	End If
-
-	On Error Resume Next
-	treeNode.Tag = xmlNode.getAttribute("path")
-	treeNode.ToolTipText = xmlNode.getAttribute("path")
-	Err.Clear
-	On Error GoTo 0
-
-	Dim child
-	For Each child In xmlNode.childNodes
-		If child.nodeName = "Object" Then
-			Dim childKey
-			childKey = AddTreeNode(tree, key, child, sequence, useImages)
-		End If
-	Next
-
-	If xmlNode.getAttribute("depth") = "1" Then
-		On Error Resume Next
-		treeNode.Expanded = True
-		Err.Clear
-		On Error GoTo 0
-	End If
-
-	AddTreeNode = key
-
-End Function
 
 Function ElipseDomainName()
 
@@ -10911,7 +11068,7 @@ Function AddTreeRootNode(tree, text, sequence, useImages)
 
 	treeNode.Tag = text
 	treeNode.ToolTipText = text
-	treeNode.Expanded = True
+	' treeNode.Expanded = True
 	Err.Clear
 	On Error GoTo 0
 
@@ -10920,6 +11077,19 @@ Function AddTreeRootNode(tree, text, sequence, useImages)
 End Function
 
 Sub FillTreeViewFromCatalogXml(tree, xmlText)
+
+	' The domain root, and nothing under it.
+	'
+	' The catalogue runs to twenty-odd thousand objects, and building them
+	' all cost the same whether or not anybody looked: hiding the control
+	' and collapsing the nodes only stopped it repainting, never stopped it
+	' adding. So it adds one node now, hangs a placeholder under it, and
+	' TreeView_Expand puts the real children in when the operator opens it.
+	'
+	' The expansion lives in the TreeView's own scope, which cannot see any
+	' of this - a tag's scopes see only each other. It reads the catalogue
+	' again there and finds its place by the path this leaves in Tag.
+	HideTree tree
 
 	On Error Resume Next
 	tree.Nodes.Clear
@@ -10931,6 +11101,7 @@ Sub FillTreeViewFromCatalogXml(tree, xmlText)
 
 	If Len(xmlText) = 0 Then
 		Application.Trace "Catalog XML is empty; TreeView was not filled."
+		ShowTree tree
 		Exit Sub
 	End If
 
@@ -10941,6 +11112,7 @@ Sub FillTreeViewFromCatalogXml(tree, xmlText)
 
 	If doc.parseError.errorCode <> 0 Then
 		Application.Trace "Catalog XML parse failed: " & doc.parseError.reason
+		ShowTree tree
 		Exit Sub
 	End If
 
@@ -10950,30 +11122,66 @@ Sub FillTreeViewFromCatalogXml(tree, xmlText)
 	Dim useImages
 	useImages = BindTreeImageList(tree)
 
-	Dim parentKey
-	parentKey = ""
-
 	Dim domainName
 	domainName = ElipseDomainName()
-	If Len(domainName) > 0 Then
-		parentKey = AddTreeRootNode(tree, domainName, sequence, useImages)
-	End If
+	If Len(domainName) = 0 Then domainName = "Domain"
 
-	Dim objectNode
-	For Each objectNode In doc.documentElement.childNodes
-		If objectNode.nodeName = "Object" Then
-			Dim nodeKey
-			nodeKey = AddTreeNode(tree, parentKey, objectNode, sequence, useImages)
-		End If
-	Next
+	Dim rootKey
+	rootKey = AddTreeRootNode(tree, domainName, sequence, useImages)
 
-	Application.Trace "TreeView filled from catalog XML with " & CStr(sequence) & " nodes."
+	If Len(rootKey) > 0 Then AddPlaceholder tree, rootKey
 
+	ShowTree tree
+
+	Application.Trace "TreeView opened on the domain root; children load on expand."
+
+End Sub
+
+
+' The stand-in that gives a node its expander.
+'
+' A node with no children shows no plus sign, so there would be nothing
+' to click and the tree would look like an empty domain. One throwaway
+' child is what makes it openable; TreeView_Expand takes it out again and
+' puts the real ones in.
+'
+' Keyed with a p in front, which is how the other scope tells a stand-in
+' from a real node without having to store anything.
+Sub AddPlaceholder(tree, parentKey)
+
+	On Error Resume Next
+	tree.Nodes.Add parentKey, 4, "p" & parentKey, "..."
+	Err.Clear
+	On Error GoTo 0
+
+End Sub
+
+
+' Suppressing the repaint, and putting it back. Two lines each, but they
+' are called from five places between them and a Visible left False is a
+' blank panel, so they are named rather than repeated.
+Sub HideTree(tree)
+
+	On Error Resume Next
+	tree.Visible = False
+	On Error GoTo 0
+
+End Sub
+
+
+Sub ShowTree(tree)
+
+	On Error Resume Next
+	tree.Visible = True
+	On Error GoTo 0
+	
 End Sub
 
 <xatm_config_screens.DomainBrowser:DomainBrowser_OnShow()>
 Sub DomainBrowser_OnShow()
-	FillTree	
+	
+	FillTree
+		
 End Sub
 
 <xatm_config_screens.Footer.ListBox:ListBox_MouseUp(Button, Shift, X, Y)>
