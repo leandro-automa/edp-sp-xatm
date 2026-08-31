@@ -33,8 +33,25 @@
   --verde-050:        #F2FAE5;
 
   /* --- status (secondary palette, sparing use) -------------------------- */
-  --vermelho:         #D61B1A;   /* alarm / failed                  */
+  --vermelho:         #D61B1A;   /* fechado / energizado            */
   --laranja:          #E77A0C;   /* warning / DEMO / out of service */
+
+  /* --- estado de equipamento, conforme o cliente ------------------------
+     Vermelho fechado, verde aberto: a convenção de segurança — vermelho
+     avisa que o equipamento está vivo, verde que está aberto e seguro para
+     trabalhar. É a prática corrente no Brasil e sob a IEC.
+
+     Os tons escuros são só o contorno, que dá definição da peça sobre o
+     branco e mantém a borda de posição memorizada distinguível do
+     preenchimento.                                                        */
+  --vermelho-escuro:  #A31413;
+  --verde-escuro:     #5A9B00;
+
+  /* --- fiação -----------------------------------------------------------
+     O fio não é informação: o estado está na peça. Quanto mais neutro o
+     traço, menos ele disputa atenção com o vermelho e o verde que ele
+     deveria apenas ligar. Trocável pelo seletor na legenda.              */
+  --fio:              #334155;
 
   /* --- neutrals --------------------------------------------------------- */
   --fundo:            #F4F6FA;   /* app background                  */
@@ -256,20 +273,41 @@ tbody tr:hover{background:var(--azul-050)}
 .diagrama{background:var(--superficie);border-radius:var(--raio);padding:6px}
 .diagrama svg{display:block;width:100%;height:auto}
 
-.sld-linha{stroke:var(--azul-escuro);stroke-width:1.6;fill:none}
-.sld-barra{stroke:var(--azul-escuro);stroke-width:4.5;stroke-linecap:round}
+.sld-linha{stroke:var(--fio);stroke-width:1.6;fill:none}
+.sld-barra{stroke:var(--fio);stroke-width:4.5;stroke-linecap:round}
 .sld-nome{font-family:var(--fonte-titulo);font-size:11px;font-weight:600;fill:var(--texto)}
 .sld-id{font-family:var(--fonte-corpo);font-size:9px;fill:var(--texto-fraco)}
 .sld-barra-nome{font-family:var(--fonte-corpo);font-size:9.5px;font-weight:600;fill:var(--texto-fraco);letter-spacing:.06em}
 
-/* closed device: solid Azul Claro. open: white with a strong outline.
-   shape carries the state as well as colour, so colour is never the
-   only indicator. */
-.dj-fechado{fill:var(--azul-claro);stroke:var(--azul-claro);stroke-width:1.5}
-.dj-aberto{fill:var(--superficie);stroke:var(--azul-escuro-80);stroke-width:1.8}
-.cs-fechada{stroke:var(--azul-claro);stroke-width:2.6;stroke-linecap:round}
-.cs-aberta{stroke:var(--azul-escuro-80);stroke-width:2.6;stroke-linecap:round}
-.tr-circulo{fill:none;stroke:var(--azul-escuro);stroke-width:1.8}
+/* Estado: vermelho fechado, verde aberto. A seccionadora ainda diz o
+   estado pela forma — barra reta fechada, lâmina inclinada aberta — e é
+   por isso que ela sobrevive a um daltônico onde o disjuntor não. */
+.dj-fechado{fill:var(--vermelho);stroke:var(--vermelho-escuro);stroke-width:1.4}
+.dj-aberto{fill:var(--verde);stroke:var(--verde-escuro);stroke-width:1.4}
+.cs-fechada{stroke:var(--vermelho);stroke-width:2.8;stroke-linecap:round}
+.cs-aberta{stroke:var(--verde);stroke-width:2.8;stroke-linecap:round}
+.tr-circulo{fill:none;stroke:var(--fio);stroke-width:1.8}
+
+/* Posição memorizada — a última posição conhecida, quando a leitura viva
+   se perdeu. Desenhada como anel em volta da peça, e só aparece quando
+   discorda do que está sendo mostrado: um anel que concorda com o
+   preenchimento não diria nada e só engrossaria o desenho. */
+.mem{fill:none;stroke-width:2.4}
+.mem-fechado{stroke:var(--vermelho)}
+.mem-aberto{stroke:var(--verde)}
+
+/* Variante vazada, para comparar com o cliente: mesma semântica de cor,
+   mas o aberto passa a ser contorno em vez de preenchimento. O estado
+   deixa de depender só do matiz e sobrevive em escala de cinza. */
+.diagrama.vazado .dj-aberto{fill:var(--superficie);stroke:var(--verde-escuro);stroke-width:2.6}
+
+/* A topologia da tela de configuração não mostra estado — mostra o que
+   existe. Pintá-la de vermelho e verde sugeriria uma leitura de campo
+   que aquela tela não tem. */
+.diagrama.neutro .dj-fechado,
+.diagrama.neutro .dj-aberto{fill:var(--azul-claro);stroke:var(--azul-claro)}
+.diagrama.neutro .cs-fechada,
+.diagrama.neutro .cs-aberta{stroke:var(--azul-claro)}
 
 .chip{font-family:var(--fonte-corpo);font-size:7px;font-weight:700;letter-spacing:.04em}
 .chip-sim rect{fill:var(--verde-050);stroke:var(--verde);stroke-width:.8}
@@ -279,41 +317,26 @@ tbody tr:hover{background:var(--azul-050)}
 .chip-al  rect{fill:#FCE9E9;stroke:var(--vermelho);stroke-width:.8}
 .chip-al  text{fill:var(--vermelho)}
 
-/* --------------------------------------------------------------------------
-   DARK MIMIC — the supervision diagram only.
-   Operations screens are dark: an operator watches this for a whole shift,
-   and an energised line reads faster as bright-on-dark than dark-on-bright.
-   The engineering screen next door stays light on purpose, so the two are
-   never mistaken for one another.
+/* Both diagrams are light now — the engineering topology and the operations
+   mimic share one set of rules above, so a device drawn on one screen cannot
+   come out meaning something else on the other. Closed is Azul Claro filled,
+   open is white outlined, and the shape says it as well as the colour. */
 
-   Azul Escuro is the canvas, which is the brandbook's own dark surface —
-   white text and Verde accents on it, as the rules require. That forces one
-   change of meaning: Azul Claro marks a closed device on white, but on
-   Azul Escuro it falls to 1.8:1 and disappears, so Verde carries "closed"
-   here. The shape carries it too — filled versus outlined — so nothing
-   depends on the colour alone.
-   -------------------------------------------------------------------------- */
-.diagrama-escuro{background:var(--azul-escuro);border-radius:var(--raio);padding:10px}
-.diagrama-escuro .sld-linha{stroke:#FFFFFF;stroke-width:1.5;opacity:.92}
-.diagrama-escuro .sld-barra{stroke:#FFFFFF;stroke-width:5}
-.diagrama-escuro .sld-nome{fill:#FFFFFF}
-.diagrama-escuro .sld-id{fill:#A9B6D9}
-.diagrama-escuro .sld-barra-nome{fill:#A9B6D9}
-.diagrama-escuro .dj-fechado{fill:var(--verde);stroke:var(--verde)}
-.diagrama-escuro .dj-aberto{fill:var(--azul-escuro);stroke:#A9B6D9;stroke-width:2}
-.diagrama-escuro .cs-fechada{stroke:var(--verde)}
-.diagrama-escuro .cs-aberta{stroke:#A9B6D9}
-.diagrama-escuro .tr-circulo{stroke:#FFFFFF;stroke-width:1.7}
-.diagrama-escuro .chip-sim rect{fill:none;stroke:var(--verde)}
-.diagrama-escuro .chip-sim text{fill:var(--verde-60)}
-.diagrama-escuro .chip-cmd rect{fill:none;stroke:#A9B6D9}
-.diagrama-escuro .chip-cmd text{fill:#C3CDE6}
-.diagrama-escuro .chip-al  rect{fill:none;stroke:#FF6B6A}
-.diagrama-escuro .chip-al  text{fill:#FF6B6A}
-
-.legenda{margin-left:auto;display:flex;gap:15px;font-size:11px;color:var(--texto-medio)}
-.legenda span{display:flex;align-items:center;gap:6px}
+.legenda{margin-left:auto;display:flex;align-items:center;gap:15px;font-size:11px;color:var(--texto-medio)}
+.legenda > span{display:flex;align-items:center;gap:6px}
 .amostra{width:12px;height:12px;border-radius:2px;display:inline-block;flex:0 0 12px}
+.alternar{
+  display:flex;align-items:center;gap:5px;cursor:pointer;
+  padding:3px 8px;border:1px solid var(--borda);border-radius:var(--raio-sm);
+  color:var(--texto-medio);
+  transition:background-color .15s ease,border-color .15s ease;
+}
+.alternar:hover{background:var(--azul-050);border-color:var(--azul-claro);color:var(--azul-claro)}
+.alternar input{cursor:pointer;accent-color:var(--azul-claro)}
+.alternar select{
+  font-family:var(--fonte-mono);font-size:10.5px;color:var(--texto-medio);
+  border:none;background:transparent;cursor:pointer;outline:none;
+}
 
 /* ==========================================================================
    CONSOLE
@@ -431,7 +454,7 @@ tbody tr:hover{background:var(--azul-050)}
           <div class="painel-topo">
             <span class="painel-titulo">Topologia</span>
           </div>
-          <div class="painel-corpo diagrama">
+          <div class="painel-corpo diagrama neutro">
             <svg viewBox="0 0 560 420" role="img" aria-label="Diagrama unifilar reduzido da topologia configurada">
               <!-- incomers -->
               <line class="sld-barra" x1="120" y1="26" x2="220" y2="26"/>
@@ -555,11 +578,26 @@ tbody tr:hover{background:var(--azul-050)}
         <div class="painel-topo">
           <span class="painel-titulo">Unifilar 13,8 kV</span>
           <span class="legenda">
-            <span><span class="amostra" style="background:var(--verde)"></span>Fechado</span>
-            <span><span class="amostra" style="background:var(--azul-escuro);border:2px solid #A9B6D9"></span>Aberto</span>
+            <span><span class="amostra" style="background:var(--vermelho);border:1px solid var(--vermelho-escuro)"></span>Fechado</span>
+            <span><span class="amostra" style="background:var(--verde);border:1px solid var(--verde-escuro)"></span>Aberto</span>
+            <span><span class="amostra" style="background:var(--verde);box-shadow:0 0 0 2px var(--vermelho)"></span>Posição memorizada</span>
+            <label class="alternar">
+              <input type="checkbox" id="chkVazado"> Aberto vazado
+            </label>
+            <label class="alternar" for="selFio">
+              Fiação
+              <select id="selFio">
+                <option value="#334155" selected>Ardósia · #334155 · 10,4:1</option>
+                <option value="#2B3444">Grafite · #2B3444 · 12,2:1</option>
+                <option value="#0F172A">Tinta · #0F172A · 15,9:1</option>
+                <option value="#1A3180">Azul Escuro · #1A3180 · 11,8:1</option>
+                <option value="#485A99">Azul Escuro 80% · #485A99 · 6,5:1</option>
+                <option value="#64748B">Cinza · #64748B · 4,5:1</option>
+              </select>
+            </label>
           </span>
         </div>
-        <div class="painel-corpo diagrama-escuro">
+        <div class="painel-corpo diagrama" id="mimico">
           <svg viewBox="0 0 1600 880" role="img" aria-label="Diagrama unifilar da subestação">
             <g id="sld"></g>
           </svg>
@@ -627,9 +665,11 @@ const registros = [
 
 const tokens = [
   ['Azul Escuro','#1A3180','Barra lateral, barramentos, títulos'],
-  ['Azul Claro','#1142FF','Botões, links, equipamento fechado'],
-  ['Verde','#75C800','Ativo, SIM mode, salvar'],
-  ['Vermelho','#D61B1A','Alarme, falha'],
+  ['Azul Claro','#1142FF','Botões, links, topologia neutra'],
+  ['Vermelho','#D61B1A','Equipamento FECHADO'],
+  ['Verde','#75C800','Equipamento ABERTO, SIM mode'],
+  ['Vermelho escuro','#A31413','Contorno do fechado'],
+  ['Verde escuro','#5A9B00','Contorno do aberto'],
   ['Laranja','#E77A0C','Aviso, DEMO, edição pendente'],
   ['Fundo','#F4F6FA','Fundo da aplicação'],
   ['Superfície','#FFFFFF','Painéis'],
@@ -650,7 +690,14 @@ function chip(x,y,texto,classe){
   return g;
 }
 
-function disjuntor(g,x,y,nome,id,fechado,chips){
+/* memorizado: undefined quando não há posição memorizada a mostrar;
+   true/false quando há, e só se desenha o anel se ela discordar do que
+   a peça está mostrando. */
+function disjuntor(g,x,y,nome,id,fechado,chips,memorizado){
+  if(memorizado !== undefined && memorizado !== fechado){
+    g.appendChild(el('rect',{x:x-13,y:y-13,width:26,height:26,rx:4,
+      class:'mem ' + (memorizado ? 'mem-fechado' : 'mem-aberto')}));
+  }
   g.appendChild(el('rect',{x:x-9,y:y-9,width:18,height:18,rx:2.5,
     class:fechado?'dj-fechado':'dj-aberto'}));
   g.appendChild(el('text',{x:x-16,y:y-14,'text-anchor':'end',class:'sld-nome'},nome));
@@ -690,13 +737,15 @@ function transformador(g,x,y,nome,id){
   ];
 
   /* incomers */
-  [{x:520,cs:'CS3993',csId:'12',dj:'DJ01',djId:'10',l:'CS3996',lId:'15',r:'CS3995',rId:'14'},
-   {x:1180,cs:'CS3994',csId:'22',dj:'DJ02',djId:'20',l:'CS3998',lId:'25',r:'CS3997',rId:'24'}
+  [{x:520, cs:'CS3993',csId:'12',dj:'DJ01',djId:'10',l:'CS3996',lId:'15',r:'CS3995',rId:'14',f:true},
+   /* DJ02 está aberto, mas a última posição conhecida era fechado — o anel
+      vermelho em volta do verde é exatamente esse desacordo. */
+   {x:1180,cs:'CS3994',csId:'22',dj:'DJ02',djId:'20',l:'CS3998',lId:'25',r:'CS3997',rId:'24',f:false,mem:true}
   ].forEach(inc=>{
     g.appendChild(el('line',{x1:inc.x-90,y1:40,x2:inc.x+90,y2:40,class:'sld-barra'}));
     g.appendChild(el('line',{x1:inc.x,y1:40,x2:inc.x,y2:170,class:'sld-linha'}));
     seccionadora(g,inc.x,90,inc.cs,inc.csId,true);
-    disjuntor(g,inc.x,170,inc.dj,inc.djId,true,[['SIM','chip-sim'],['CMD','chip-cmd']]);
+    disjuntor(g,inc.x,170,inc.dj,inc.djId,inc.f,[['SIM','chip-sim'],['CMD','chip-cmd']],inc.mem);
     g.appendChild(el('path',{d:`M${inc.x} 179 V210 H${inc.x-90} V${BA2}`,class:'sld-linha'}));
     g.appendChild(el('path',{d:`M${inc.x} 179 V210 H${inc.x+0} V${BA1}`,class:'sld-linha'}));
     seccionadora(g,inc.x-90,250,inc.l,inc.lId,true);
@@ -733,13 +782,13 @@ function transformador(g,x,y,nome,id){
   });
 
   const ties = [
-    {x:190,nome:'DJ10',id:'900',f:false},{x:445,nome:'DJ20',id:'700',f:true},
+    {x:190,nome:'DJ10',id:'900',f:false,mem:true},{x:445,nome:'DJ20',id:'700',f:true},
     {x:765,nome:'DJ30',id:'710',f:false},{x:1085,nome:'DJ40',id:'720',f:true},
     {x:1405,nome:'DJ50',id:'730',f:false},{x:1520,nome:'DJ60',id:'740',f:false}
   ];
   ties.forEach(t=>{
     g.appendChild(el('line',{x1:t.x,y1:INF,x2:t.x,y2:790,class:'sld-linha'}));
-    disjuntor(g,t.x,790,t.nome,t.id,t.f,[['SIM','chip-sim'],['CMD','chip-cmd']]);
+    disjuntor(g,t.x,790,t.nome,t.id,t.f,[['SIM','chip-sim'],['CMD','chip-cmd']],t.mem);
   });
 })();
 
@@ -852,6 +901,18 @@ document.querySelectorAll('.nav-btn[data-ir]').forEach(n=>{
 });
 
 mostrar('config');
+
+/* Alterna o aberto entre preenchido (o que o cliente pediu) e vazado.
+   Só para comparar as duas leituras lado a lado; o padrão é o pedido. */
+document.getElementById('chkVazado').addEventListener('change', e=>{
+  document.getElementById('mimico').classList.toggle('vazado', e.target.checked);
+});
+
+/* Troca a cor da fiação só no mímico, para comparar contra o vermelho e o
+   verde das peças. A topologia da configuração fica no valor do :root. */
+document.getElementById('selFio').addEventListener('change', e=>{
+  document.getElementById('mimico').style.setProperty('--fio', e.target.value);
+});
 </script>
 </body>
 </html>
