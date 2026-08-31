@@ -9729,6 +9729,7 @@ Sub btnSave_Click()
 	Dim layoutFolder
 	Set layoutFolder = Application.GetObject("XATM_Data.Automation.Layout")
 
+	layoutFolder.Item("Incomer").WriteEx Screen.Item("SelectLayoutIncomer").Index
 	layoutFolder.Item("Transformer").WriteEx Screen.Item("SelectLayoutTransformer").Index
 	layoutFolder.Item("Busbar").WriteEx Screen.Item("SelectLayoutBusbar").Index
 
