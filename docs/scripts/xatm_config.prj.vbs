@@ -12166,6 +12166,40 @@ Sub DomainBrowser_OnShow()
 		
 End Sub
 
+<xatm_config_screens.Footer.btnExpandConsole:btnExpandConsole_Click()>
+Sub btnExpandConsole_Click()
+
+	Const CONSOLE_SCREEN = "xatm_config_screens.ConsoleLogExpanded"
+	Const CONSOLE_FRAME  = "xatm_ConsoleLog"
+	Const CONSOLE_TITLE  = "Console"
+	Const CONSOLE_LEFT   = 0
+	Const CONSOLE_TOP    = 0
+	Dim CONSOLE_WIDTH 	 : CONSOLE_WIDTH  = 1366 + 24
+	Dim CONSOLE_HEIGHT   : CONSOLE_HEIGHT = 768 + 48
+
+	Dim FLAGS : FLAGS = 1 + 2 + 4 + 8 + 16 + 32 + 64 + 2048
+
+	Dim panel
+	Set panel = Nothing
+
+	On Error Resume Next
+	Set panel = Application.GetFrame(CONSOLE_FRAME)
+	On Error Goto 0
+
+	If panel Is Nothing Then
+		MsgBox "The console has nowhere to open. This project has no frame " & _
+		       "called " & CONSOLE_FRAME & ". Add one to the frameset.", _
+		       vbExclamation, CONSOLE_TITLE
+		Exit Sub
+	End If
+
+	panel.MoveFrame CONSOLE_LEFT, CONSOLE_TOP, CONSOLE_WIDTH, CONSOLE_HEIGHT
+	panel.SetFrameOptions CONSOLE_TITLE, FLAGS
+	
+	panel.OpenScreen CONSOLE_SCREEN & "?4?0", 0
+	
+End Sub
+
 <xatm_config_screens.Footer.ListBox:ListBox_MouseUp(Button, Shift, X, Y)>
 Sub ListBox_MouseUp(Button, Shift, X, Y)
 	
