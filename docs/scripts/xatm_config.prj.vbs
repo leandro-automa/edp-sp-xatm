@@ -3246,8 +3246,10 @@ End Sub
 ' were one and report it missing.
 Sub WriteSource(obj, name, dataType, path, report, where)
 
-	If Trim(CStr(path) & "") = "" Then Exit Sub
-
+	' An empty path is not skipped. It is what the panel's clear button
+	' leaves behind, and it means take the source off - so it goes the same
+	' way a real one goes, and each of the two below knows what to do with
+	' nothing.
 	If IsLinkType(dataType) Then
 		WireTag obj, name, CStr(path), report, where
 	Else
@@ -3318,6 +3320,9 @@ Sub WireExpression(obj, name, expression, report, where)
 	Err.Clear
 
 	If link Is Nothing Then
+		' Nothing wired and nothing to wire: a clear on a property that was
+		' never bound, which is already the state being asked for.
+		If expression = "" Then Exit Sub
 		obj.Links.CreateLink name, expression
 	Else
 		link.Source = expression
@@ -4001,10 +4006,19 @@ Function SetSource(objectNode, name, value)
 		Exit Function
 	End If
 
+	' Written empty rather than taken off, and the difference between the
+	' two is the whole of how a source gets removed.
+	'
+	' No attribute means the property was never configured, and the import
+	' has to leave those alone - otherwise every unwired IOTag in the
+	' document would be cleared on its object at every save.
+	'
+	' source="" means somebody took the source off on purpose, and the
+	' import reads it as: unwire this. The next export writes no attribute
+	' at all, because by then the project agrees, and the two states fold
+	' back into the one.
 	If IsEmpty(value) Or IsNull(value) Then
-		property.removeAttribute "source"
-	ElseIf CStr(value) = "" Then
-		property.removeAttribute "source"
+		property.setAttribute "source", ""
 	Else
 		property.setAttribute "source", CStr(value)
 	End If

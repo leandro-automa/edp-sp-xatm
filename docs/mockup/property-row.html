@@ -109,6 +109,9 @@ code{font-family:var(--fonte-mono);font-size:.92em;background:var(--azul-050);co
 .ib:focus-visible{outline:1.5px solid var(--azul-claro);outline-offset:1px}
 .ib svg{width:11px;height:11px;display:block}
 .ib-forca:hover{background:var(--laranja-050);color:var(--laranja)}
+/* Desvincular. Neutro em repouso e vermelho só no hover: uma linha não
+   pode parecer alarmante só por estar vinculada, que é o caso comum. */
+.ib-limpar:hover{background:var(--vermelho-050);color:var(--vermelho)}
 
 /* row states */
 .linha:hover{background:var(--azul-050)}
@@ -231,6 +234,7 @@ td.bit{font-family:var(--fonte-mono);font-size:11px;color:var(--texto-fraco);tex
         <div class="z-cfg">True</div>
         <div class="z-acoes">
           <button class="ib" aria-label="Escolher tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/></svg></button>
+          <button class="ib ib-limpar" aria-label="Remover origem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
           <button class="ib ib-forca" aria-label="Forçar valor"><svg viewBox="0 -960 960 960" fill="currentColor"><path d="M419-80q-28 0-52.5-12T325-126L107-403l19-20q20-21 48-25t52 11l74 45v-328q0-17 11.5-28.5T340-760q17 0 29 11.5t12 28.5v472l-97-60 104 133q6 7 14 11t17 4h221q33 0 56.5-23.5T720-240v-160q0-17-11.5-28.5T680-440H461v-80h219q50 0 85 35t35 85v160q0 66-47 113T640-80H419ZM167-620q-13-22-20-47.5t-7-52.5q0-83 58.5-141.5T340-920q83 0 141.5 58.5T540-720q0 27-7 52.5T513-620l-69-40q8-14 12-28.5t4-31.5q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 17 4 31.5t12 28.5l-69 40Zm335 280Z"/></svg></button>
         </div>
       </div>
@@ -255,8 +259,8 @@ td.bit{font-family:var(--fonte-mono);font-size:11px;color:var(--texto-fraco);tex
     <b>txtConfiguredValue</b>
     <span>O que o documento diz que deveria ter. Sem link — vincular sobrescreveria uma edição ainda não salva. A moldura de edição é sombra interna, nunca borda: uma borda somaria 2 px que a linha não tem.</span></div></div>
   <div class="item-anat"><span class="num">6</span><div>
-    <b>btnPickTag · btnBuildExpression · btnForce</b>
-    <span>14 × 14 px. Os dois primeiros são exclusivos entre si; o force não é exclusivo de nenhum, então o pior caso são dois botões.</span></div></div>
+    <b>btnPickTag · btnBuildExpression · btnClearSource · btnForce</b>
+    <span>14 × 14 px. Os dois primeiros são exclusivos entre si, então o pior caso são três botões — 3×14 + 2×2 + 8 = <b>54 px</b>, dentro dos 58 px da coluna. <code>btnClearSource</code> só aparece onde há origem para remover.</span></div></div>
 </div>
 
 <!-- ============================ VARIANTS ============================ -->
@@ -303,6 +307,7 @@ td.bit{font-family:var(--fonte-mono);font-size:11px;color:var(--texto-fraco);tex
     <div class="z-atual">True</div><div class="z-cfg">True</div>
     <div class="z-acoes">
       <button class="ib" aria-label="Abrir diagrama de intertravamento"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h6v6H4zM14 13h6v6h-6z"/><path d="M10 8h4v8"/></svg></button>
+      <button class="ib ib-limpar" aria-label="Remover origem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       <button class="ib ib-forca" aria-label="Forçar valor"><svg viewBox="0 -960 960 960" fill="currentColor"><path d="M419-80q-28 0-52.5-12T325-126L107-403l19-20q20-21 48-25t52 11l74 45v-328q0-17 11.5-28.5T340-760q17 0 29 11.5t12 28.5v472l-97-60 104 133q6 7 14 11t17 4h221q33 0 56.5-23.5T720-240v-160q0-17-11.5-28.5T680-440H461v-80h219q50 0 85 35t35 85v160q0 66-47 113T640-80H419ZM167-620q-13-22-20-47.5t-7-52.5q0-83 58.5-141.5T340-920q83 0 141.5 58.5T540-720q0 27-7 52.5T513-620l-69-40q8-14 12-28.5t4-31.5q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 17 4 31.5t12 28.5l-69 40Zm335 280Z"/></svg></button>
     </div>
   </div>
@@ -314,6 +319,7 @@ td.bit{font-family:var(--fonte-mono);font-size:11px;color:var(--texto-fraco);tex
     <div class="z-atual">False</div><div class="z-cfg">False</div>
     <div class="z-acoes">
       <button class="ib" aria-label="Escolher tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/></svg></button>
+      <button class="ib ib-limpar" aria-label="Remover origem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       <button class="ib ib-forca" aria-label="Forçar valor"><svg viewBox="0 -960 960 960" fill="currentColor"><path d="M419-80q-28 0-52.5-12T325-126L107-403l19-20q20-21 48-25t52 11l74 45v-328q0-17 11.5-28.5T340-760q17 0 29 11.5t12 28.5v472l-97-60 104 133q6 7 14 11t17 4h221q33 0 56.5-23.5T720-240v-160q0-17-11.5-28.5T680-440H461v-80h219q50 0 85 35t35 85v160q0 66-47 113T640-80H419ZM167-620q-13-22-20-47.5t-7-52.5q0-83 58.5-141.5T340-920q83 0 141.5 58.5T540-720q0 27-7 52.5T513-620l-69-40q8-14 12-28.5t4-31.5q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 17 4 31.5t12 28.5l-69 40Zm335 280Z"/></svg></button>
     </div>
   </div>
@@ -325,6 +331,7 @@ td.bit{font-family:var(--fonte-mono);font-size:11px;color:var(--texto-fraco);tex
     <div class="z-atual vazio">—</div><div class="z-cfg vazio">—</div>
     <div class="z-acoes">
       <button class="ib" aria-label="Escolher tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/></svg></button>
+      <button class="ib ib-limpar" aria-label="Remover origem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       <button class="ib ib-forca" aria-label="Enviar comando"><svg viewBox="0 -960 960 960" fill="currentColor"><path d="M419-80q-28 0-52.5-12T325-126L107-403l19-20q20-21 48-25t52 11l74 45v-328q0-17 11.5-28.5T340-760q17 0 29 11.5t12 28.5v472l-97-60 104 133q6 7 14 11t17 4h221q33 0 56.5-23.5T720-240v-160q0-17-11.5-28.5T680-440H461v-80h219q50 0 85 35t35 85v160q0 66-47 113T640-80H419ZM167-620q-13-22-20-47.5t-7-52.5q0-83 58.5-141.5T340-920q83 0 141.5 58.5T540-720q0 27-7 52.5T513-620l-69-40q8-14 12-28.5t4-31.5q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 17 4 31.5t12 28.5l-69 40Zm335 280Z"/></svg></button>
     </div>
   </div>
@@ -336,7 +343,7 @@ td.bit{font-family:var(--fonte-mono);font-size:11px;color:var(--texto-fraco);tex
     <div class="z-atual vazio">—</div><div class="z-cfg vazio">—</div>
     <div class="z-acoes">
       <button class="ib" aria-label="Escolher objeto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3Z"/></svg></button>
-    </div>
+    <button class="ib ib-limpar" aria-label="Remover origem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   </div>
 
   <div class="rotulo"><b>Leitura do automatismo</b><span>Boolean · INTERFACE+IOTAG</span><em>Só se olha. Nada a configurar, nada a forçar.</em></div>
@@ -404,6 +411,14 @@ td.bit{font-family:var(--fonte-mono);font-size:11px;color:var(--texto-fraco);tex
     <div class="z-acoes"><button class="ib" aria-label="Escolher tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/></svg></button></div>
   </div>
 
+  <div class="rotulo"><b>Origem removida</b><span>.divergente</span><em>Encenada como qualquer outra edição — nada sai do projeto até Salvar, e o valor vivo continua chegando pelo vínculo antigo até lá.</em></div>
+  <div class="linha">
+    <div class="z-nome">PositionOpen</div><div class="z-tipo">IOTag</div>
+    <div><span class="fonte-vazia divergente">origem removida<span class="marca-divergente"></span></span></div>
+    <div class="z-atual">True</div><div class="z-cfg vazio">—</div>
+    <div class="z-acoes"><button class="ib" aria-label="Escolher tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6Z"/></svg></button></div>
+  </div>
+
   <div class="rotulo"><b>Sem comunicação</b><span>.st-desabilitada</span><em>A tag existe mas o objeto não responde.</em></div>
   <div class="linha st-desabilitada">
     <div class="z-nome">PositionClosed</div><div class="z-tipo">IOTag</div>
@@ -423,6 +438,46 @@ td.bit{font-family:var(--fonte-mono);font-size:11px;color:var(--texto-fraco);tex
   </div>
   <div id="lista"></div>
 </div>
+
+<!-- ======================= REMOVING A SOURCE ======================= -->
+<h2>Remover uma origem</h2>
+<p class="nota">
+  Trocar uma origem já é resolvido: escolher outra tag sobrescreve a anterior. O que faltava era
+  <b>voltar a nenhuma</b> — dizer que esta propriedade não deve estar vinculada a nada. É raro, e
+  é destrutivo, e as duas coisas juntas decidiram onde o botão foi parar.
+</p>
+
+<div class="legenda-anat" style="margin-top:0">
+  <div class="item-anat"><span class="num" style="background:var(--verde)">✓</span><div>
+    <b>Terceiro botão em Ações</b>
+    <span>A coluna é fixa em 58 px e sobra espaço: <code>btnPickTag</code> e
+    <code>btnBuildExpression</code> são exclusivos entre si, então três é o teto e não um caso
+    novo. Aparece só onde há origem, some assim que ela é removida.</span></div></div>
+  <div class="item-anat"><span class="num" style="background:var(--borda-forte)">✗</span><div>
+    <b>X dentro da coluna Origem</b>
+    <span>Adjacência é o afordance mais forte — o X encostado no que ele apaga. Mas Origem é a
+    coluna <code>1fr</code> e o conteúdo dela <i>já</i> corta com reticências. Reservar 12 px ali
+    tira espaço exatamente das linhas que têm caminho para mostrar.</span></div></div>
+  <div class="item-anat"><span class="num" style="background:var(--borda-forte)">✗</span><div>
+    <b>Menu de contexto no botão direito</b>
+    <span>Uma ação rara atrás de um gesto que ninguém descobre é uma ação que ninguém usa. E é a
+    única das três cuja viabilidade no E3 não dá para afirmar.</span></div></div>
+  <div class="item-anat"><span class="num" style="background:var(--borda-forte)">✗</span><div>
+    <b>Um “Limpar” dentro do DomainBrowser</b>
+    <span>Desfazer onde se fez seria elegante, e resolveria metade: expressão não passa por esse
+    diálogo, e <code>""</code> ali já quer dizer “cancelei”.</span></div></div>
+</div>
+
+<p class="nota" style="margin-top:16px">
+  <b>Sem confirmação.</b> A remoção é encenada como qualquer outra edição — a linha fica
+  <span class="divergente">laranja</span> com a marca de pendente, e nada chega ao projeto até
+  Salvar. Um diálogo a cada remoção cobraria de toda vez pelo erro de vez em quando, e o erro
+  aqui é visível antes de custar alguma coisa.
+</p>
+<p class="nota">
+  <b>Vermelho só no hover</b>, como o force é laranja só no hover. Em repouso o botão é neutro:
+  uma linha não pode parecer alarmante só por estar vinculada, que é o caso comum.
+</p>
 
 <!-- ============================ FLAGS ============================ -->
 <h2>O que cada bit liga</h2>
@@ -455,7 +510,7 @@ td.bit{font-family:var(--fonte-mono);font-size:11px;color:var(--texto-fraco);tex
   <div class="medida"><b>84 px</b><span>coluna Tipo</span></div>
   <div class="medida"><b>1fr</b><span>coluna Origem (reticências)</span></div>
   <div class="medida"><b>76 px</b><span>Atual e Config.</span></div>
-  <div class="medida"><b>58 px</b><span>coluna Ações — cabe 3 botões</span></div>
+  <div class="medida"><b>58 px</b><span>coluna Ações — 3 botões ocupam 54 px</span></div>
   <div class="medida"><b>14 × 14 px</b><span>botão de ícone, gap 2 px</span></div>
   <div class="medida"><b>11 px</b><span>ícone traçado, viewBox 24×24, traço 2,4</span></div>
   <div class="medida"><b>touch_app</b><span>force — Material Symbols Outlined, preenchido, viewBox 0 −960 960 960</span></div>
@@ -521,18 +576,34 @@ const icones = {
   x:{vb:'0 0 24 24', traco:true, rotulo:'Diagrama de intertravamento',
      d:'<path d="M4 5h6v6H4zM14 13h6v6h-6z"/><path d="M10 8h4v8"/>'},
   o:{vb:'0 0 24 24', traco:true, rotulo:'Escolher objeto',
-     d:'<path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3Z"/>'}
+     d:'<path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3Z"/>'},
+  /* Um X, e não uma corrente partida. A corrente diria "desvincular" com
+     mais precisão, mas a 11 px ela vira borrão: os dois elos e a falga
+     entre eles não sobrevivem à escala. O X sobrevive, e o Tip diz o
+     resto. */
+  c:{vb:'0 0 24 24', traco:true, rotulo:'Remover origem',
+     d:'<path d="M6 6l12 12M18 6L6 18"/>'}
 };
 
 const lista = document.getElementById('lista');
 props.forEach(([nome,tipo,fonte,atual,cfg,botoes])=>{
   const editavel = botoes.includes('e');
-  const acoes = botoes.filter(b=>b!=='e').map(b=>{
+  /* Remover origem só aparece onde há origem. Não é hover, é dado: a
+     visibilidade sai de PropertySource estar preenchida, do mesmo jeito
+     que a dos outros botões sai do tipo e dos bits de Exposure. Nenhum
+     evento de mouse por linha - este painel já pagou uma vez por trabalho
+     por nó, no DomainBrowser. */
+  const comLimpar = fonte
+    ? botoes.flatMap(b => (b === 't' || b === 'x' || b === 'o') ? [b, 'c'] : [b])
+    : botoes;
+
+  const acoes = comLimpar.filter(b=>b!=='e').map(b=>{
     const ic = icones[b];
     const attrs = ic.traco
       ? 'fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"'
       : 'fill="currentColor"';
-    return `<button class="ib ${b==='f'?'ib-forca':''}" aria-label="${ic.rotulo} — ${nome}">
+    const extra = b==='f' ? 'ib-forca' : b==='c' ? 'ib-limpar' : '';
+    return `<button class="ib ${extra}" aria-label="${ic.rotulo} — ${nome}">
        <svg viewBox="${ic.vb}" ${attrs}>${ic.d}</svg>
      </button>`;
   }).join('');

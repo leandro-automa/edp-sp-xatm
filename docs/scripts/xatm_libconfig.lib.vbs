@@ -842,6 +842,100 @@ Sub SendSource(path)
 
 End Sub
 
+<xatm_PropertyRow.btnClearSource:btnClearSource_Click()>
+Sub btnClearSource_Click()
+
+	' Back to no source at all.
+	'
+	' Picking another tag already replaces the one that is there, so this
+	' button is for the other thing: saying that a property should not be
+	' wired to anything. That is rare, which is why it is one small button
+	' and not a column, and destructive, which is why it carries its own
+	' colour and does not sit next to the picker's.
+	'
+	' Nothing is asked. The removal is staged the way every other edit on
+	' this panel is staged - the document is told, the project is not, and
+	' Salvar is what makes it real - so a mistake is visible and costs
+	' nothing for as long as it matters. A question every time would charge
+	' the whole job for the mistake made once in a while.
+
+	Dim current
+	current = Trim(xatm_PropertyRow.PropertySource & "")
+
+	' Nothing to take off. The button is not shown on a row in this state,
+	' so this is the row that was built before it was wired and never built
+	' again - not something an operator can arrive at by looking.
+	If current = "" Then Exit Sub
+
+	SendSource ""
+
+	' What the row holds and what its column shows, now that the document
+	' has been told - the same tidying the picker does with the path it
+	' chose, rather than waiting for the panel to be built again.
+	xatm_PropertyRow.PropertySource = ""
+
+	On Error Resume Next
+	xatm_PropertyRow.Item("txtConfiguredSource").Value = ""
+	xatm_PropertyRow.Item("txtConfiguredSource").Tip = ""
+	On Error Goto 0
+
+	' And the button goes with the source: there is nothing left for it to
+	' do, and a row with no source does not show one.
+	On Error Resume Next
+	Me.Visible = False
+	On Error Goto 0
+
+End Sub
+
+
+' The command tag in xatm_config that owns the document, and the kind of
+' edit this button sends. Written out again here because one E3 object
+' cannot call another's - the picker next door keeps the same four for
+' the same reason.
+Const SET_PROPERTY   = "xatm_config_data.Config.SetProperty"
+Const PROPERTY_VALUE = "xatm_config_data.Config.PropertyValue"
+Const KIND_SOURCE    = "source"
+Const EXIT_SUCCESS   = "EXIT_SUCCESS"
+
+
+' Tells the document what this row is wired to, which from this button is
+' nothing at all.
+'
+' The same two tags every other edit on this panel travels on, and the
+' same order: the value first so it is standing by, then the command that
+' reads it.
+Sub SendSource(path)
+
+	Dim command, valueTag
+	Set command = Nothing
+	Set valueTag = Nothing
+
+	On Error Resume Next
+	Set command = Application.GetObject(SET_PROPERTY)
+	Set valueTag = Application.GetObject(PROPERTY_VALUE)
+	On Error Goto 0
+
+	If command Is Nothing Or valueTag Is Nothing Then
+		MsgBox "The source was not removed - " & SET_PROPERTY & " and " & _
+		       PROPERTY_VALUE & " are what carry an edit, and one of them " & _
+		       "is missing."
+		Exit Sub
+	End If
+
+	valueTag.WriteEx path
+
+	' kind|key|name. key rather than path: Source is id:700 for anything
+	' with an Id, so renaming an object does not strand the row.
+	command.WriteEx KIND_SOURCE & "|" & _
+	                xatm_PropertyRow.Source & "|" & _
+	                xatm_PropertyRow.PropertyName
+
+	If command.DocString <> EXIT_SUCCESS Then
+		MsgBox "The document would not take the removal. The console says why."
+	End If
+
+End Sub
+
 <xatm_PropertyRow.txtConfiguredValue:txtConfiguredValue_Validate(Cancel, NewValue)>
 Sub txtConfiguredValue_Validate(Cancel, NewValue)
 
@@ -1225,7 +1319,7 @@ Function ConfiguredSource()
 	Else
 		ConfiguredSource = CStr(PropertySource)
 	End If
-	
+
 End Function
 
 
