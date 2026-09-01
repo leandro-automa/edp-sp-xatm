@@ -2109,6 +2109,7 @@ Sub BindPositions_OnChangedValue()
 	gMissing = 0
 	gNoTag   = 0
 	gNoCommand = 0
+	gNoDefect  = 0
 	gRefused = 0
 
 	Dim problem
@@ -2125,6 +2126,11 @@ Sub BindPositions_OnChangedValue()
 	If gNoCommand > 0 Then
 		WriteLog gNoCommand & " devices have no " & COMMANDS & "." & COMMAND_POINT & _
 		         " and were bound for reading only."
+	End If
+
+	If gNoDefect > 0 Then
+		WriteLog gNoDefect & " devices carry none of the signals that block a " & _
+		         "manoeuvre, and were left without a Defective expression."
 	End If
 
 	If gClashes > 0 Then
@@ -2163,12 +2169,19 @@ Const COMMAND_POINT = "0EST"
 Const OPEN_UNIT     = "Open"
 Const CLOSE_UNIT    = "Close"
 
+' The measurements that say a device cannot be worked, and the reading
+' each one says it on. Written name;value the way EDP gave the list, so
+' a fourth signal is one more entry and nothing else.
+Const DEFECT_SIGNALS = "52ML;1|00LR;0|CBTL;0"
+
 ' The automation properties they are copied onto: the position onto both
-' of the position pair, and each command unit onto the one it names.
+' of the position pair, each command unit onto the one it names, and
+' everything that blocks a manoeuvre onto the one expression.
 Const PROP_OPEN      = "PositionOpen"
 Const PROP_CLOSED    = "PositionClosed"
 Const PROP_CMD_OPEN  = "CommandOpen"
 Const PROP_CMD_CLOSE = "CommandClose"
+Const PROP_DEFECTIVE = "Defective"
 
 Const DATA_ROOT     = "XATM_Data"
 Const FIND_OBJECTS  = "xatm_config_data.Config.FindObjects"
@@ -2185,6 +2198,7 @@ Dim gDevices
 Dim gMissing
 Dim gNoTag
 Dim gNoCommand
+Dim gNoDefect
 Dim gRefused
 Dim gClashes
 
@@ -2341,6 +2355,7 @@ Sub BindDevice(obj, byName, problem)
 
 	BindPositionsOf obj, objPath, powerPath, problem
 	BindCommandsOf obj, objPath, powerPath, problem
+	BindDefectiveOf obj, objPath, powerPath, problem
 
 	' Counted as a device only where something was actually bound onto it.
 	If gBound > before Then gDevices = gDevices + 1
@@ -2352,7 +2367,7 @@ End Sub
 Sub BindPositionsOf(obj, objPath, powerPath, problem)
 
 	Dim tagPath
-	tagPath = ScadaTagOf(powerPath)
+	tagPath = ScadaTagOf(powerPath, MEASUREMENT)
 
 	If tagPath = "" Then
 		gNoTag = gNoTag + 1
@@ -2398,12 +2413,58 @@ Sub BindCommandsOf(obj, objPath, powerPath, problem)
 End Sub
 
 
-' The tag one Power device reads its position on, "" when there is none.
+' Everything that blocks a manoeuvre on this device, as one expression.
 '
-' The .Value on the end is taken off: an IOTag property holds the tag and
-' not one of its members, and the Power side spells the same tag both
-' ways depending on who wired it.
-Function ScadaTagOf(powerPath)
+' Each of them is a measurement of its own and a device carries as many
+' as it was configured with, so the expression is built out of the ones
+' that are there. A device with none of them is left alone rather than
+' given an expression that can never come true.
+'
+' Defective is a Boolean and holds no tag, so this is an expression and
+' not an association - which is why .Value belongs on the end here and is
+' stripped off the positions. It is put back rather than kept, so the
+' expression reads the same whichever way the Power side spelled the tag.
+Sub BindDefectiveOf(obj, objPath, powerPath, problem)
+
+	Dim signals, i, piece, tagPath, terms
+	signals = Split(DEFECT_SIGNALS, "|")
+	terms = ""
+
+	For i = 0 To UBound(signals)
+
+		piece = Split(signals(i), ";")
+
+		If UBound(piece) = 1 Then
+
+			tagPath = ScadaTagOf(powerPath, Trim(piece(0)))
+
+			If tagPath <> "" Then
+				If terms <> "" Then terms = terms & " Or "
+				terms = terms & tagPath & ".Value = " & Trim(piece(1))
+			End If
+
+		End If
+
+	Next
+
+	If terms = "" Then
+		gNoDefect = gNoDefect + 1
+		Exit Sub
+	End If
+
+	StageOne objPath, PROP_DEFECTIVE, terms, obj.Name, problem
+
+End Sub
+
+
+' The tag one Power measurement is read on, "" when there is none.
+'
+' The .Value on the end is taken off, whatever the caller wants the tag
+' for: an IOTag property holds the tag and not one of its members, and an
+' expression puts .Value back itself. The Power side spells the same tag
+' both ways depending on who wired it, so neither caller can be handed
+' what is written there.
+Function ScadaTagOf(powerPath, measurementName)
 
 	ScadaTagOf = ""
 
@@ -2414,7 +2475,7 @@ Function ScadaTagOf(powerPath)
 	Err.Clear
 
 	tagText = CStr(Application.GetObject(powerPath) _
-	          .Item(MEASUREMENTS).Item(MEASUREMENT).Item(SCADA).Tag & "")
+	          .Item(MEASUREMENTS).Item(measurementName).Item(SCADA).Tag & "")
 
 	If Err.Number <> 0 Then
 		tagText = ""
@@ -3125,7 +3186,8 @@ Sub WriteProperty(obj, property, report, where)
 	Set s = property.getAttributeNode("source")
 	If s Is Nothing Then Exit Sub
 
-	WriteSource obj, property.getAttribute("name"), s.value, report, where
+	WriteSource obj, property.getAttribute("name"), property.getAttribute("type"), _
+	            s.value, report, where
 
 End Sub
 
@@ -3167,16 +3229,39 @@ Sub WriteValue(obj, name, dataType, newValue, report, where)
 End Sub
 
 
-' Wires one property to the tag the document names.
+' Wires one property to what the document gives as its source.
 '
-' The tag is looked up rather than handed over as text, for the reason
-' WriteValue looks an object up: the property takes the tag's own PathName,
-' and a path that resolves to nothing has to be said out loud here - left
-' alone it is an association to nowhere, which reads on the panel exactly
-' like one that worked.
-Sub WriteSource(obj, name, path, report, where)
+' The attribute carries two different things and the type says which -
+' the same split SourceOf reads them back on:
+'
+'   iotag, internaltag   a tag path, and the property holds the tag
+'   anything else        an expression, which lives on the object's Link
+'                        for that property and not on the property
+'
+' A Boolean like Defective is configured by expression, so taking every
+' source for a path would send an expression to be looked up as though it
+' were one and report it missing.
+Sub WriteSource(obj, name, dataType, path, report, where)
 
 	If Trim(CStr(path) & "") = "" Then Exit Sub
+
+	If IsLinkType(dataType) Then
+		WireTag obj, name, CStr(path), report, where
+	Else
+		WireExpression obj, name, CStr(path), report, where
+	End If
+
+End Sub
+
+
+' A tag onto a property that holds one.
+'
+' Looked up rather than handed over as text, for the reason WriteValue
+' looks an object up: the property takes the tag's own PathName, and a
+' path that resolves to nothing has to be said out loud here - left alone
+' it is an association to nowhere, which reads on the panel exactly like
+' one that worked.
+Sub WireTag(obj, name, path, report, where)
 
 	Set gWriteObject = Nothing
 
@@ -3205,6 +3290,48 @@ Sub WriteSource(obj, name, path, report, where)
 
 	If failed <> "" Then
 		report = report & vbCrLf & " could not wire " & name & " on " & where & " - " & failed
+	End If
+
+End Sub
+
+
+' An expression onto the object's Link for the property.
+'
+' Made once and moved after that. CreateLink over a property that already
+' carries a link is the case with no good answer here, so where there is
+' one already its Source is written through instead - which is the member
+' SourceOf reads the expression back off.
+Sub WireExpression(obj, name, expression, report, where)
+
+	Dim link
+	Set link = Nothing
+
+	On Error Resume Next
+	Set link = obj.Links.Item(name)
+	On Error Goto 0
+
+	Dim failed
+	failed = ""
+
+	On Error Resume Next
+	Err.Clear
+
+	If link Is Nothing Then
+		obj.Links.CreateLink name, expression
+	Else
+		link.Source = expression
+	End If
+
+	If Err.Number <> 0 Then
+		failed = Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+	If failed <> "" Then
+		report = report & vbCrLf & " could not put " & expression & " on " & _
+		         name & " of " & where & " - " & failed
 	End If
 
 End Sub
@@ -8450,9 +8577,10 @@ Sub btnBindPositions_Click()
 	' Asked before it runs, because it does not ask per device.
 	'
 	' Every breaker and disconnector that finds a Power device of its name
-	' has its position and its command properties overwritten. A tag somebody
-	' picked by hand goes with them, which is the whole point on a first pass
-	' and a loss on a project already tuned - so the question names all four.
+	' has its position, command and Defective properties overwritten. A tag
+	' or an expression somebody put in by hand goes with them, which is the
+	' whole point on a first pass and a loss on a project already tuned - so
+	' the question names all five.
 
 	Dim substation
 	substation = ChosenSubstation()
@@ -8460,11 +8588,11 @@ Sub btnBindPositions_Click()
 	If substation = "" Then Exit Sub
 
 	If MsgBox( _
-		"Bind the position and command tags of every breaker and " & _
-		"disconnector from the PowerSubstation?" & vbCrLf & vbCrLf & _
-		"PositionOpen, PositionClosed, CommandOpen and CommandClose are " & _
-		"overwritten wherever a Power device of the same name is found, " & _
-		"including where a tag was chosen by hand." & vbCrLf & vbCrLf & _
+		"Bind the position, command and Defective tags of every breaker " & _
+		"and disconnector from the PowerSubstation?" & vbCrLf & vbCrLf & _
+		"PositionOpen, PositionClosed, CommandOpen, CommandClose and " & _
+		"Defective are overwritten wherever a Power device of the same " & _
+		"name is found, including where one was put in by hand." & vbCrLf & vbCrLf & _
 		"Nothing reaches the project until Salvar.", _
 		vbYesNo + vbQuestion + vbDefaultButton2, BIND_TITLE) <> vbYes Then Exit Sub
 
@@ -8489,7 +8617,7 @@ Sub btnBindPositions_Click()
 		Exit Sub
 	End If
 
-	MsgBox "The position and command tags were staged." & vbCrLf & vbCrLf & _
+	MsgBox "The position, command and Defective tags were staged." & vbCrLf & vbCrLf & _
 	       "Look them over on the panel and press Salvar to write them " & _
 	       "into the project.", vbInformation, BIND_TITLE
 
