@@ -494,6 +494,14 @@ tbody tr:hover{background:var(--azul-050)}
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h16M12 4v16"/></svg>
               Aplicar topologia
             </button>
+            <!-- Fica entre aplicar e salvar porque é o que a rotina faz: lê a
+                 PowerSubstation e deixa as alterações pendentes, que só chegam
+                 ao projeto no Salvar. Secundário, não primário — quem manda na
+                 tela continua sendo aplicar e salvar. -->
+            <button class="btn btn-secundario" title="Lê a PowerSubstation e preenche PositionOpen, PositionClosed, CommandOpen, CommandClose e Defective de cada disjuntor e seccionadora com os sinais já vinculados do lado Power. Sobrescreve o que foi escolhido à mão. Fica pendente até Salvar.">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+              Vincular sinais
+            </button>
             <button class="btn btn-sucesso">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
               Salvar configuração
@@ -609,7 +617,7 @@ tbody tr:hover{background:var(--azul-050)}
     <div class="console">
       <div class="console-topo">
         <span class="painel-titulo">Console</span>
-        <span class="contagem" id="contagem">8 registros</span>
+        <span class="contagem" id="contagem">10 registros</span>
         <span style="margin-left:auto;display:flex;align-items:center;gap:12px">
           <span class="relogio">28/08/2026 &nbsp; 11:07:39</span>
           <button class="btn-limpar" id="btnLimpar">
@@ -654,6 +662,10 @@ const propriedades = [
 
 const registros = [
   {h:'09:33:17', o:'SaveXML',   m:'XML file saved to C:\\ProjDev\\edp_sp\\se_gul\\AutomationConfig.xml', sel:true},
+  /* O vínculo vem antes do salvar, e é por isso que aparece abaixo dele: a
+     rotina só encosta no documento, o projeto só muda no Salvar. */
+  {h:'09:33:14', o:'BindPositions', m:'94 properties bound on 26 devices, from Substation.'},
+  {h:'09:33:14', o:'BindPositions', m:'4 devices have no Commands.0EST and were bound for reading only.'},
   {h:'09:33:11', o:'TA4',       m:'Released by operator.'},
   {h:'09:33:11', o:'TA3',       m:'Released by operator.'},
   {h:'09:33:11', o:'TA2',       m:'Released by operator.'},
