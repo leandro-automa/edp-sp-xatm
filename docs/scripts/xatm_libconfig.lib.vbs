@@ -858,7 +858,6 @@ Sub btnClearSource_Click()
 	' Salvar is what makes it real - so a mistake is visible and costs
 	' nothing for as long as it matters. A question every time would charge
 	' the whole job for the mistake made once in a while.
-
 	Dim current
 	current = Trim(xatm_PropertyRow.PropertySource & "")
 
@@ -866,6 +865,15 @@ Sub btnClearSource_Click()
 	' so this is the row that was built before it was wired and never built
 	' again - not something an operator can arrive at by looking.
 	If current = "" Then Exit Sub
+
+	If MsgBox( _
+		"Remover a origem de " & xatm_PropertyRow.PropertyName & "?" & _
+		vbCrLf & vbCrLf & _
+		current & vbCrLf & vbCrLf & _
+		"A propriedade fica sem vínculo nenhum, e para voltar atrás " & _
+		"é preciso configurar a origem outra vez." & vbCrLf & vbCrLf & _
+		"Nada chega ao projeto até você clicar em Salvar.", _
+		vbYesNo + vbExclamation + vbDefaultButton2, "Remover origem") <> vbYes Then Exit Sub
 
 	SendSource ""
 
