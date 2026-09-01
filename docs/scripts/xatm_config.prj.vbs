@@ -9,10 +9,13 @@ Mon Aug 31 17:10:01 2026
 Sub XMLBuilderAfterDelay_Functions()
 End Sub
 
+' The whole domain, walked and left on one tag.
+'
+' Nothing is written to disk. It used to name a file in C:\temp and save
+' to it, and that path outlived its purpose - the tree reads the tag, the
+' file was only ever there to be looked at, and a second copy of the
+' catalogue is a second thing that can be out of date.
 Sub ExportElipseCatalog()
-
-	Dim outputPath
-	outputPath = "C:\temp\elipse-catalog.xml"
 
 	Dim doc
 	Set doc = CreateObject("MSXML2.DOMDocument.6.0")
@@ -30,15 +33,15 @@ Sub ExportElipseCatalog()
 	root.setAttribute "generator", Me.PathName
 	doc.appendChild root
 
-	Application.Trace "Elipse catalog export started: " & outputPath
-	
+	Application.Trace "Elipse catalog export started."
+
 	WalkEnumerable doc, root, Application, "Application", 0
-	
-	'doc.save outputPath
-	
+
+	' Parent is Catalog, so this is xatm_config_data.Catalog.XMLContent -
+	' the one tag the browser reads and the only place the catalogue lives.
 	Parent.Item("XMLContent").WriteEx doc.xml
-	
-	Application.Trace "Elipse catalog export finished: " & outputPath
+
+	Application.Trace "Elipse catalog export finished."
 
 End Sub
 
@@ -11484,36 +11487,32 @@ Function TreeNodeTagPath(tagText)
 
 End Function
 
+' The catalogue, off the one tag that holds it - the same tag the
+' OnPreShow copy reads, and for the reason written out there. This copy
+' used to fall back to C:\temp\appbrowser\elipse-catalog.xml, a file
+' nothing writes any more.
 Function CatalogXmlText()
 
 	Dim xmlText
 	xmlText = ""
 
-	On Error Resume Next
 	Dim xmlTag
-	Set xmlTag = Application.GetObject("domainbrowser_Data.Catalog.XMLContent")
-	If Err.Number = 0 Then
-		xmlText = CStr(xmlTag.Value)
-	Else
-		Err.Clear
-	End If
 	Set xmlTag = Nothing
+
+	On Error Resume Next
+	Set xmlTag = Application.GetObject(CATALOG_CONTENT)
 	On Error GoTo 0
 
-	If Len(xmlText) = 0 Then
-		Dim doc
-		Set doc = CreateObject("MSXML2.DOMDocument.6.0")
-		doc.async = False
-		doc.load "C:\temp\appbrowser\elipse-catalog.xml"
-		If doc.parseError.errorCode = 0 Then
-			xmlText = doc.xml
-		End If
-		Set doc = Nothing
-	End If
+	If Not (xmlTag Is Nothing) Then xmlText = CStr(xmlTag.Value & "")
 
 	CatalogXmlText = xmlText
 
 End Function
+
+' Where the catalogue lives. Written out again because this is another
+' tag's scope and cannot see the copy over in OnPreShow.
+Const CATALOG_CONTENT = "xatm_config_data.Catalog.XMLContent"
+
 
 Function Pad2(value)
 
@@ -11858,43 +11857,41 @@ Sub FillTree()
 	
 End Sub
 
+' The catalogue, off the one tag that holds it.
+'
+' It used to try domainbrowser_Data.Catalog.XMLContent first and come
+' here only if that was missing or empty - so an export, which writes
+' this tag, changed nothing the tree showed for as long as the other tag
+' held anything at all. The other copy of this function, over in the
+' TreeView's scope, fell back to a file in C:\temp instead, which let the
+' two scopes disagree about the same node.
+'
+' Handed back as it came. The caller parses it and says so when it will
+' not parse, so loading it here to check was a second parse that only
+' turned a bad catalogue into an empty one.
 Function CatalogXmlText()
 
-	Dim xmlText
-	xmlText = ""
+	CatalogXmlText = ""
+
+	Dim xmlTag
+	Set xmlTag = Nothing
 
 	On Error Resume Next
-	Dim xmlTag
-	Set xmlTag = Application.GetObject("domainbrowser_Data.Catalog.XMLContent")
-	If Err.Number = 0 Then
-		xmlText = CStr(xmlTag.Value)
-	Else
-		Err.Clear
-	End If
-	Set xmlTag = Nothing
+	Set xmlTag = Application.GetObject(CATALOG_CONTENT)
 	On Error GoTo 0
 
-	If Len(xmlText) = 0 Then
-		
-		Dim doc
-		Set doc = CreateObject("MSXML2.DOMDocument.6.0")
-		doc.async = False
-		
-		Dim xmlContent
-		xmlContent = Application.GetObject("xatm_config_data.Catalog.XMLContent").Value
-		
-		doc.loadXML xmlContent
-		
-		If doc.parseError.errorCode = 0 Then
-			xmlText = doc.xml
-		End If
-		
-		Set doc = Nothing
+	If xmlTag Is Nothing Then
+		Application.Trace "There is no " & CATALOG_CONTENT & " to read the catalog from."
+		Exit Function
 	End If
 
-	CatalogXmlText = xmlText
+	CatalogXmlText = CStr(xmlTag.Value & "")
 
 End Function
+
+
+' Where the catalogue lives, which is where ExportElipseCatalog puts it.
+Const CATALOG_CONTENT = "xatm_config_data.Catalog.XMLContent"
 
 
 Function ImageListValueForTag(imageList, tagName)
