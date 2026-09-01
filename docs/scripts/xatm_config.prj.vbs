@@ -8579,8 +8579,16 @@ Sub btnBindPositions_Click()
 	' Every breaker and disconnector that finds a Power device of its name
 	' has its position, command and Defective properties overwritten. A tag
 	' or an expression somebody put in by hand goes with them, which is the
-	' whole point on a first pass and a loss on a project already tuned - so
-	' the question names all five.
+	' whole point on a first pass and a loss on a project already tuned.
+	'
+	' So the box warns rather than asks - vbExclamation and not vbQuestion,
+	' and it says out loud that there is no undo on this screen, because
+	' there is not one: what this overwrites comes back only by being
+	' configured again by hand, one property at a time.
+	'
+	' In Portuguese, alone among the dialogs here, because this is the one
+	' that can cost somebody an afternoon and it should be read rather than
+	' translated at a glance.
 
 	Dim substation
 	substation = ChosenSubstation()
@@ -8588,13 +8596,18 @@ Sub btnBindPositions_Click()
 	If substation = "" Then Exit Sub
 
 	If MsgBox( _
-		"Bind the position, command and Defective tags of every breaker " & _
-		"and disconnector from the PowerSubstation?" & vbCrLf & vbCrLf & _
-		"PositionOpen, PositionClosed, CommandOpen, CommandClose and " & _
-		"Defective are overwritten wherever a Power device of the same " & _
-		"name is found, including where one was put in by hand." & vbCrLf & vbCrLf & _
-		"Nothing reaches the project until Salvar.", _
-		vbYesNo + vbQuestion + vbDefaultButton2, BIND_TITLE) <> vbYes Then Exit Sub
+		"ATENÇÃO - esta rotina sobrescreve o que já está " & _
+		"configurado." & vbCrLf & vbCrLf & _
+		"Vincular os sinais de todos os disjuntores e seccionadoras a " & _
+		"partir da PowerSubstation?" & vbCrLf & vbCrLf & _
+		"PositionOpen, PositionClosed, CommandOpen, CommandClose e " & _
+		"Defective serão substituídos em todo dispositivo que tiver um " & _
+		"equivalente de mesmo nome na PowerSubstation - inclusive onde a " & _
+		"tag ou a expressão foi escolhida à mão." & vbCrLf & vbCrLf & _
+		"Não há desfazer nesta tela: o que for sobrescrito só volta " & _
+		"reconfigurando à mão, um por um." & vbCrLf & vbCrLf & _
+		"Nada chega ao projeto até você clicar em Salvar.", _
+		vbYesNo + vbExclamation + vbDefaultButton2, BIND_TITLE) <> vbYes Then Exit Sub
 
 	Dim binder
 	Set binder = Nothing
@@ -8604,28 +8617,29 @@ Sub btnBindPositions_Click()
 	On Error Goto 0
 
 	If binder Is Nothing Then
-		MsgBox "This project has no " & BIND_POSITIONS & " tag, so nothing " & _
-		       "can be bound.", vbCritical, BIND_TITLE
+		MsgBox "Este projeto não tem a tag " & BIND_POSITIONS & ", " & _
+		       "então não há como vincular nada.", vbCritical, BIND_TITLE
 		Exit Sub
 	End If
 
 	binder.WriteEx substation
 
 	If binder.DocString <> EXIT_SUCCESS Then
-		MsgBox "Not everything was bound - the console says which devices " & _
-		       "and why.", vbExclamation, BIND_TITLE
+		MsgBox "Nem tudo foi vinculado - o console diz quais dispositivos " & _
+		       "e por quê.", vbExclamation, BIND_TITLE
 		Exit Sub
 	End If
 
-	MsgBox "The position, command and Defective tags were staged." & vbCrLf & vbCrLf & _
-	       "Look them over on the panel and press Salvar to write them " & _
-	       "into the project.", vbInformation, BIND_TITLE
+	MsgBox "Os sinais de posição, comando e Defective foram " & _
+	       "preenchidos." & vbCrLf & vbCrLf & _
+	       "Revise no painel e clique em Salvar para gravar no projeto.", _
+	       vbInformation, BIND_TITLE
 
 End Sub
 
 Const BIND_POSITIONS = "xatm_config_data.Config.BindPositions"
 Const EXIT_SUCCESS   = "EXIT_SUCCESS"
-Const BIND_TITLE     = "Bind positions"
+Const BIND_TITLE     = "Vincular sinais"
 
 ' The tag that does the looking, and the one it answers on. Written out
 ' again here because one E3 object cannot call another's - the alarms
@@ -8648,16 +8662,17 @@ Function ChosenSubstation()
 	On Error Goto 0
 
 	If finder Is Nothing Then
-		MsgBox "This project has no " & FIND_OBJECTS & " tag, so the " & _
-		       "substations cannot be looked for.", vbCritical, BIND_TITLE
+		MsgBox "Este projeto não tem a tag " & FIND_OBJECTS & ", " & _
+		       "então não há como procurar as subestações.", _
+		       vbCritical, BIND_TITLE
 		Exit Function
 	End If
 
 	finder.WriteEx SUBSTATION_CLASS
 
 	If finder.DocString <> EXIT_SUCCESS Then
-		MsgBox "The substations could not be looked for - the console says " & _
-		       "why.", vbCritical, BIND_TITLE
+		MsgBox "Não foi possível procurar as subestações - o " & _
+		       "console diz por quê.", vbCritical, BIND_TITLE
 		Exit Function
 	End If
 
@@ -8668,8 +8683,8 @@ Function ChosenSubstation()
 	On Error Goto 0
 
 	If Trim(answer) = "" Then
-		MsgBox "No " & SUBSTATION_CLASS & " was found in this domain.", _
-		       vbExclamation, BIND_TITLE
+		MsgBox "Nenhuma " & SUBSTATION_CLASS & " foi encontrada neste " & _
+		       "domínio.", vbExclamation, BIND_TITLE
 		Exit Function
 	End If
 
@@ -8693,8 +8708,8 @@ Function PickSubstation(found)
 	PickSubstation = ""
 
 	Dim prompt, i
-	prompt = "More than one " & SUBSTATION_CLASS & " was found." & vbCrLf & _
-	         "Type the number of the one to take the tags from:" & _
+	prompt = "Foi encontrada mais de uma " & SUBSTATION_CLASS & "." & _
+	         vbCrLf & "Digite o número da que deve fornecer os sinais:" & _
 	         vbCrLf & vbCrLf
 
 	For i = 0 To UBound(found)
@@ -8708,7 +8723,7 @@ Function PickSubstation(found)
 	If Trim(reply) = "" Then Exit Function
 
 	If Not IsNumeric(reply) Then
-		MsgBox "'" & reply & "' is not one of the numbers on the list.", _
+		MsgBox "'" & reply & "' não é um dos números da lista.", _
 		       vbExclamation, BIND_TITLE
 		Exit Function
 	End If
@@ -8717,7 +8732,7 @@ Function PickSubstation(found)
 	choice = CLng(reply)
 
 	If choice < 1 Or choice > UBound(found) + 1 Then
-		MsgBox "There is no " & choice & " on the list.", vbExclamation, BIND_TITLE
+		MsgBox "Não existe " & choice & " na lista.", vbExclamation, BIND_TITLE
 		Exit Function
 	End If
 
