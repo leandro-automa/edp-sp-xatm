@@ -2033,14 +2033,14 @@ End Sub
 <xatm_config_data.Config.BindPositions:BindPositions_OnChangedValue()>
 Sub BindPositions_OnChangedValue()
 
-	' Every breaker and disconnector wired to the tag the substation side
-	' already reads it on.
+	' Every breaker and disconnector wired to the tags the substation side
+	' already reads and operates it on.
 	'
 	' The engineer configures the PowerSubstation first - every device bound
-	' to its measurements - and then had to bind the same tags a second time
-	' on the automation, by hand, once per property. The two sides already
-	' agree on the device names, so the second pass is derivable from the
-	' first.
+	' to its measurements and its commands - and then had to bind the same
+	' tags a second time on the automation, by hand, once per property. The
+	' two sides already agree on the device names, so the second pass is
+	' derivable from the first.
 	'
 	' Staged in the document and not written into the project. The panel is
 	' built from the document and Save is what pushes it into E3, so a
@@ -2108,6 +2108,7 @@ Sub BindPositions_OnChangedValue()
 	gDevices = 0
 	gMissing = 0
 	gNoTag   = 0
+	gNoCommand = 0
 	gRefused = 0
 
 	Dim problem
@@ -2115,15 +2116,23 @@ Sub BindPositions_OnChangedValue()
 
 	BindFolder root, byName, problem
 
-	WriteLog "Positions - " & gBound & " properties bound on " & _
-	         gDevices & " devices, from " & substationPath & "."
+	WriteLog gBound & " properties bound on " & gDevices & " devices, from " & _
+	         substationPath & "."
+
+	' Said as a count and not as a fault. A device that is only monitored
+	' carries no command point at all, and listing each one would turn an
+	' ordinary run into a failed one.
+	If gNoCommand > 0 Then
+		WriteLog gNoCommand & " devices have no " & COMMANDS & "." & COMMAND_POINT & _
+		         " and were bound for reading only."
+	End If
 
 	If gClashes > 0 Then
-		WriteLog "Positions - " & gClashes & " Power devices share a name " & "with another; the first of each was used."
+		WriteLog gClashes & " Power devices share a name " & "with another; the first of each was used."
 	End If
 
 	If problem <> "" Then
-		WriteLog "Positions - not everything was bound:" & problem
+		WriteLog "Not everything was bound:" & problem
 		DocString = EXIT_FAILURE
 		WriteEx Empty, ts
 		Exit Sub
@@ -2145,9 +2154,21 @@ Const MEASUREMENTS  = "Measurements"
 Const MEASUREMENT   = "0EST"
 Const SCADA         = "Scada"
 
-' The two automation properties it is copied onto.
-Const PROP_OPEN     = "PositionOpen"
-Const PROP_CLOSED   = "PositionClosed"
+' And where the command lives: a collection of its own under a point of
+' the same name, holding one PowerCommandUnit per action. Spelled out
+' apart from the measurement even though the two read alike today - they
+' are two points on the Power side and nothing binds them to stay equal.
+Const COMMANDS      = "Commands"
+Const COMMAND_POINT = "0EST"
+Const OPEN_UNIT     = "Open"
+Const CLOSE_UNIT    = "Close"
+
+' The automation properties they are copied onto: the position onto both
+' of the position pair, and each command unit onto the one it names.
+Const PROP_OPEN      = "PositionOpen"
+Const PROP_CLOSED    = "PositionClosed"
+Const PROP_CMD_OPEN  = "CommandOpen"
+Const PROP_CMD_CLOSE = "CommandClose"
 
 Const DATA_ROOT     = "XATM_Data"
 Const FIND_OBJECTS  = "xatm_config_data.Config.FindObjects"
@@ -2163,6 +2184,7 @@ Dim gBound
 Dim gDevices
 Dim gMissing
 Dim gNoTag
+Dim gNoCommand
 Dim gRefused
 Dim gClashes
 
@@ -2186,7 +2208,7 @@ Sub IndexClass(className, substationPath, byName)
 	On Error Goto 0
 
 	If finder Is Nothing Or answerTag Is Nothing Then
-		WriteLog "Positions - " & FIND_OBJECTS & " and " & FOUND_OBJECTS & _
+		WriteLog FIND_OBJECTS & " and " & FOUND_OBJECTS & _
 		         " are what the search runs on, and one of them is missing."
 		Exit Sub
 	End If
@@ -2194,7 +2216,7 @@ Sub IndexClass(className, substationPath, byName)
 	finder.WriteEx className
 
 	If finder.DocString <> EXIT_SUCCESS Then
-		WriteLog "Positions - the search for " & className & " got nowhere."
+		WriteLog "The search for " & className & " got nowhere."
 		Exit Sub
 	End If
 
@@ -2289,24 +2311,19 @@ Sub BindFolder(folder, byName, problem)
 End Sub
 
 
-' One device: the Power object of the same name, the tag its position is
-' read on, and that tag onto both of the automation's position properties.
+' One device: the Power object of the same name, and what it is read and
+' operated on copied off it.
+'
+' The two halves are bound apart. A device configured for one and not the
+' other is ordinary here - a disconnector that is only monitored has no
+' command units at all - so a missing half is accounted for and the other
+' half still lands.
 Sub BindDevice(obj, byName, problem)
 
 	If Not byName.Exists(obj.Name) Then
 		gMissing = gMissing + 1
 		problem = problem & vbCrLf & "  " & obj.Name & " - the domain has no " & _
 		          BREAKER_CLASS & " or " & SWITCH_CLASS & " of that name."
-		Exit Sub
-	End If
-
-	Dim tagPath
-	tagPath = ScadaTagOf(byName(obj.Name))
-
-	If tagPath = "" Then
-		gNoTag = gNoTag + 1
-		problem = problem & vbCrLf & "  " & obj.Name & " - nothing at " & _
-		          MEASUREMENTS & "." & MEASUREMENT & "." & SCADA & ".Tag."
 		Exit Sub
 	End If
 
@@ -2318,10 +2335,65 @@ Sub BindDevice(obj, byName, problem)
 
 	If objPath = "" Then Exit Sub
 
-	gDevices = gDevices + 1
+	Dim powerPath, before
+	powerPath = byName(obj.Name)
+	before = gBound
+
+	BindPositionsOf obj, objPath, powerPath, problem
+	BindCommandsOf obj, objPath, powerPath, problem
+
+	' Counted as a device only where something was actually bound onto it.
+	If gBound > before Then gDevices = gDevices + 1
+
+End Sub
+
+
+' The position tag onto both of the position properties.
+Sub BindPositionsOf(obj, objPath, powerPath, problem)
+
+	Dim tagPath
+	tagPath = ScadaTagOf(powerPath)
+
+	If tagPath = "" Then
+		gNoTag = gNoTag + 1
+		problem = problem & vbCrLf & "  " & obj.Name & " - nothing at " & _
+		          MEASUREMENTS & "." & MEASUREMENT & "." & SCADA & ".Tag."
+		Exit Sub
+	End If
 
 	StageOne objPath, PROP_OPEN, tagPath, obj.Name, problem
 	StageOne objPath, PROP_CLOSED, tagPath, obj.Name, problem
+
+End Sub
+
+
+' Each command unit onto the command property it names.
+'
+' No command point at all is not a fault and is only counted - see the
+' summary. The point with a unit missing off it, or a unit carrying no
+' write tag, is half configured and is named.
+Sub BindCommandsOf(obj, objPath, powerPath, problem)
+
+	Dim openTag, closeTag
+
+	If Not CommandTagsOf(powerPath, openTag, closeTag) Then
+		gNoCommand = gNoCommand + 1
+		Exit Sub
+	End If
+
+	If openTag = "" Then
+		problem = problem & vbCrLf & "  " & obj.Name & " - no " & OPEN_UNIT & _
+		          " unit with a write tag under " & COMMANDS & "." & COMMAND_POINT & "."
+	Else
+		StageOne objPath, PROP_CMD_OPEN, openTag, obj.Name, problem
+	End If
+
+	If closeTag = "" Then
+		problem = problem & vbCrLf & "  " & obj.Name & " - no " & CLOSE_UNIT & _
+		          " unit with a write tag under " & COMMANDS & "." & COMMAND_POINT & "."
+	Else
+		StageOne objPath, PROP_CMD_CLOSE, closeTag, obj.Name, problem
+	End If
 
 End Sub
 
@@ -2366,6 +2438,106 @@ Function WithoutValue(text)
 	End If
 
 	WithoutValue = s
+
+End Function
+
+
+' The two tags one Power device is operated on, and whether it carries a
+' command point at all - which is the difference between a device that
+' cannot be operated and one that was configured badly.
+Function CommandTagsOf(powerPath, openTag, closeTag)
+
+	CommandTagsOf = False
+	openTag = ""
+	closeTag = ""
+
+	Dim point
+	Set point = Nothing
+
+	On Error Resume Next
+	Set point = Application.GetObject(powerPath).Item(COMMANDS).Item(COMMAND_POINT)
+	On Error Goto 0
+
+	If point Is Nothing Then Exit Function
+
+	CommandTagsOf = True
+
+	Dim seen, unit, i
+	seen = 0
+
+	On Error Resume Next
+
+	For Each unit In point
+
+		' Counted on what came out and not on the turn of the loop. Where the
+		' enumeration is refused outright the count has to stay at nothing, or
+		' the fallback below reads as unnecessary and never runs.
+		If IsObject(unit) Then
+			seen = seen + 1
+			TakeUnit unit, openTag, closeTag
+		End If
+
+	Next
+
+	' A collection that will not enumerate still answers by index. Walked
+	' from 0 through the count rather than 1 through it, because that spans
+	' a collection numbered either way and the one subscript off the end of
+	' whichever it is costs nothing under the guard.
+	If seen = 0 Then
+		Err.Clear
+		For i = 0 To CountOf(point)
+			Set unit = Nothing
+			Set unit = point.Item(i)
+			If Not (unit Is Nothing) Then TakeUnit unit, openTag, closeTag
+			Err.Clear
+		Next
+	End If
+
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
+
+' One command unit read onto whichever of the two tags its CommandName
+' calls for.
+'
+' Taken off the name and not off the order they arrive in: a device that
+' carries them the other way round, or carries only one of them, still
+' lands on the right property. A unit with nothing to write on is left
+' out, so the caller can tell it apart from one that is not there.
+Sub TakeUnit(unit, openTag, closeTag)
+
+	Dim action, tagText
+	action = ""
+	tagText = ""
+
+	On Error Resume Next
+	action = LCase(Trim(CStr(unit.CommandName & "")))
+	tagText = WithoutValue(Trim(CStr(unit.OperateWriteTag & "")))
+	Err.Clear
+	On Error Goto 0
+
+	If tagText = "" Then Exit Sub
+
+	If action = LCase(OPEN_UNIT) Then
+		openTag = tagText
+	ElseIf action = LCase(CLOSE_UNIT) Then
+		closeTag = tagText
+	End If
+
+End Sub
+
+
+' How many a collection holds, 0 where it will not say.
+Function CountOf(collection)
+
+	CountOf = 0
+
+	On Error Resume Next
+	CountOf = CLng(collection.Count)
+	Err.Clear
+	On Error Goto 0
 
 End Function
 
@@ -8278,9 +8450,9 @@ Sub btnBindPositions_Click()
 	' Asked before it runs, because it does not ask per device.
 	'
 	' Every breaker and disconnector that finds a Power device of its name
-	' has both of its position properties overwritten. A tag somebody picked
-	' by hand goes with them, which is the whole point on a first pass and a
-	' loss on a project already tuned - so the question names the two.
+	' has its position and its command properties overwritten. A tag somebody
+	' picked by hand goes with them, which is the whole point on a first pass
+	' and a loss on a project already tuned - so the question names all four.
 
 	Dim substation
 	substation = ChosenSubstation()
@@ -8288,11 +8460,11 @@ Sub btnBindPositions_Click()
 	If substation = "" Then Exit Sub
 
 	If MsgBox( _
-		"Bind the position tags of every breaker and disconnector from the " & _
-		"PowerSubstation?" & vbCrLf & vbCrLf & _
-		"PositionOpen and PositionClosed are overwritten wherever a Power " & _
-		"device of the same name is found, including where a tag was chosen " & _
-		"by hand." & vbCrLf & vbCrLf & _
+		"Bind the position and command tags of every breaker and " & _
+		"disconnector from the PowerSubstation?" & vbCrLf & vbCrLf & _
+		"PositionOpen, PositionClosed, CommandOpen and CommandClose are " & _
+		"overwritten wherever a Power device of the same name is found, " & _
+		"including where a tag was chosen by hand." & vbCrLf & vbCrLf & _
 		"Nothing reaches the project until Salvar.", _
 		vbYesNo + vbQuestion + vbDefaultButton2, BIND_TITLE) <> vbYes Then Exit Sub
 
@@ -8304,8 +8476,8 @@ Sub btnBindPositions_Click()
 	On Error Goto 0
 
 	If binder Is Nothing Then
-		MsgBox "This project has no " & BIND_POSITIONS & " tag, so the " & _
-		       "positions cannot be bound.", vbCritical, BIND_TITLE
+		MsgBox "This project has no " & BIND_POSITIONS & " tag, so nothing " & _
+		       "can be bound.", vbCritical, BIND_TITLE
 		Exit Sub
 	End If
 
@@ -8317,7 +8489,7 @@ Sub btnBindPositions_Click()
 		Exit Sub
 	End If
 
-	MsgBox "The position tags were staged." & vbCrLf & vbCrLf & _
+	MsgBox "The position and command tags were staged." & vbCrLf & vbCrLf & _
 	       "Look them over on the panel and press Salvar to write them " & _
 	       "into the project.", vbInformation, BIND_TITLE
 
@@ -8394,7 +8566,7 @@ Function PickSubstation(found)
 
 	Dim prompt, i
 	prompt = "More than one " & SUBSTATION_CLASS & " was found." & vbCrLf & _
-	         "Type the number of the one to take the position tags from:" & _
+	         "Type the number of the one to take the tags from:" & _
 	         vbCrLf & vbCrLf
 
 	For i = 0 To UBound(found)
