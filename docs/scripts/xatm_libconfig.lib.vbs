@@ -742,68 +742,25 @@ Sub btnPickTag_Click()
 	' The tag it already holds, chosen again, is not an edit.
 	If StrComp(picked, current, vbTextCompare) = 0 Then Exit Sub
 
-	' The object this row belongs to, and the tag that was chosen. Both
-	' paths come from PathName - the row's out of the document, the tag's
-	' out of the catalog - so both already resolve, bracketed where they
-	' had to be, and neither is bracketed again here.
-	Dim obj
-	Set obj = Nothing
-
-	On Error Resume Next
-	Set obj = Application.GetObject(xatm_PropertyRow.ObjectPath)
-	On Error Goto 0
-
-	If obj Is Nothing Then
-		MsgBox "Not wired - the project has nothing at " & _
-		       xatm_PropertyRow.ObjectPath & "."
-		Exit Sub
-	End If
-
-	Set gPickedTag = Nothing
-
-	On Error Resume Next
-	Set gPickedTag = Application.GetObject(picked)
-	On Error Goto 0
-
-	If gPickedTag Is Nothing Then
-		MsgBox "Not wired - the project has nothing at " & picked & "."
-		Exit Sub
-	End If
-
-	' An IOTag property holds the tag object itself and not its path, so
-	' the tag is associated rather than assigned - a Set, and through
-	' Execute because the property is named at runtime. gPickedTag is a
-	' cell of its own for the same reason the import keeps one: what
-	' Execute runs is a line of text, and an object cannot be spelled out
-	' in it.
-	Dim failed
-	failed = ""
-
-	On Error Resume Next
-
-	Execute "obj." & xatm_PropertyRow.PropertyName & " = gPickedTag.PathName"
-
-	If Err.Number <> 0 Then
-		failed = Err.Description
-		Err.Clear
-	End If
-
-	On Error Goto 0
-
-	If failed <> "" Then
-		MsgBox "Not wired - " & xatm_PropertyRow.PropertyName & " would not take " & _
-		       picked & " - " & failed
-		Exit Sub
-	End If
-
-	' The document has to be told as well. The write above went into the
-	' project, and the panel is built from the document - so left alone
-	' the row comes back wired to the old tag the next time it is built,
-	' and the file it is saved to keeps the old one too.
+	' Staged in the document, and not written onto the object here.
+	'
+	' It used to be done both ways at once: the association put straight
+	' onto the property, and the same path sent to the document. The direct
+	' write had to resolve the tag first, and this runs in the Viewer, which
+	' does not answer for every path the browser can list.
+	' Distribuicao.DNP3Slave.Comandos.USA1_IED1_52112_CMD is a real IOTag
+	' and came back as Nothing here, with no brackets to blame for it.
+	'
+	' The server resolves what the Viewer will not - it is where the bind
+	' button reaches the whole domain from - and the import now puts a
+	' source onto its property, which it did not do until recently. That
+	' was the only reason to write the object from here at all. So the path
+	' goes to the document and the wiring happens on Salvar, which is how
+	' every other edit on this panel already worked.
 	SendSource picked
 
-	' What the row holds, and what its source column shows, now that the
-	' project holds it too.
+	' What the row holds, and what its source column shows. The project
+	' does not hold it yet - Salvar is what puts it there.
 	xatm_PropertyRow.PropertySource = picked
 
 	On Error Resume Next
@@ -821,12 +778,6 @@ Const SET_PROPERTY   = "xatm_config_data.Config.SetProperty"
 Const PROPERTY_VALUE = "xatm_config_data.Config.PropertyValue"
 Const KIND_SOURCE    = "source"
 Const EXIT_SUCCESS   = "EXIT_SUCCESS"
-
-
-' Scratch cell for the association written through Execute. The property
-' is named at runtime, so the line is built as text, and an object has to
-' be waiting in a variable for it to name.
-Dim gPickedTag
 
 
 ' How much of a path the source column has room for - the same cut the

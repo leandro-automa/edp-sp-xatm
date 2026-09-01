@@ -3256,30 +3256,27 @@ End Sub
 
 ' A tag onto a property that holds one.
 '
-' Looked up rather than handed over as text, for the reason WriteValue
-' looks an object up: the property takes the tag's own PathName, and a
-' path that resolves to nothing has to be said out loud here - left alone
-' it is an association to nowhere, which reads on the panel exactly like
-' one that worked.
+' The path is written as it stands, and nothing is looked up first.
+'
+' It used to be resolved here so the property could be given the tag's
+' own PathName, and that lookup is what kept failing on paths that were
+' real - the checking was doing the harm the checking was for. The paths
+' come off the catalog, which is E3's own account of what is in the
+' domain, so a path on the catalog is taken to name something.
+'
+' What that gives up: E3 decides now. A path it will not take raises on
+' the assignment and is reported below; one it takes quietly is wired
+' whether or not anything is at the far end of it.
 Sub WireTag(obj, name, path, report, where)
-
-	Set gWriteObject = Nothing
-
-	On Error Resume Next
-	Set gWriteObject = Application.GetObject(E3Path(CStr(path)))
-	On Error Goto 0
-
-	If gWriteObject Is Nothing Then
-		report = report & vbCrLf & " could not wire " & name & " on " & where & _
-		         " - the project has nothing at " & path
-		Exit Sub
-	End If
 
 	Dim failed
 	failed = ""
 
+	gWriteValue = CStr(path)
+
 	On Error Resume Next
-	Execute "obj." & name & " = gWriteObject.PathName"
+
+	Execute "obj." & name & " = gWriteValue"
 
 	If Err.Number <> 0 Then
 		failed = Err.Description
@@ -3289,7 +3286,8 @@ Sub WireTag(obj, name, path, report, where)
 	On Error Goto 0
 
 	If failed <> "" Then
-		report = report & vbCrLf & " could not wire " & name & " on " & where & " - " & failed
+		report = report & vbCrLf & " could not wire " & name & " on " & where & _
+		         " to " & path & " - " & failed
 	End If
 
 End Sub
@@ -3378,6 +3376,26 @@ End Function
 Function IsObjectType(dataType)
 
 	IsObjectType = (LCase(Left(CStr(dataType), 5)) = "xatm_")
+
+End Function
+
+
+' A property whose configuration is an association, not a value. Two of
+' them: an IOTag is wired to a tag out in the project, an InternalTag to
+' one of the object's own. Both export as a source and neither carries a
+' value, because what is configured is the tag it points at.
+'
+' The export keeps its own copy of this and so does the layout button.
+' Three copies of six lines is not a thing to be pleased about, but a
+' scope cannot call into another scope's, and WriteSource has to tell a
+' tag path from an expression before it can write either one.
+Function IsLinkType(dataType)
+
+	IsLinkType = False
+
+	Select Case LCase(dataType)
+		Case "iotag", "internaltag" : IsLinkType = True
+	End Select
 
 End Function
 
