@@ -1,8 +1,8 @@
 -----------------------
-Documentaï¿½ï¿½o de Scripts
+Documentação de Scripts
 -----------------------
 XATM_LIBCONFIG (C:\ProjDev\edp_sp\xatm_libconfig.lib)
-Wed Aug 12 11:18:51 2026
+Tue Sep  1 16:36:51 2026
 -----------------------
 
 <xatm_BreakerSymbol.Source:xatm_BreakerSymbol_OnSourceChanged()>
@@ -52,9 +52,17 @@ Sub objButton_Click()
 	Dim failTag
 	Set failTag = source.Item("Data").Item("SimulateCommandFailure")
 
+	Dim defective
+	defective = False
+
+	On Error Resume Next
+	defective = CBool(source.Defective)
+	On Error Goto 0
+
 	Dim options
 	options = "Command{" & openCmd & "|" & closeCmd & "||" & _
 	          IIf(CBool(failTag.Value), "*", "") & "Command Failure}|" & _
+	          IIf(defective, "*", "") & "Defective|" & _
 	          "Reset||Cancel"
 
 	Dim userOption
@@ -72,10 +80,103 @@ Sub objButton_Click()
 
 		Case 4
 
+			On Error Resume Next
+			source.Defective = Not defective
+			On Error Goto 0
+
+		Case 5
+
 			source.Item("Data").Item("Reset").WriteEx True
 
 	End Select	
+		
+End Sub
+
+<xatm_DisconnectorSymbol.Source:xatm_DisconnectorSymbol_OnSourceChanged()>
+Sub xatm_DisconnectorSymbol_OnSourceChanged()
 	
+	Item("lblName").Value = Source.Name
+	
+	Links.CreateLink "Position", Source.Item("Data").Item("Position").PathName & ".Value"
+	
+	Links.CreateLink "MemorizedPosition", Source.Item("Data").Item("MemorizedPosition").PathName & ".Value"
+	Links.CreateLink "MemorizedPositionTimer", Source.Item("Data").Item("MemorizedPosition").PathName & ".DocString"
+	
+	Links.CreateLink "CommunicationFailure", Source.Item("Data").Item("CommunicationFailure").PathName & ".Value"
+	
+	Links.CreateLink "SimulationModeEnabled", Source.Item("Data").Item("SimulationModeEnabled").PathName & ".Value"
+	
+	Links.CreateLink "SimulateCommandFailure", Source.Item("Data").Item("SimulateCommandFailure").PathName & ".Value"
+	
+	Links.CreateLink "CommandInProgress", Source.Item("Data").Item("CommandInProgress").PathName & ".Value"
+	
+	Links.CreateLink "CommandTimer", Source.Item("Data").Item("Timers").Item("CommandTimer").PathName & ".Value"
+		
+End Sub
+
+<xatm_DisconnectorSymbol.objButton:objButton_Click()>
+Sub objButton_Click()
+	
+	If Not xatm_DisconnectorSymbol.SimulationModeEnabled Then
+		
+		MsgBox "Simulation mode is not enabled for this equipment.", vbExclamation, "Simulation Mode Disabled"
+		Exit Sub
+	
+	End If
+	
+	Dim source
+	Set source = xatm_DisconnectorSymbol.Source
+	
+	Dim openCmd, closeCmd
+	openCmd  = "Open"
+	closeCmd = "Close"
+
+	Select Case xatm_DisconnectorSymbol.Position
+		Case 1 : openCmd  = "!Open"   ' already open- disable Open
+		Case 2 : closeCmd = "!Close"  ' already closed- disable Close
+	End Select
+
+	Dim failTag
+	Set failTag = source.Item("Data").Item("SimulateCommandFailure")
+
+	Dim defective
+	defective = False
+
+	On Error Resume Next
+	defective = CBool(source.Defective)
+	On Error Goto 0
+
+	Dim options
+	options = "Command{" & openCmd & "|" & closeCmd & "||" & _
+	          IIf(CBool(failTag.Value), "*", "") & "Command Failure}|" & _
+	          IIf(defective, "*", "") & "Defective|" & _
+	          "Reset||Cancel"
+
+	Dim userOption
+	userOption = Application.SelectMenu(options)
+
+	Select Case userOption
+
+		Case 1, 2
+
+			source.Item("Data").Item("CommandOpenClose").WriteEx userOption
+
+		Case 3
+
+			failTag.WriteEx Not CBool(failTag.Value)
+
+		Case 4
+
+			On Error Resume Next
+			source.Defective = Not defective
+			On Error Goto 0
+
+		Case 5
+
+			source.Item("Data").Item("Reset").WriteEx True
+
+	End Select	
+		
 End Sub
 
 <xatm_OpenConfig.objButton:objButton_Click()>
@@ -260,6 +361,291 @@ Sub FindBuild(folder, ByRef found)
 		On Error Goto 0
 
 	Next
+	
+End Sub
+
+<xatm_OpenConfig:xatm_OpenConfig_OnStartRunning()>
+Sub xatm_OpenConfig_OnStartRunning()
+	
+	Item("objButton").FillStyle = 10 	'- MouseArea
+	Item("objButton").BorderStyle = 5 	'- Null
+		
+End Sub
+
+<xatm_PropertyRow.btnBuildExpression:btnBuildExpression_Click()>
+Sub btnBuildExpression_Click()
+
+	' The conditions behind a bound property, drawn rather than read.
+	'
+	' A property the manifest lets be bound carries an expression instead
+	' of a value - the field conditions that have to hold before a
+	' maneuver may start, written as one line of E3 expression over the
+	' interface tags. As text that line is a wall of ANDs and nobody can
+	' see which term is the one holding the maneuver back. InterlockDiagram
+	' draws it as the tree it is, a lamp against each term.
+	'
+	' Shown and not written. The expression itself is bound in Studio,
+	' where there is room for it; this button is how somebody standing at
+	' the panel finds out why a start is refused.
+
+	If Not Can(EXPOSE_EXPRESSION) Then Exit Sub
+
+	' PropertySource is where a bound property keeps its expression - the
+	' same column that holds the tag path for an IOTag row, because both
+	' answer where the value comes from.
+	Dim expression
+	expression = Trim(xatm_PropertyRow.PropertySource & "")
+
+	If expression = "" Then
+		MsgBox xatm_PropertyRow.PropertyName & " is not bound to an " & _
+		       "expression yet, so there are no conditions to draw.", _
+		       vbInformation, DIAGRAM_TITLE
+		Exit Sub
+	End If
+
+	OpenDiagram expression
+
+End Sub
+
+
+' What the module is called and how it is asked to open.
+'
+' The control is added to the screen, given its argument and taken away
+' again - opening is a side effect of Abrir changing, so the object only
+' has to exist for the instant it takes to flip it.
+Const DIAGRAM_OPENER_CLASS = "interlockdiagram.ild_AbrirIntertravamento"
+Const DIAGRAM_OPENER_NAME  = "ild_AbrirIntertravamento"
+
+' The way in for a project that has the screen but not the control.
+'
+' A frame of this library's own, named here rather than worked out from
+' the path the way the module's own example does. That example builds a
+' frame name by striking the dots out of a CommandUnit path, which has
+' nothing sensible to say when what is being drawn is an expression
+' rather than a command unit.
+Const DIAGRAM_SCREEN = "ild_DiagramScreen"
+Const DIAGRAM_FRAME  = "xatm_InterlockDiagram"
+Const DIAGRAM_TITLE  = "Intertravamentos"
+
+' Title bar (1), close (2), border (16), movable (64), and the two the
+' module's own example asks for (256, 512).
+Dim FRAME_FLAGS : FRAME_FLAGS = 1 + 2 + 16 + 64 + 256 + 512
+
+' Which of the module's four modes this application is.
+'
+'   1  OTS
+'   2  IHM or SCADA on Elipse Power
+'   3  Elipse E3, expressions built from IOTags or InternalTags
+'   4  Elipse E3, the CPFL Renovaveis standard
+'
+' Three, because that is what these expressions are: they are written
+' over the interface tags, which are InternalTags, and not over Power
+' measurements. The module's own example picks 4 for anything that is
+' not a PowerCommandUnit, which is the CPFL standard and not this one.
+'
+' If the diagram comes up empty this is the first thing to try.
+Const EXECUTION_MODE = 3
+
+' The module's high performance drawing, and the flag that tells it to
+' read calculated properties rather than SCADA ones (1 scada, 5
+' calculated).
+Const HIGH_PERFORMANCE = True
+Const USE_CALCULATED   = 5
+
+' The one flag this button asks about, written out again because one E3
+' object cannot call another's and the row's own copy lives in the
+' control's scope rather than in this button's.
+Const EXPOSE_EXPRESSION = 8
+
+
+' Puts the diagram on screen for one expression.
+'
+' Two ways in, and which one a station has is the site's business: the
+' control where InterlockDiagram is installed as a library, and the
+' screen in a frame where it is not. The control is tried first because
+' it needs nothing of the site at all.
+Sub OpenDiagram(expression)
+
+	Dim opener
+	Set opener = Nothing
+
+	On Error Resume Next
+	Set opener = Screen.AddObject(DIAGRAM_OPENER_CLASS, True, DIAGRAM_OPENER_NAME)
+	On Error Goto 0
+
+	If Not opener Is Nothing Then
+
+		On Error Resume Next
+
+		opener.Arg = Array(expression, EXECUTION_MODE, HIGH_PERFORMANCE, _
+		                   TreeView(), USE_CALCULATED)
+
+		' Opening is the change and not the value, so this is flipped rather
+		' than set - asking twice for the same diagram has to open it twice.
+		opener.Abrir = Not opener.Abrir
+
+		Screen.DeleteObject opener.Name
+
+		On Error Goto 0
+
+		Exit Sub
+
+	End If
+
+	Dim panel
+	Set panel = Nothing
+
+	On Error Resume Next
+	Set panel = Application.GetFrame(DIAGRAM_FRAME)
+	On Error Goto 0
+
+	' Said plainly rather than as a failed open, the way the configuration
+	' panel says it: a station that never had InterlockDiagram added reads
+	' exactly like one where the frame was renamed, so both names are in
+	' the message.
+	If panel Is Nothing Then
+		MsgBox "There is nowhere to draw the interlock diagram. This " & _
+		       "project has neither the " & DIAGRAM_OPENER_CLASS & " " & _
+		       "control nor a frame called " & DIAGRAM_FRAME & ".", _
+		       vbExclamation, DIAGRAM_TITLE
+		Exit Sub
+	End If
+
+	panel.SetFrameOptions DIAGRAM_TITLE, FRAME_FLAGS
+	panel.OpenScreen DIAGRAM_SCREEN, Array(expression, EXECUTION_MODE)
+
+End Sub
+
+
+' The WatchWindow's tree, which the module is handed so that clicking a
+' term in the diagram can find it in the domain. Nothing where this
+' viewer has no WatchWindow - the diagram draws either way.
+Function TreeView()
+
+	Set TreeView = Nothing
+
+	On Error Resume Next
+	Set TreeView = Application.Item("WatchWindowViewerObjects") _
+	                          .Item("Global").Item("XML_TreeView").Value
+	On Error Goto 0
+
+End Function
+
+
+Function Can(flag)
+
+	Can = ((xatm_PropertyRow.Exposure And flag) <> 0)
+
+End Function
+
+
+' A Function may not be the last thing in a scope; E3 rejects it and
+' says nothing about why. This is the guard, not debris.
+Sub EndOfScope()
+
+End Sub
+
+<xatm_PropertyRow.btnClearSource:btnClearSource_Click()>
+Sub btnClearSource_Click()
+
+	' Back to no source at all.
+	'
+	' Picking another tag already replaces the one that is there, so this
+	' button is for the other thing: saying that a property should not be
+	' wired to anything. That is rare, which is why it is one small button
+	' and not a column, and destructive, which is why it carries its own
+	' colour and does not sit next to the picker's.
+	'
+	' Nothing is asked. The removal is staged the way every other edit on
+	' this panel is staged - the document is told, the project is not, and
+	' Salvar is what makes it real - so a mistake is visible and costs
+	' nothing for as long as it matters. A question every time would charge
+	' the whole job for the mistake made once in a while.
+
+	Dim current
+	current = Trim(xatm_PropertyRow.PropertySource & "")
+
+	' Nothing to take off. The button is not shown on a row in this state,
+	' so this is the row that was built before it was wired and never built
+	' again - not something an operator can arrive at by looking.
+	If current = "" Then Exit Sub
+	
+	If MsgBox( _
+		"Remover a fonte de " & xatm_PropertyRow.PropertyName & "?" & _
+		vbCrLf & vbCrLf & _
+		current & vbCrLf & vbCrLf & _
+		"A propriedade fica sem vínculo nenhum, e para voltar atrás " & _
+		"é preciso configurar a origem outra vez." & vbCrLf & vbCrLf & _
+		"Nada chega ao projeto até você clicar em Salvar.", _
+		vbYesNo + vbExclamation + vbDefaultButton2, "Remover origem") <> vbYes Then Exit Sub
+
+
+	SendSource ""
+
+	' What the row holds and what its column shows, now that the document
+	' has been told - the same tidying the picker does with the path it
+	' chose, rather than waiting for the panel to be built again.
+	xatm_PropertyRow.PropertySource = ""
+
+	On Error Resume Next
+	xatm_PropertyRow.Item("txtConfiguredSource").Value = ""
+	xatm_PropertyRow.Item("txtConfiguredSource").Tip = ""
+	On Error Goto 0
+
+	' And the button goes with the source: there is nothing left for it to
+	' do, and a row with no source does not show one.
+	On Error Resume Next
+	Me.Visible = False
+	On Error Goto 0
+
+End Sub
+
+
+' The command tag in xatm_config that owns the document, and the kind of
+' edit this button sends. Written out again here because one E3 object
+' cannot call another's - the picker next door keeps the same four for
+' the same reason.
+Const SET_PROPERTY   = "xatm_config_data.Config.SetProperty"
+Const PROPERTY_VALUE = "xatm_config_data.Config.PropertyValue"
+Const KIND_SOURCE    = "source"
+Const EXIT_SUCCESS   = "EXIT_SUCCESS"
+
+
+' Tells the document what this row is wired to, which from this button is
+' nothing at all.
+'
+' The same two tags every other edit on this panel travels on, and the
+' same order: the value first so it is standing by, then the command that
+' reads it.
+Sub SendSource(path)
+
+	Dim command, valueTag
+	Set command = Nothing
+	Set valueTag = Nothing
+
+	On Error Resume Next
+	Set command = Application.GetObject(SET_PROPERTY)
+	Set valueTag = Application.GetObject(PROPERTY_VALUE)
+	On Error Goto 0
+
+	If command Is Nothing Or valueTag Is Nothing Then
+		MsgBox "The source was not removed - " & SET_PROPERTY & " and " & _
+		       PROPERTY_VALUE & " are what carry an edit, and one of them " & _
+		       "is missing."
+		Exit Sub
+	End If
+
+	valueTag.WriteEx path
+
+	' kind|key|name. key rather than path: Source is id:700 for anything
+	' with an Id, so renaming an object does not strand the row.
+	command.WriteEx KIND_SOURCE & "|" & _
+	                xatm_PropertyRow.Source & "|" & _
+	                xatm_PropertyRow.PropertyName
+
+	If command.DocString <> EXIT_SUCCESS Then
+		MsgBox "The document would not take the removal. The console says why."
+	End If
 
 End Sub
 
@@ -304,10 +690,8 @@ End Sub
 
 ' The raw value this command output is configured to send.
 '
-' Which one depends on the direction and not on which of the four tags
-' it is: an Alt output is the same command over the second path, and a
-' select output is the same command with the execute withheld, so all
-' four carry the same number.
+' Which one depends on the direction and not on the tag: an Alt output is
+' the same command over the second path, so it sends the same number.
 '
 ' A command the manifest has no raw value for opens the box on 0 rather
 ' than on nothing, so what is about to be sent is always in front of
@@ -320,15 +704,8 @@ Function RawValueFor(obj)
 	source = ""
 
 	Select Case LCase(xatm_PropertyRow.PropertyName & "")
-
-		Case "commandopen",  "commandopenalt", _
-		     "commandsboopen",  "commandsboopenalt"
-			source = "RawValueCommandOpen"
-
-		Case "commandclose", "commandclosealt", _
-		     "commandsboclose", "commandsboclosealt"
-			source = "RawValueCommandClose"
-
+		Case "commandopen",  "commandopenalt"  : source = "RawValueCommandOpen"
+		Case "commandclose", "commandclosealt" : source = "RawValueCommandClose"
 	End Select
 
 	If source = "" Then Exit Function
@@ -524,179 +901,7 @@ Sub SendRawValue(obj)
 		MsgBox "Nothing written - " & tagPath & " would not take " & _
 		       answer & " - " & failed
 	End If
-
-End Sub
-
-<xatm_PropertyRow.btnBuildExpression:btnBuildExpression_Click()>
-Sub btnBuildExpression_Click()
-
-	' The conditions behind a bound property, drawn rather than read.
-	'
-	' A property the manifest lets be bound carries an expression instead
-	' of a value - the field conditions that have to hold before a
-	' maneuver may start, written as one line of E3 expression over the
-	' interface tags. As text that line is a wall of ANDs and nobody can
-	' see which term is the one holding the maneuver back. InterlockDiagram
-	' draws it as the tree it is, a lamp against each term.
-	'
-	' Shown and not written. The expression itself is bound in Studio,
-	' where there is room for it; this button is how somebody standing at
-	' the panel finds out why a start is refused.
-
-	If Not Can(EXPOSE_EXPRESSION) Then Exit Sub
-
-	' PropertySource is where a bound property keeps its expression - the
-	' same column that holds the tag path for an IOTag row, because both
-	' answer where the value comes from.
-	Dim expression
-	expression = Trim(xatm_PropertyRow.PropertySource & "")
-
-	If expression = "" Then
-		MsgBox xatm_PropertyRow.PropertyName & " is not bound to an " & _
-		       "expression yet, so there are no conditions to draw.", _
-		       vbInformation, DIAGRAM_TITLE
-		Exit Sub
-	End If
-
-	OpenDiagram expression
-
-End Sub
-
-
-' What the module is called and how it is asked to open.
-'
-' The control is added to the screen, given its argument and taken away
-' again - opening is a side effect of Abrir changing, so the object only
-' has to exist for the instant it takes to flip it.
-Const DIAGRAM_OPENER_CLASS = "interlockdiagram.ild_AbrirIntertravamento"
-Const DIAGRAM_OPENER_NAME  = "ild_AbrirIntertravamento"
-
-' The way in for a project that has the screen but not the control.
-'
-' A frame of this library's own, named here rather than worked out from
-' the path the way the module's own example does. That example builds a
-' frame name by striking the dots out of a CommandUnit path, which has
-' nothing sensible to say when what is being drawn is an expression
-' rather than a command unit.
-Const DIAGRAM_SCREEN = "ild_DiagramScreen"
-Const DIAGRAM_FRAME  = "xatm_InterlockDiagram"
-Const DIAGRAM_TITLE  = "Intertravamentos"
-
-' Title bar (1), close (2), border (16), movable (64), and the two the
-' module's own example asks for (256, 512).
-Dim FRAME_FLAGS : FRAME_FLAGS = 1 + 2 + 16 + 64 + 256 + 512
-
-' Which of the module's four modes this application is.
-'
-'   1  OTS
-'   2  IHM or SCADA on Elipse Power
-'   3  Elipse E3, expressions built from IOTags or InternalTags
-'   4  Elipse E3, the CPFL Renovaveis standard
-'
-' Three, because that is what these expressions are: they are written
-' over the interface tags, which are InternalTags, and not over Power
-' measurements. The module's own example picks 4 for anything that is
-' not a PowerCommandUnit, which is the CPFL standard and not this one.
-'
-' If the diagram comes up empty this is the first thing to try.
-Const EXECUTION_MODE = 3
-
-' The module's high performance drawing, and the flag that tells it to
-' read calculated properties rather than SCADA ones (1 scada, 5
-' calculated).
-Const HIGH_PERFORMANCE = True
-Const USE_CALCULATED   = 5
-
-' The one flag this button asks about, written out again because one E3
-' object cannot call another's and the row's own copy lives in the
-' control's scope rather than in this button's.
-Const EXPOSE_EXPRESSION = 8
-
-
-' Puts the diagram on screen for one expression.
-'
-' Two ways in, and which one a station has is the site's business: the
-' control where InterlockDiagram is installed as a library, and the
-' screen in a frame where it is not. The control is tried first because
-' it needs nothing of the site at all.
-Sub OpenDiagram(expression)
-
-	Dim opener
-	Set opener = Nothing
-
-	On Error Resume Next
-	Set opener = Screen.AddObject(DIAGRAM_OPENER_CLASS, True, DIAGRAM_OPENER_NAME)
-	On Error Goto 0
-
-	If Not opener Is Nothing Then
-
-		On Error Resume Next
-
-		opener.Arg = Array(expression, EXECUTION_MODE, HIGH_PERFORMANCE, _
-		                   TreeView(), USE_CALCULATED)
-
-		' Opening is the change and not the value, so this is flipped rather
-		' than set - asking twice for the same diagram has to open it twice.
-		opener.Abrir = Not opener.Abrir
-
-		Screen.DeleteObject opener.Name
-
-		On Error Goto 0
-
-		Exit Sub
-
-	End If
-
-	Dim panel
-	Set panel = Nothing
-
-	On Error Resume Next
-	Set panel = Application.GetFrame(DIAGRAM_FRAME)
-	On Error Goto 0
-
-	' Said plainly rather than as a failed open, the way the configuration
-	' panel says it: a station that never had InterlockDiagram added reads
-	' exactly like one where the frame was renamed, so both names are in
-	' the message.
-	If panel Is Nothing Then
-		MsgBox "There is nowhere to draw the interlock diagram. This " & _
-		       "project has neither the " & DIAGRAM_OPENER_CLASS & " " & _
-		       "control nor a frame called " & DIAGRAM_FRAME & ".", _
-		       vbExclamation, DIAGRAM_TITLE
-		Exit Sub
-	End If
-
-	panel.SetFrameOptions DIAGRAM_TITLE, FRAME_FLAGS
-	panel.OpenScreen DIAGRAM_SCREEN, Array(expression, EXECUTION_MODE)
-
-End Sub
-
-
-' The WatchWindow's tree, which the module is handed so that clicking a
-' term in the diagram can find it in the domain. Nothing where this
-' viewer has no WatchWindow - the diagram draws either way.
-Function TreeView()
-
-	Set TreeView = Nothing
-
-	On Error Resume Next
-	Set TreeView = Application.Item("WatchWindowViewerObjects") _
-	                          .Item("Global").Item("XML_TreeView").Value
-	On Error Goto 0
-
-End Function
-
-
-Function Can(flag)
-
-	Can = ((xatm_PropertyRow.Exposure And flag) <> 0)
-
-End Function
-
-
-' A Function may not be the last thing in a scope; E3 rejects it and
-' says nothing about why. This is the guard, not debris.
-Sub EndOfScope()
+	
 End Sub
 
 <xatm_PropertyRow.btnPickTag:btnPickTag_Click()>
@@ -839,109 +1044,7 @@ Sub SendSource(path)
 		MsgBox "The project holds the tag, but the document would not take it. " & _
 		       "The console says why."
 	End If
-
-End Sub
-
-<xatm_PropertyRow.btnClearSource:btnClearSource_Click()>
-Sub btnClearSource_Click()
-
-	' Back to no source at all.
-	'
-	' Picking another tag already replaces the one that is there, so this
-	' button is for the other thing: saying that a property should not be
-	' wired to anything. That is rare, which is why it is one small button
-	' and not a column, and destructive, which is why it carries its own
-	' colour and does not sit next to the picker's.
-	'
-	' Nothing is asked. The removal is staged the way every other edit on
-	' this panel is staged - the document is told, the project is not, and
-	' Salvar is what makes it real - so a mistake is visible and costs
-	' nothing for as long as it matters. A question every time would charge
-	' the whole job for the mistake made once in a while.
-	Dim current
-	current = Trim(xatm_PropertyRow.PropertySource & "")
-
-	' Nothing to take off. The button is not shown on a row in this state,
-	' so this is the row that was built before it was wired and never built
-	' again - not something an operator can arrive at by looking.
-	If current = "" Then Exit Sub
-
-	If MsgBox( _
-		"Remover a origem de " & xatm_PropertyRow.PropertyName & "?" & _
-		vbCrLf & vbCrLf & _
-		current & vbCrLf & vbCrLf & _
-		"A propriedade fica sem vínculo nenhum, e para voltar atrás " & _
-		"é preciso configurar a origem outra vez." & vbCrLf & vbCrLf & _
-		"Nada chega ao projeto até você clicar em Salvar.", _
-		vbYesNo + vbExclamation + vbDefaultButton2, "Remover origem") <> vbYes Then Exit Sub
-
-	SendSource ""
-
-	' What the row holds and what its column shows, now that the document
-	' has been told - the same tidying the picker does with the path it
-	' chose, rather than waiting for the panel to be built again.
-	xatm_PropertyRow.PropertySource = ""
-
-	On Error Resume Next
-	xatm_PropertyRow.Item("txtConfiguredSource").Value = ""
-	xatm_PropertyRow.Item("txtConfiguredSource").Tip = ""
-	On Error Goto 0
-
-	' And the button goes with the source: there is nothing left for it to
-	' do, and a row with no source does not show one.
-	On Error Resume Next
-	Me.Visible = False
-	On Error Goto 0
-
-End Sub
-
-
-' The command tag in xatm_config that owns the document, and the kind of
-' edit this button sends. Written out again here because one E3 object
-' cannot call another's - the picker next door keeps the same four for
-' the same reason.
-Const SET_PROPERTY   = "xatm_config_data.Config.SetProperty"
-Const PROPERTY_VALUE = "xatm_config_data.Config.PropertyValue"
-Const KIND_SOURCE    = "source"
-Const EXIT_SUCCESS   = "EXIT_SUCCESS"
-
-
-' Tells the document what this row is wired to, which from this button is
-' nothing at all.
-'
-' The same two tags every other edit on this panel travels on, and the
-' same order: the value first so it is standing by, then the command that
-' reads it.
-Sub SendSource(path)
-
-	Dim command, valueTag
-	Set command = Nothing
-	Set valueTag = Nothing
-
-	On Error Resume Next
-	Set command = Application.GetObject(SET_PROPERTY)
-	Set valueTag = Application.GetObject(PROPERTY_VALUE)
-	On Error Goto 0
-
-	If command Is Nothing Or valueTag Is Nothing Then
-		MsgBox "The source was not removed - " & SET_PROPERTY & " and " & _
-		       PROPERTY_VALUE & " are what carry an edit, and one of them " & _
-		       "is missing."
-		Exit Sub
-	End If
-
-	valueTag.WriteEx path
-
-	' kind|key|name. key rather than path: Source is id:700 for anything
-	' with an Id, so renaming an object does not strand the row.
-	command.WriteEx KIND_SOURCE & "|" & _
-	                xatm_PropertyRow.Source & "|" & _
-	                xatm_PropertyRow.PropertyName
-
-	If command.DocString <> EXIT_SUCCESS Then
-		MsgBox "The document would not take the removal. The console says why."
-	End If
-
+	
 End Sub
 
 <xatm_PropertyRow.txtConfiguredValue:txtConfiguredValue_Validate(Cancel, NewValue)>
@@ -1190,11 +1293,11 @@ Sub xatm_PropertyRow_OnStartRunning()
 	'
 	' A path or an expression is neither of the other two columns. It is not
 	' the plant's reading and it is not a value that was typed - it is where
-	' the value comes from, which a breaker's twelve tags and a BTC's
+	' the value comes from, which a breaker's twelve tags and a TMTNM's
 	' Transformer both have and a CommandTimeout does not.
 	Item("txtConfiguredSource").Value = ConfiguredSource()
 	Item("txtConfiguredSource").Tip = PropertySource
-	
+
 	' Read only. A tag or an object is picked, not spelled out, and it is
 	' the picker that will set this.
 	Item("txtConfiguredSource").IsSetPoint = False
@@ -1211,7 +1314,7 @@ Sub xatm_PropertyRow_OnStartRunning()
 	' two are exclusive: no property is both an IOTag and bindable.
 	ShowItem "btnPickTag", PicksTag()
 	ShowItem "btnBuildExpression", Can(EXPOSE_EXPRESSION)
-
+	
 	' And the force button, where the manifest says the value may be
 	' forced at runtime. Not exclusive with the other two: a command
 	' output is both wired to a tag and forceable, so a row can carry
@@ -1233,7 +1336,9 @@ Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never save
 Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
 Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
 
-Const MAX_SOURCE_LENGTH = 48
+' How much of a path the source column has room for - the same cut the
+' row makes for itself when it is built.
+Const MAX_SOURCE_LENGTH = 61
 
 ' Whether the manifest allowed this. Empty And anything is 0, so a row
 ' built without an Exposure allows nothing.
@@ -1279,7 +1384,7 @@ End Sub
 ' to put in the field.
 '
 ' An association is left out of it: it has a column of its own, and the
-' path of the transformer a BTC drives reads badly in a field sized for
+' path of the transformer a TMTNM drives reads badly in a field sized for
 ' a timeout.
 Function ConfiguredText()
 
@@ -1327,7 +1432,7 @@ Function ConfiguredSource()
 	Else
 		ConfiguredSource = CStr(PropertySource)
 	End If
-
+	
 End Function
 
 
@@ -1342,7 +1447,7 @@ End Function
 
 ' A property configured by the tag it is wired to rather than by a value
 ' of its own. An IOTag names a tag out in the project, an InternalTag one
-' of the object's own - a breaker's trip output and a BTC's start command
+' of the object's own - a breaker's trip output and a TMTNM's start command
 ' - and the row shows the two alike, because what there is to show of
 ' either is which tag it points at.
 Function IsTagProperty()
@@ -1361,7 +1466,6 @@ Function IsBooleanProperty()
 	IsBooleanProperty = (LCase(PropertyType & "") = "boolean")
 
 End Function
-
 
 ' Where the current value is read from, "" when there is nothing to read.
 '
@@ -1395,12 +1499,22 @@ Function LiveSource()
 
 	If Trim(ObjectPath & "") = "" Then Exit Function
 	If Trim(PropertyName & "") = "" Then Exit Function
-
-	' E3 renders a Boolean in the language Windows is running in
+	
+	LiveSource = ObjectPath & "." & PropertyName
+	
+	' A Boolean, spelled the way the column beside it spells one.
+	'
+	' pt-BR machine the current column reads Verdadeiro and Falso while the
+	' configured one reads True and False - that one comes out of the XML as
+	' text and is never translated. Two columns put side by side to be
+	' compared at a glance, disagreeing on wording alone.
+	'
+	' E3 renders a Boolean in the language Windows is running in.
+	' Settled in the expression rather than by reformatting a display,
+	' because a link takes an expression and not only a path: the choice of
+	' words is made where the value is read.
 	If IsBooleanProperty() Then
 		LiveSource = "IIf(CBool(" & LiveSource & ") = True, ""True"", ""False"")"
-	Else
-		LiveSource = ObjectPath & "." & PropertyName
 	End If
 
 End Function
@@ -1513,22 +1627,12 @@ Sub objArea_OnStartRunning()
 		
 End Sub
 
-<xatm_TAStatus.Source:xatm_TAStatus_OnSourceChanged()>
-Sub xatm_TAStatus_OnSourceChanged()
-
-	' Bind to an xatm_TA. Which step it is on, and how long it has been there.
-	Links.CreateLink "CurrentStep", Source.Item("FSM").Item("Main").PathName & ".Value"
-	Links.CreateLink "StepTimer", Source.Item("FSM").Item("StepTimer").PathName & ".Value"
-
-End Sub
-
 <xatm_TMTNMStatus.Source:xatm_TMTNMStatus_OnSourceChanged()>
 Sub xatm_TMTNMStatus_OnSourceChanged()
-
-	' Bind to an xatm_TMTNM. Which step it is on, and how long it has been there.
+	
 	Links.CreateLink "CurrentStep", Source.Item("FSM").Item("Main").PathName & ".Value"
 	Links.CreateLink "StepTimer", Source.Item("FSM").Item("StepTimer").PathName & ".Value"
-
+	
 End Sub
 
 <xatm_TransformerSymbol.Source:xatm_TransformerSymbol_OnSourceChanged()>
