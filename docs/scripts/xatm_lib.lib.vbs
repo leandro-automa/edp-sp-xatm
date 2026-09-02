@@ -5408,7 +5408,7 @@ End Sub
 <xatm_TA.Signals.Blocked:Blocked_OnChangedValue()>
 Sub Blocked_OnChangedValue()
 	
-	xatm_AT.Blocked = Value
+	xatm_TA.Blocked = Value
 	
 End Sub
 
