@@ -6047,6 +6047,28 @@ Sub xatm_TA_OnStartRunning()
 		"True quando uma transferência automÁtica não pode partir - desabilitado, bloqueado pelo operador ou pelo intertravamento geral, ou barrado pelo campo."
 
 
+	' How the last transfer went, on the footing the manual automation and
+	' the reclosing already use.
+	'
+	' Cleared at the start of a transfer and not at the end of one, so the
+	' control room goes on seeing how the last attempt went for as long as
+	' nothing new has happened. A TA is not asked for by anybody, so the
+	' next start is the next trip - and between two trips these two are the
+	' whole account of what the scheme did.
+	'
+	' One instance per transformer, so the pair names the transformer by
+	' being on it. That is what the control room's list asks for on the base
+	' maneuver; the per-contingency variants it also lists would need this
+	' class to carry gates, which it does not.
+	AddProperty bag, "Successful", "Boolean", False, _
+		"True when the last automatic transfer completed. Cleared when the next one starts, so what the last attempt did stays readable until then.", _
+		"True quando a última transferência automática foi concluída. Apagada quando a próxima parte, de modo que o resultado da anterior permaneça legível até lá."
+
+	AddProperty bag, "Unsuccessful", "Boolean", False, _
+		"True when the last automatic transfer did not complete - a step failed and the sequence stopped on it.", _
+		"True quando a última transferência automática não foi concluída - um passo falhou e a sequência parou nele."
+
+
 	' --- the command interface ------------------------------------------
 	'
 	' No CommandStart of any kind. Over IEC 60870-5-104 an address means
@@ -6088,6 +6110,9 @@ Sub xatm_TA_OnStartRunning()
 	SetExposure bag, "Blocked", EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
 
+	SetExposure bag, "Successful",   EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "Unsuccessful", EXPOSE_INTERFACE + EXPOSE_IOTAG
+
 	For i = 1 To 6
 		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
 	Next
@@ -6108,6 +6133,11 @@ Sub xatm_TA_OnStartRunning()
 	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO TA", PAIR_BLOCKED,      SEV_MEDIUM
 
 	SetAlarm bag, "Blocked",       "TRANSFERÊNCIA AUTOMÁTICA", PAIR_BLOCKED, SEV_MEDIUM
+
+	' Low on the one that went well and high on the one that did not, the
+	' way the manual automation and the reclosing are graded.
+	SetAlarm bag, "Successful",    "TRANSFERÊNCIA AUTOMÁTICA BEM SUCEDIDA", PAIR_ACTUATED, SEV_LOW
+	SetAlarm bag, "Unsuccessful",  "TRANSFERÊNCIA AUTOMÁTICA MAL SUCEDIDA", PAIR_ACTUATED, SEV_HIGH
 
 	For i = 1 To 6
 		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH

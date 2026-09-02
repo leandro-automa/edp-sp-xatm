@@ -3790,6 +3790,8 @@ Sub Reset()
 	
 	xatm_TA.Running 		= False
 	xatm_TA.GeneralBlock	= False
+	xatm_TA.Successful		= False
+	xatm_TA.Unsuccessful	= False
 	
 	' ===============
 	' RESET ALL STEP FAIL POINTS
@@ -4040,6 +4042,13 @@ Sub Start_OnChangedValue()
 	xatm_TA.Item("FSM").Item("StepTimer").WriteEx 0
 	xatm_TA.Item("FSM").Item("Main").WriteEx 0
 	xatm_TA.Running = True
+
+	' The last transfer's result stands until this one starts, the way the
+	' manual automation's does. Here the next start is the next trip, so
+	' between two of them these two are the whole account of what the scheme
+	' did - which is why they are cleared at the start and never at the end.
+	xatm_TA.Successful   = False
+	xatm_TA.Unsuccessful = False
 
 	If impedeId = 0 Then
 		WriteLog "Start - TA TR" & triggerId
@@ -4333,6 +4342,7 @@ Sub Main_Completed()
 	WriteEx  Empty, 0
 	
     xatm_TA.Running = False
+    xatm_TA.Successful = True
     WriteLog "Automation completed successfully."
             	
 End Sub
@@ -4470,6 +4480,7 @@ Sub Main_GlobalLockout()
 	
 	xatm_TA.Running 		= False
 	xatm_TA.GeneralBlock 	= True
+	xatm_TA.Unsuccessful	= True
 
 	Select Case Value
 		Case 1 : xatm_TA.StepExecutionFailed1 = True
