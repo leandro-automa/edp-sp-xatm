@@ -4051,6 +4051,7 @@ Sub Start_OnChangedValue()
 
 End Sub
 
+
 ' True if any OTHER automation object is currently running (mutual exclusion).
 ' Relies on a common Running property instead of enumerating each type.
 '
@@ -5282,10 +5283,12 @@ End Sub
 Sub Reset()
 	
 	xatm_TMTNM.Running 		= False
+	ClearRunningGates
 	xatm_TMTNM.GeneralBlock	= False
 	xatm_TMTNM.Reverting	= False
 	xatm_TMTNM.Successful	= False
 	xatm_TMTNM.Unsuccessful	= False
+	ClearGateResults
 	
 	' ===============
 	' RESET ALL STEP FAIL POINTS
@@ -5365,6 +5368,61 @@ Sub Reset_Reset()
 		
 End Sub
 
+
+
+' Every per-gate Running put out.
+'
+' All ten rather than the one that was lit: nothing has to be remembered
+' between the start of a maneuver and the end of it, and a point stranded
+' by a restart or by a manifest rebuilt mid-run is cleared by the next
+' pass rather than sitting at EM CURSO in the control room for ever.
+'
+' Late bound, the way ReadGate reads a gate - E3 gives no way to index an
+' XObject's properties by name, and a property that is not there is not
+' worth stopping a maneuver over.
+Sub ClearRunningGates()
+
+	Dim gm, gi, g
+
+	On Error Resume Next
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+			If gi = 0 Then g = gm Else g = gm & (gi * 100)
+			Execute "xatm_TMTNM.Running" & g & " = False"
+		Next
+	Next
+
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' Every per-gate outcome put out.
+'
+' At the start of a run and at a reset, because what stands is the last
+' run's result and a new run supersedes it. All twenty rather than the
+' pair for one gate: nothing has to be remembered between runs, and a
+' point stranded by a restart is cleared by the next start.
+Sub ClearGateResults()
+
+	Dim gm, gi, g
+
+	On Error Resume Next
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+			If gi = 0 Then g = gm Else g = gm & (gi * 100)
+			Execute "xatm_TMTNM.Successful" & g & " = False"
+			Execute "xatm_TMTNM.Unsuccessful" & g & " = False"
+		Next
+	Next
+
+	Err.Clear
+	On Error Goto 0
+
+End Sub
 <xatm_TMTNM.Commands.Start:Start_CommandStartNM()>
 Sub Start_CommandStartNM()
 	
@@ -5696,6 +5754,7 @@ Sub Start_OnChangedValue()
 	' room keeps seeing how the previous attempt went.
 	xatm_TMTNM.Successful   = False
 	xatm_TMTNM.Unsuccessful = False
+	ClearGateResults
 	xatm_TMTNM.Reverting    = False
 	
 	xatm_TMTNM.Item("FSM").Item("AutomationType").WriteEx runMode
@@ -5704,6 +5763,20 @@ Sub Start_OnChangedValue()
 	xatm_TMTNM.Item("FSM").Item("StepTimer").WriteEx 0
 	xatm_TMTNM.Item("FSM").Item("Main").WriteEx 0
 	xatm_TMTNM.Running = True
+
+	' And the one point that says which maneuver it is. Every other is put
+	' out first, so a gate left standing by a run that ended badly cannot
+	' show a second maneuver as EM CURSO alongside this one.
+	'
+	' Running itself stays what it was: whether anything is in progress at
+	' all, which is the question the mutual exclusion between automations
+	' asks and the one these ten cannot answer between them.
+	ClearRunningGates
+
+	On Error Resume Next
+	Execute "xatm_TMTNM.Running" & gate & " = True"
+	Err.Clear
+	On Error Goto 0
 
 	If runMode <> mode Then
 		WriteLog "Start - " & BusbarLabel(runMode)
@@ -6124,13 +6197,73 @@ Sub WriteLog(message)
 
 End Sub
 
+
+
+' Every per-gate Running put out.
+'
+' All ten rather than the one that was lit: nothing has to be remembered
+' between the start of a maneuver and the end of it, and a point stranded
+' by a restart or by a manifest rebuilt mid-run is cleared by the next
+' pass rather than sitting at EM CURSO in the control room for ever.
+'
+' Late bound, the way ReadGate reads a gate - E3 gives no way to index an
+' XObject's properties by name, and a property that is not there is not
+' worth stopping a maneuver over.
+Sub ClearRunningGates()
+
+	Dim gm, gi, g
+
+	On Error Resume Next
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+			If gi = 0 Then g = gm Else g = gm & (gi * 100)
+			Execute "xatm_TMTNM.Running" & g & " = False"
+		Next
+	Next
+
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' Every per-gate outcome put out.
+'
+' At the start of a run and at a reset, because what stands is the last
+' run's result and a new run supersedes it. All twenty rather than the
+' pair for one gate: nothing has to be remembered between runs, and a
+' point stranded by a restart is cleared by the next start.
+Sub ClearGateResults()
+
+	Dim gm, gi, g
+
+	On Error Resume Next
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+			If gi = 0 Then g = gm Else g = gm & (gi * 100)
+			Execute "xatm_TMTNM.Successful" & g & " = False"
+			Execute "xatm_TMTNM.Unsuccessful" & g & " = False"
+		Next
+	Next
+
+	Err.Clear
+	On Error Goto 0
+
+End Sub
 <xatm_TMTNM.FSM.Main:Main_Completed()>
 Sub Main_Completed()
 	
 	' Read before the state is torn down, because tearing it down is what
 	' this does.
-	Dim reverted
+	Dim reverted, ranGate
 	reverted = IsReverting()
+
+	' Which maneuver this was, taken off the point still lit for it.
+	' AutomationType would answer too, but it is wiped three lines down and
+	' it spells a busbar run TMB1A where the gate for it is plain TM.
+	ranGate = RunningGate()
 
 	Parent.Item("TriggerTransformerId").WriteEx  Empty, 0
 	Parent.Item("AutomationType").WriteEx Empty, 0
@@ -6138,6 +6271,7 @@ Sub Main_Completed()
 	WriteEx  Empty, 0
 
 	xatm_TMTNM.Running   = False
+	ClearRunningGates
 	xatm_TMTNM.Reverting = False
 
 	' A revert reaches the end of a sequence without the maneuver having
@@ -6147,11 +6281,13 @@ Sub Main_Completed()
 	If reverted Then
 
 		xatm_TMTNM.Unsuccessful = True
+		SetGateResult "Unsuccessful", ranGate
 		WriteLog "Reverted - the substation is back the way it was, and the maneuver did not complete."
 
 	Else
 
 		xatm_TMTNM.Successful = True
+		SetGateResult "Successful", ranGate
 		WriteLog "Automation completed successfully."
 
 	End If
@@ -6618,9 +6754,15 @@ Sub Main_GlobalLockout()
 
 	End If
 
+	' Taken before the points go out, for Main_Completed's reason.
+	Dim ranGate
+	ranGate = RunningGate()
+
 	xatm_TMTNM.Running      = False
+	ClearRunningGates
 	xatm_TMTNM.GeneralBlock = True
 	xatm_TMTNM.Unsuccessful = True
+	SetGateResult "Unsuccessful", ranGate
 
 	WriteLog "Global lockout activated due to automation failure."
 
@@ -6711,6 +6853,7 @@ Sub Main_Main()
 		
 		WriteLog "Automation not enabled."
 		xatm_TMTNM.Running = False
+		ClearRunningGates
 		Exit Sub
 	
 	End If
@@ -8057,6 +8200,96 @@ Sub S6TM(triggerId, impedeId)
 
 End Sub
 
+
+
+' Every per-gate Running put out.
+'
+' All ten rather than the one that was lit: nothing has to be remembered
+' between the start of a maneuver and the end of it, and a point stranded
+' by a restart or by a manifest rebuilt mid-run is cleared by the next
+' pass rather than sitting at EM CURSO in the control room for ever.
+'
+' Late bound, the way ReadGate reads a gate - E3 gives no way to index an
+' XObject's properties by name, and a property that is not there is not
+' worth stopping a maneuver over.
+Sub ClearRunningGates()
+
+	Dim gm, gi, g
+
+	On Error Resume Next
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+			If gi = 0 Then g = gm Else g = gm & (gi * 100)
+			Execute "xatm_TMTNM.Running" & g & " = False"
+		Next
+	Next
+
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' Which maneuver is running, as its gate suffix - "" when none is.
+'
+' Read off the ten Running points rather than off AutomationType. That
+' tag is torn down at the end of a run, and it spells a busbar maneuver
+' TMB1A where the gate for it is plain TM. The lit point is the gate,
+' exactly, and it is still lit when this is asked.
+Function RunningGate()
+
+	RunningGate = ""
+
+	Dim gm, gi, g
+
+	On Error Resume Next
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+
+			If gi = 0 Then g = gm Else g = gm & (gi * 100)
+
+			gResultValue = False
+			Execute "gResultValue = xatm_TMTNM.Running" & g
+
+			If CBool(gResultValue) Then RunningGate = g
+
+		Next
+	Next
+
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
+
+' One outcome point set, for the gate that ran.
+'
+' Nothing is set where the gate is not known. A run whose point was
+' already out leaves the instance's own Successful or Unsuccessful to say
+' what happened, which is what the control room had before these existed
+' - a result missing from one of twenty is better than one invented on
+' the wrong gate.
+Sub SetGateResult(kind, gate)
+
+	If gate = "" Then Exit Sub
+
+	On Error Resume Next
+	Execute "xatm_TMTNM." & kind & gate & " = True"
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' Scratch cell for the late-bound read, the way ReadGate keeps one.
+Dim gResultValue
+
+
+' A Function may not be the last thing in a scope.
+Sub EndOfResultHelpers()
+End Sub
 <xatm_TMTNM.Signals.BlockedNM:BlockedNM_OnChangedValue()>
 Sub BlockedNM_OnChangedValue()
 	
