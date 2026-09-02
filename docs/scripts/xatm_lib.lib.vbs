@@ -3792,6 +3792,8 @@ Sub Reset()
 	xatm_TA.GeneralBlock	= False
 	xatm_TA.Successful		= False
 	xatm_TA.Unsuccessful	= False
+	ClearGateRunning
+	ClearGateResults
 	
 	' ===============
 	' RESET ALL STEP FAIL POINTS
@@ -3871,6 +3873,51 @@ Sub Reset_Reset()
 		
 End Sub
 
+
+
+' The per-contingency Running points, all four put out.
+'
+' All of them rather than the one that was lit: nothing has to be
+' remembered between the start of a transfer and the end of it, and a
+' point stranded by a restart is cleared by the next pass rather than
+' sitting at EM CURSO in the control room.
+'
+' Late bound, the way ReadGate reads a gate - E3 gives no way to index an
+' XObject's properties by name, and a property that is not there is not
+' worth stopping a transfer over.
+Sub ClearGateRunning()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 4
+		Execute "xatm_TA.Running" & (i * 100) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' The per-contingency outcomes, all eight put out.
+'
+' At the start of a transfer and at a reset only. What stands between two
+' trips is the last transfer's result, so these outlive the run that set
+' them - which is the whole difference between them and the Running points
+' above.
+Sub ClearGateResults()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 4
+		Execute "xatm_TA.Successful" & (i * 100) & " = False"
+		Execute "xatm_TA.Unsuccessful" & (i * 100) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
 <xatm_TA.Commands.Start:Start_OnChangedValue()>
 Sub Start_OnChangedValue()
 
@@ -4049,6 +4096,20 @@ Sub Start_OnChangedValue()
 	' did - which is why they are cleared at the start and never at the end.
 	xatm_TA.Successful   = False
 	xatm_TA.Unsuccessful = False
+
+	' And the same three per contingency: every gate put out, then the one
+	' this transfer runs on lit. impedeId is already the suffix - 0 for the
+	' transformer's own transfer, 100 to 400 for a contingency - so there is
+	' nothing here to translate.
+	ClearGateRunning
+	ClearGateResults
+
+	If impedeId <> 0 Then
+		On Error Resume Next
+		Execute "xatm_TA.Running" & impedeId & " = True"
+		Err.Clear
+		On Error Goto 0
+	End If
 
 	If impedeId = 0 Then
 		WriteLog "Start - TA TR" & triggerId
@@ -4333,6 +4394,51 @@ Sub WriteLog(message)
 		
 End Sub
 
+
+
+' The per-contingency Running points, all four put out.
+'
+' All of them rather than the one that was lit: nothing has to be
+' remembered between the start of a transfer and the end of it, and a
+' point stranded by a restart is cleared by the next pass rather than
+' sitting at EM CURSO in the control room.
+'
+' Late bound, the way ReadGate reads a gate - E3 gives no way to index an
+' XObject's properties by name, and a property that is not there is not
+' worth stopping a transfer over.
+Sub ClearGateRunning()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 4
+		Execute "xatm_TA.Running" & (i * 100) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' The per-contingency outcomes, all eight put out.
+'
+' At the start of a transfer and at a reset only. What stands between two
+' trips is the last transfer's result, so these outlive the run that set
+' them - which is the whole difference between them and the Running points
+' above.
+Sub ClearGateResults()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 4
+		Execute "xatm_TA.Successful" & (i * 100) & " = False"
+		Execute "xatm_TA.Unsuccessful" & (i * 100) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
 <xatm_TA.FSM.Main:Main_Completed()>
 Sub Main_Completed()
 		
@@ -4343,6 +4449,7 @@ Sub Main_Completed()
 	
     xatm_TA.Running = False
     xatm_TA.Successful = True
+    SetGateResult "Successful"
     WriteLog "Automation completed successfully."
             	
 End Sub
@@ -4481,6 +4588,7 @@ Sub Main_GlobalLockout()
 	xatm_TA.Running 		= False
 	xatm_TA.GeneralBlock 	= True
 	xatm_TA.Unsuccessful	= True
+	SetGateResult "Unsuccessful"
 
 	Select Case Value
 		Case 1 : xatm_TA.StepExecutionFailed1 = True
@@ -4504,6 +4612,7 @@ Sub Main_Main()
 		
 		WriteLog "Automation not enabled."
 		xatm_TA.Running = False
+		ClearGateRunning
 		Exit Sub
 	
 	End If
@@ -5232,6 +5341,70 @@ Sub S6TA(triggerId, impedeId)
 		
 End Sub
 
+
+
+' The outcome onto the gate this transfer ran on, and that gate put out.
+'
+' Which gate is read off the Running point still lit for it, the way the
+' manual automation reads its own: the FSM tags are torn down around here
+' and the lit point is not.
+'
+' No gate lit means the transformer's own transfer, which has no suffixed
+' point of its own - the base Successful or Unsuccessful set beside this
+' call is the whole of what that one needs.
+Sub SetGateResult(kind)
+
+	Dim gate
+	gate = RunningGate()
+
+	On Error Resume Next
+	If gate <> "" Then Execute "xatm_TA." & kind & gate & " = True"
+	Err.Clear
+	On Error Goto 0
+
+	ClearGateRunning
+
+End Sub
+
+
+' Which contingency this transfer is running on, as the suffix - "" for
+' the transformer's own, which lights no suffixed point.
+Function RunningGate()
+
+	RunningGate = ""
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 4
+		gGateFlag = False
+		Execute "gGateFlag = xatm_TA.Running" & (i * 100)
+		If CBool(gGateFlag) Then RunningGate = CStr(i * 100)
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
+
+' Scratch cell for the late-bound read, the way ReadGate keeps one.
+Dim gGateFlag
+
+
+' The per-contingency Running points, all four put out - the copy this
+' tag needs, one scope being unable to call another's.
+Sub ClearGateRunning()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 4
+		Execute "xatm_TA.Running" & (i * 100) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
 <xatm_TA.Signals.Blocked:Blocked_OnChangedValue()>
 Sub Blocked_OnChangedValue()
 	

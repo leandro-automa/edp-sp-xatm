@@ -6058,8 +6058,8 @@ Sub xatm_TA_OnStartRunning()
 	'
 	' One instance per transformer, so the pair names the transformer by
 	' being on it. That is what the control room's list asks for on the base
-	' maneuver; the per-contingency variants it also lists would need this
-	' class to carry gates, which it does not.
+	' maneuver; the per-contingency variants it also lists are the four
+	' below it.
 	AddProperty bag, "Successful", "Boolean", False, _
 		"True when the last automatic transfer completed. Cleared when the next one starts, so what the last attempt did stays readable until then.", _
 		"True quando a última transferência automática foi concluída. Apagada quando a próxima parte, de modo que o resultado da anterior permaneça legível até lá."
@@ -6067,6 +6067,36 @@ Sub xatm_TA_OnStartRunning()
 	AddProperty bag, "Unsuccessful", "Boolean", False, _
 		"True when the last automatic transfer did not complete - a step failed and the sequence stopped on it.", _
 		"True quando a última transferência automática não foi concluída - um passo falhou e a sequência parou nele."
+
+	' And the same three per contingency.
+	'
+	' A TA runs a different sequence depending on which other transformer is
+	' already out, and the control room's list carries a point per variant -
+	' AGBS is the transformer's own, A2BS is its transfer with TR2 impeded.
+	'
+	' No gate expression stands behind them, unlike the manual automation:
+	' this scheme has the one AutomaticBlock for the whole of it, and one
+	' blocked signal is all the list asks for.
+	'
+	' Running per contingency is not on the list. It is here because the
+	' three belong together - a variant able to say it succeeded and failed
+	' but not that it is running would be the odd one out - and one more
+	' point per variant is cheap beside explaining the gap later.
+	For i = 1 To 4
+
+		AddProperty bag, "Running" & (i * 100), "Boolean", False, _
+			"True while the automatic transfer with transformer " & (i * 100) & " out of service is the one in progress.", _
+			"True enquanto a transferência automática com o transformador " & (i * 100) & " impedido é a que está em andamento."
+
+		AddProperty bag, "Successful" & (i * 100), "Boolean", False, _
+			"True when the last automatic transfer with transformer " & (i * 100) & " out of service completed.", _
+			"True quando a última transferência automática com o transformador " & (i * 100) & " impedido foi concluída."
+
+		AddProperty bag, "Unsuccessful" & (i * 100), "Boolean", False, _
+			"True when the last automatic transfer with transformer " & (i * 100) & " out of service did not complete.", _
+			"True quando a última transferência automática com o transformador " & (i * 100) & " impedido não foi concluída."
+
+	Next
 
 
 	' --- the command interface ------------------------------------------
@@ -6112,6 +6142,13 @@ Sub xatm_TA_OnStartRunning()
 
 	SetExposure bag, "Successful",   EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Unsuccessful", EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	' The per-contingency three, the same way.
+	For i = 1 To 4
+		SetExposure bag, "Running"      & (i * 100), EXPOSE_INTERFACE + EXPOSE_IOTAG
+		SetExposure bag, "Successful"   & (i * 100), EXPOSE_INTERFACE + EXPOSE_IOTAG
+		SetExposure bag, "Unsuccessful" & (i * 100), EXPOSE_INTERFACE + EXPOSE_IOTAG
+	Next
 
 	For i = 1 To 6
 		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
