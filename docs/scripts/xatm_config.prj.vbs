@@ -6047,6 +6047,28 @@ Sub xatm_TA_OnStartRunning()
 		"True quando uma transferência automÁtica não pode partir - desabilitado, bloqueado pelo operador ou pelo intertravamento geral, ou barrado pelo campo."
 
 
+	' How the last transfer went, on the footing the manual automation and
+	' the reclosing already use.
+	'
+	' Cleared at the start of a transfer and not at the end of one, so the
+	' control room goes on seeing how the last attempt went for as long as
+	' nothing new has happened. A TA is not asked for by anybody, so the
+	' next start is the next trip - and between two trips these two are the
+	' whole account of what the scheme did.
+	'
+	' One instance per transformer, so the pair names the transformer by
+	' being on it. That is what the control room's list asks for on the base
+	' maneuver; the per-contingency variants it also lists would need this
+	' class to carry gates, which it does not.
+	AddProperty bag, "Successful", "Boolean", False, _
+		"True when the last automatic transfer completed. Cleared when the next one starts, so what the last attempt did stays readable until then.", _
+		"True quando a última transferência automática foi concluída. Apagada quando a próxima parte, de modo que o resultado da anterior permaneça legível até lá."
+
+	AddProperty bag, "Unsuccessful", "Boolean", False, _
+		"True when the last automatic transfer did not complete - a step failed and the sequence stopped on it.", _
+		"True quando a última transferência automática não foi concluída - um passo falhou e a sequência parou nele."
+
+
 	' --- the command interface ------------------------------------------
 	'
 	' No CommandStart of any kind. Over IEC 60870-5-104 an address means
@@ -6088,6 +6110,9 @@ Sub xatm_TA_OnStartRunning()
 	SetExposure bag, "Blocked", EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
 
+	SetExposure bag, "Successful",   EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "Unsuccessful", EXPOSE_INTERFACE + EXPOSE_IOTAG
+
 	For i = 1 To 6
 		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
 	Next
@@ -6108,6 +6133,11 @@ Sub xatm_TA_OnStartRunning()
 	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO TA", PAIR_BLOCKED,      SEV_MEDIUM
 
 	SetAlarm bag, "Blocked",       "TRANSFERÊNCIA AUTOMÁTICA", PAIR_BLOCKED, SEV_MEDIUM
+
+	' Low on the one that went well and high on the one that did not, the
+	' way the manual automation and the reclosing are graded.
+	SetAlarm bag, "Successful",    "TRANSFERÊNCIA AUTOMÁTICA BEM SUCEDIDA", PAIR_ACTUATED, SEV_LOW
+	SetAlarm bag, "Unsuccessful",  "TRANSFERÊNCIA AUTOMÁTICA MAL SUCEDIDA", PAIR_ACTUATED, SEV_HIGH
 
 	For i = 1 To 6
 		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
@@ -6462,6 +6492,32 @@ Sub xatm_TMTNM_OnStartRunning()
 				"Field conditions that have to hold before " & whatEN & outEN & " may start. Bound to an expression - True while the maneuver is permitted.", _
 				"Condições de campo que devem valer antes que " & whatPT & outPT & " possa partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
 
+			' One point per maneuver, which is what the control room's list
+			' asks for and what level 3 can carry: a point, never a value
+			' saying which of them is running. The same reason there are ten
+			' CommandStartTM tags and not one taking a number.
+			'
+			' The instance's own Running stays beside these and still answers
+			' the other question - whether anything at all is in progress -
+			' which is what the mutual exclusion between automations reads.
+			AddProperty bag, "Running" & gate, "Boolean", False, _
+				"True while " & whatEN & outEN & " is the maneuver in progress. False reads REPOUSO on the control room's list and True reads EM CURSO.", _
+				"True enquanto " & whatPT & outPT & " é a manobra em andamento. False é REPOUSO na lista do centro de operação e True é EM CURSO."
+
+			' And how it went, on the same one-point-per-maneuver footing.
+			'
+			' These outlive the run where Running does not: the result of the
+			' last attempt stands until the next one starts, which is what the
+			' instance's own pair already does and what the control room reads
+			' when it asks what happened rather than what is happening.
+			AddProperty bag, "Successful" & gate, "Boolean", False, _
+				"True when " & whatEN & outEN & " was the last maneuver to finish, and it finished. BEM SUCEDIDA on the control room's list; it stands until the next run starts.", _
+				"True quando " & whatPT & outPT & " foi a última manobra a terminar, e terminou bem. BEM SUCEDIDA na lista do centro de operação; permanece até a próxima partida."
+
+			AddProperty bag, "Unsuccessful" & gate, "Boolean", False, _
+				"True when " & whatEN & outEN & " was the last maneuver to finish and it did not complete. MAL SUCEDIDA on the control room's list; it stands until the next run starts.", _
+				"True quando " & whatPT & outPT & " foi a última manobra a terminar e não se completou. MAL SUCEDIDA na lista do centro de operação; permanece até a próxima partida."
+
 			AddProperty bag, "AutomaticBlock" & gate, "Boolean", False, _
 				"Field conditions that block " & whatEN & outEN & ". Bound to an expression - True keeps it from starting, alongside OperatorBlock and GeneralBlock.", _
 				"Condições de campo que bloqueiam " & whatPT & outPT & ". Vinculada a uma expressão - True impede a partida, junto com OperatorBlock e GeneralBlock."
@@ -6588,6 +6644,14 @@ Sub xatm_TMTNM_OnStartRunning()
 			If gi = 0 Then gate = gm Else gate = gm & (gi * 100)
 			SetExposure bag, "Preconditions"  & gate, EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 			SetExposure bag, "AutomaticBlock" & gate, EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+			' Exposed the way the instance's own three are, and for their
+			' reason: the automation talking about itself, carried to level 3
+			' and to a screen, with nothing on the configuration panel to
+			' configure.
+			SetExposure bag, "Running"      & gate, EXPOSE_INTERFACE + EXPOSE_IOTAG
+			SetExposure bag, "Successful"   & gate, EXPOSE_INTERFACE + EXPOSE_IOTAG
+			SetExposure bag, "Unsuccessful" & gate, EXPOSE_INTERFACE + EXPOSE_IOTAG
 		Next
 	Next
 
