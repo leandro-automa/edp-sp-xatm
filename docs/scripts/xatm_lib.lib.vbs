@@ -1985,6 +1985,21 @@ Sub Main_Completed()
 	WriteEx Empty, 0
 
 	xatm_RASEAT.Running = False
+
+	' And the outcome goes out with the run, which is what Succeed has said
+	' all along and what nothing here was doing.
+	'
+	' Held for good it never returns to normal, so its alarm never leaves the
+	' list of current alarms - acknowledged or not, it would sit there until
+	' the next reclosing. Raised one pass ago and put out here it is an
+	' event: it goes to the log and comes off the list by itself.
+	'
+	' GeneralBlock and the step latches are left alone. They are the standing
+	' fault and wait for a Reset, which is the difference between them and an
+	' outcome.
+	xatm_RASEAT.Successful   = False
+	xatm_RASEAT.Unsuccessful = False
+
 	WriteLog "Reclosing completed."
 		
 End Sub
@@ -2248,7 +2263,6 @@ End Sub
 <xatm_RASEAT.FSM.Main:Main_GlobalLockout()>
 Sub Main_GlobalLockout()
 
-	xatm_RASEAT.Running        = False
 	xatm_RASEAT.GeneralBlock   = True
 	xatm_RASEAT.Unsuccessful   = True
 
@@ -2261,8 +2275,16 @@ Sub Main_GlobalLockout()
 		Case 6 : xatm_RASEAT.StepExecutionFailed6 = True
 	End Select
 
-	WriteLog "General block - the reclosing did not complete."	
-	
+	WriteLog "General block - the reclosing did not complete."
+
+	' Out the way a reclosing that succeeded goes, rather than stopping here.
+	'
+	' Stopping left Unsuccessful True for good: Running went False and the
+	' dispatcher gave up before the Select Case, so nothing came back to put
+	' it out. Running is left alone for this one pass, 99 is reached, and
+	' Main_Completed clears the outcome and stops the run.
+	Advance 99
+
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Main()>
@@ -4441,17 +4463,26 @@ Sub ClearGateResults()
 End Sub
 <xatm_TA.FSM.Main:Main_Completed()>
 Sub Main_Completed()
-		
+
+	' The run torn down, on the second pass at 99.
+	'
+	' The outcome goes out with it. It was raised one pass ago and has been
+	' standing for that long, which is what makes it an event the alarm
+	' engine sees begin and end rather than a line that never leaves the
+	' list of current alarms.
+
 	Parent.Item("TriggerTransformerId").WriteEx  Empty, 0
 	Parent.Item("AutomationType").WriteEx Empty, 0
 	Parent.Item("StepTimer").WriteEx  Empty, 0
 	WriteEx  Empty, 0
-	
-    xatm_TA.Running = False
-    xatm_TA.Successful = True
-    SetGateResult "Successful"
-    WriteLog "Automation completed successfully."
-            	
+
+	xatm_TA.Running = False
+	ClearGateRunning
+
+	xatm_TA.Successful   = False
+	xatm_TA.Unsuccessful = False
+	ClearGateResults
+
 End Sub
 
 <xatm_TA.FSM.Main:Main_Functions()>
@@ -4585,7 +4616,6 @@ End Sub
 <xatm_TA.FSM.Main:Main_GlobalLockout()>
 Sub Main_GlobalLockout()
 	
-	xatm_TA.Running 		= False
 	xatm_TA.GeneralBlock 	= True
 	xatm_TA.Unsuccessful	= True
 	SetGateResult "Unsuccessful"
@@ -4600,7 +4630,17 @@ Sub Main_GlobalLockout()
 	End Select
 	
 	WriteLog "Global lockout activated due to automation failure."
-	
+
+	' Out through the same door as a transfer that finished, rather than
+	' stopping here. An outcome has to go True and then False or its alarm
+	' never leaves the list, and stopping here left this one True for good:
+	' Running went False and the dispatcher gave up before the Select Case.
+	'
+	' GeneralBlock and the step latches are untouched at 99. They are the
+	' standing fault and wait for a Reset, which is the difference between
+	' them and an outcome.
+	Value = 99
+
 End Sub
 
 <xatm_TA.FSM.Main:Main_Main()>
@@ -4713,7 +4753,7 @@ Sub Main_Main()
 
         Case 99
 			
-			Main_Completed()
+			Main_Finish()
 			
 	End Select
 	
@@ -5400,6 +5440,58 @@ Sub ClearGateRunning()
 	On Error Resume Next
 	For i = 1 To 4
 		Execute "xatm_TA.Running" & (i * 100) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' The end of a run, which takes two passes at 99.
+'
+' The outcome lives in the gap between them. Set and left standing it never
+' returns to normal, so its alarm never leaves the list of current alarms.
+' Raised on one pass and cleared on the next it is an event: it goes to the
+' log and comes off the list by itself.
+'
+' Both endings arrive here - a transfer that finished and one that ended in
+' lockout - so there is one place an outcome is raised and one it is put
+' out.
+Sub Main_Finish()
+
+	If xatm_TA.Successful Or xatm_TA.Unsuccessful Then
+		Main_Completed()
+	Else
+		Main_Outcome()
+	End If
+
+End Sub
+
+
+' The outcome raised, on the first of the two passes at 99.
+'
+' Only the good one is raised here. A transfer that failed has already set
+' Unsuccessful on its way through the lockout, which is what sends the pass
+' after this one straight to Main_Completed.
+Sub Main_Outcome()
+
+	xatm_TA.Successful = True
+	SetGateResult "Successful"
+	WriteLog "Automation completed successfully."
+
+End Sub
+
+
+' The per-contingency outcomes, all eight put out - the copy this tag
+' needs, one scope being unable to call another's.
+Sub ClearGateResults()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 4
+		Execute "xatm_TA.Successful" & (i * 100) & " = False"
+		Execute "xatm_TA.Unsuccessful" & (i * 100) & " = False"
 	Next
 	Err.Clear
 	On Error Goto 0
@@ -6438,16 +6530,12 @@ Sub ClearGateResults()
 End Sub
 <xatm_TMTNM.FSM.Main:Main_Completed()>
 Sub Main_Completed()
-	
-	' Read before the state is torn down, because tearing it down is what
-	' this does.
-	Dim reverted, ranGate
-	reverted = IsReverting()
 
-	' Which maneuver this was, taken off the point still lit for it.
-	' AutomationType would answer too, but it is wiped three lines down and
-	' it spells a busbar run TMB1A where the gate for it is plain TM.
-	ranGate = RunningGate()
+	' The run torn down, on the second pass at 99.
+	'
+	' The outcome goes out with it. It was raised one pass ago and has been
+	' standing for that long, which is what makes it an event the alarm engine
+	' sees begin and end rather than a line that never leaves the list.
 
 	Parent.Item("TriggerTransformerId").WriteEx  Empty, 0
 	Parent.Item("AutomationType").WriteEx Empty, 0
@@ -6457,6 +6545,55 @@ Sub Main_Completed()
 	xatm_TMTNM.Running   = False
 	ClearRunningGates
 	xatm_TMTNM.Reverting = False
+
+	xatm_TMTNM.Successful   = False
+	xatm_TMTNM.Unsuccessful = False
+	ClearGateResults
+
+End Sub
+
+
+' The outcome raised, on the first of the two passes at 99.
+'
+' Split out of Main_Completed so that the pass which sets these is not the
+' pass which clears them. Everything it reads - Reverting, and the gate
+' still lit - is torn down by the pass after this one.
+' The end of a run, which takes two passes at 99.
+'
+' The outcome lives in the gap between them. Set and left standing it
+' never returns to normal, so its alarm never leaves the list of current
+' alarms - acknowledged or not, BEM SUCEDIDA would sit there until the
+' next run of that maneuver. Raised on one pass and cleared on the next it
+' is an event: it goes to the log and comes off the list by itself.
+'
+' Every ending arrives here - a maneuver that finished, one that unwound
+' itself, and one that ended in lockout - so there is one place where an
+' outcome is raised and one where it is put out.
+'
+' Which pass this is, asked of the outcome rather than of the step timer.
+' Both are cleared when a maneuver starts, so neither can be set on the
+' way in; the timer reads zero here only because all eleven places that
+' end a sequence remember to reset it.
+Sub Main_Finish()
+
+	If xatm_TMTNM.Successful Or xatm_TMTNM.Unsuccessful Then
+		Main_Completed()
+	Else
+		Main_Outcome()
+	End If
+
+End Sub
+
+
+Sub Main_Outcome()
+
+	Dim reverted, ranGate
+	reverted = IsReverting()
+
+	' Which maneuver this was, taken off the point still lit for it.
+	' AutomationType would answer too, but it is wiped in Main_Completed and
+	' it spells a busbar run TMB1A where the gate for it is plain TM.
+	ranGate = RunningGate()
 
 	' A revert reaches the end of a sequence without the maneuver having
 	' happened. Nothing is blocked and the substation is where it started,
@@ -6475,7 +6612,7 @@ Sub Main_Completed()
 		WriteLog "Automation completed successfully."
 
 	End If
-            	
+
 End Sub
 
 <xatm_TMTNM.FSM.Main:Main_Functions()>
@@ -6938,17 +7075,31 @@ Sub Main_GlobalLockout()
 
 	End If
 
-	' Taken before the points go out, for Main_Completed's reason.
+	' Which maneuver this was, off the point still lit for it - the reading
+	' Main_Outcome takes, and for its reason.
 	Dim ranGate
 	ranGate = RunningGate()
 
-	xatm_TMTNM.Running      = False
-	ClearRunningGates
 	xatm_TMTNM.GeneralBlock = True
 	xatm_TMTNM.Unsuccessful = True
 	SetGateResult "Unsuccessful", ranGate
 
 	WriteLog "Global lockout activated due to automation failure."
+
+	' Out through the same door as a maneuver that finished, rather than
+	' stopping here.
+	'
+	' An outcome has to go True and then False or its alarm never leaves the
+	' list, and stopping here left this one True for good: Running went False
+	' and the dispatcher gave up before the Select Case, so nothing ever came
+	' back to put it out. Running is left alone for this one pass, 99 is
+	' reached again, and Main_Completed clears the outcome and stops the run.
+	'
+	' GeneralBlock and the step latches are not touched there. They are the
+	' standing fault - the thing an operator has to see and clear - and they
+	' wait for a Reset, which is the whole difference between them and an
+	' outcome.
+	Value = 99
 
 End Sub
 
@@ -7155,7 +7306,7 @@ Sub Main_Main()
 
         Case 99
 			
-			Main_Completed()
+			Main_Finish()
 			
 	End Select
 	
@@ -8473,6 +8624,30 @@ Dim gResultValue
 
 ' A Function may not be the last thing in a scope.
 Sub EndOfResultHelpers()
+End Sub
+
+
+' The per-gate outcomes, all twenty put out.
+'
+' The copy this tag needs. Commands.Start and Commands.Reset keep one
+' each for the same reason - one scope cannot call another's.
+Sub ClearGateResults()
+
+	Dim gm, gi, g
+
+	On Error Resume Next
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+			If gi = 0 Then g = gm Else g = gm & (gi * 100)
+			Execute "xatm_TMTNM.Successful" & g & " = False"
+			Execute "xatm_TMTNM.Unsuccessful" & g & " = False"
+		Next
+	Next
+
+	Err.Clear
+	On Error Goto 0
+
 End Sub
 <xatm_TMTNM.Signals.BlockedNM:BlockedNM_OnChangedValue()>
 Sub BlockedNM_OnChangedValue()
