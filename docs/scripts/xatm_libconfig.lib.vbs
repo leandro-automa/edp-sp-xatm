@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIBCONFIG (C:\ProjDev\edp_sp\xatm_libconfig.lib)
-Tue Sep  1 16:36:51 2026
+Thu Sep  3 15:36:49 2026
 -----------------------
 
 <xatm_BreakerSymbol.Source:xatm_BreakerSymbol_OnSourceChanged()>

@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_LIB (C:\ProjDev\edp_sp\xatm_lib.lib)
-Mon Aug 31 17:31:22 2026
+Thu Sep  3 15:36:32 2026
 -----------------------
 
 <xatm_Breaker.Data.CommandInProgress:CommandInProgress_OnChangedValue()>
@@ -2284,7 +2284,7 @@ Sub Main_GlobalLockout()
 	' it out. Running is left alone for this one pass, 99 is reached, and
 	' Main_Completed clears the outcome and stops the run.
 	Advance 99
-
+	
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Main()>
@@ -3892,9 +3892,8 @@ Sub Reset_Reset()
 	If xatm_TA.CommandReset.Value = 0 Then Exit Sub
 	
 	WriteEx True
-		
+	
 End Sub
-
 
 
 ' The per-contingency Running points, all four put out.
@@ -3938,8 +3937,9 @@ Sub ClearGateResults()
 	Next
 	Err.Clear
 	On Error Goto 0
-
+	
 End Sub
+
 <xatm_TA.Commands.Start:Start_OnChangedValue()>
 Sub Start_OnChangedValue()
 
@@ -4111,14 +4111,15 @@ Sub Start_OnChangedValue()
 	xatm_TA.Item("FSM").Item("StepTimer").WriteEx 0
 	xatm_TA.Item("FSM").Item("Main").WriteEx 0
 	xatm_TA.Running = True
-
+	
 	' The last transfer's result stands until this one starts, the way the
 	' manual automation's does. Here the next start is the next trip, so
 	' between two of them these two are the whole account of what the scheme
 	' did - which is why they are cleared at the start and never at the end.
 	xatm_TA.Successful   = False
 	xatm_TA.Unsuccessful = False
-
+	
+	
 	' And the same three per contingency: every gate put out, then the one
 	' this transfer runs on lit. impedeId is already the suffix - 0 for the
 	' transformer's own transfer, 100 to 400 for a contingency - so there is
@@ -4142,7 +4143,6 @@ Sub Start_OnChangedValue()
 	WriteEx "", ts ' clear without re-firing
 
 End Sub
-
 
 ' True if any OTHER automation object is currently running (mutual exclusion).
 ' Relies on a common Running property instead of enumerating each type.
@@ -4400,23 +4400,6 @@ Sub Reject(reason, ts)
 
 End Sub
 
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-		
-End Sub
-
-
 
 ' The per-contingency Running points, all four put out.
 '
@@ -4461,6 +4444,23 @@ Sub ClearGateResults()
 	On Error Goto 0
 
 End Sub
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+		
+End Sub
+
 <xatm_TA.FSM.Main:Main_Completed()>
 Sub Main_Completed()
 
@@ -4482,7 +4482,7 @@ Sub Main_Completed()
 	xatm_TA.Successful   = False
 	xatm_TA.Unsuccessful = False
 	ClearGateResults
-
+	
 End Sub
 
 <xatm_TA.FSM.Main:Main_Functions()>
@@ -4597,6 +4597,122 @@ Function SendsOpenCommand()
 End Function
 
 
+
+' The outcome onto the gate this transfer ran on, and that gate put out.
+'
+' Which gate is read off the Running point still lit for it, the way the
+' manual automation reads its own: the FSM tags are torn down around here
+' and the lit point is not.
+'
+' No gate lit means the transformer's own transfer, which has no suffixed
+' point of its own - the base Successful or Unsuccessful set beside this
+' call is the whole of what that one needs.
+Sub SetGateResult(kind)
+
+	Dim gate
+	gate = RunningGate()
+
+	On Error Resume Next
+	If gate <> "" Then Execute "xatm_TA." & kind & gate & " = True"
+	Err.Clear
+	On Error Goto 0
+
+	ClearGateRunning
+
+End Sub
+
+
+' Which contingency this transfer is running on, as the suffix - "" for
+' the transformer's own, which lights no suffixed point.
+Function RunningGate()
+
+	RunningGate = ""
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 4
+		gGateFlag = False
+		Execute "gGateFlag = xatm_TA.Running" & (i * 100)
+		If CBool(gGateFlag) Then RunningGate = CStr(i * 100)
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
+
+' Scratch cell for the late-bound read, the way ReadGate keeps one.
+Dim gGateFlag
+
+
+' The per-contingency Running points, all four put out - the copy this
+' tag needs, one scope being unable to call another's.
+Sub ClearGateRunning()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 4
+		Execute "xatm_TA.Running" & (i * 100) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' The end of a run, which takes two passes at 99.
+'
+' The outcome lives in the gap between them. Set and left standing it never
+' returns to normal, so its alarm never leaves the list of current alarms.
+' Raised on one pass and cleared on the next it is an event: it goes to the
+' log and comes off the list by itself.
+'
+' Both endings arrive here - a transfer that finished and one that ended in
+' lockout - so there is one place an outcome is raised and one it is put
+' out.
+Sub Main_Finish()
+
+	If xatm_TA.Successful Or xatm_TA.Unsuccessful Then
+		Main_Completed()
+	Else
+		Main_Outcome()
+	End If
+
+End Sub
+
+
+' The outcome raised, on the first of the two passes at 99.
+'
+' Only the good one is raised here. A transfer that failed has already set
+' Unsuccessful on its way through the lockout, which is what sends the pass
+' after this one straight to Main_Completed.
+Sub Main_Outcome()
+
+	xatm_TA.Successful = True
+	SetGateResult "Successful"
+	WriteLog "Automation completed successfully."
+
+End Sub
+
+
+' The per-contingency outcomes, all eight put out - the copy this tag
+' needs, one scope being unable to call another's.
+Sub ClearGateResults()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 4
+		Execute "xatm_TA.Successful" & (i * 100) & " = False"
+		Execute "xatm_TA.Unsuccessful" & (i * 100) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
 Sub WriteLog(message)
 	
 	Dim consoleLogEngine
@@ -4640,7 +4756,7 @@ Sub Main_GlobalLockout()
 	' standing fault and wait for a Reset, which is the difference between
 	' them and an outcome.
 	Value = 99
-
+	
 End Sub
 
 <xatm_TA.FSM.Main:Main_Main()>
@@ -5381,127 +5497,11 @@ Sub S6TA(triggerId, impedeId)
 		
 End Sub
 
-
-
-' The outcome onto the gate this transfer ran on, and that gate put out.
-'
-' Which gate is read off the Running point still lit for it, the way the
-' manual automation reads its own: the FSM tags are torn down around here
-' and the lit point is not.
-'
-' No gate lit means the transformer's own transfer, which has no suffixed
-' point of its own - the base Successful or Unsuccessful set beside this
-' call is the whole of what that one needs.
-Sub SetGateResult(kind)
-
-	Dim gate
-	gate = RunningGate()
-
-	On Error Resume Next
-	If gate <> "" Then Execute "xatm_TA." & kind & gate & " = True"
-	Err.Clear
-	On Error Goto 0
-
-	ClearGateRunning
-
-End Sub
-
-
-' Which contingency this transfer is running on, as the suffix - "" for
-' the transformer's own, which lights no suffixed point.
-Function RunningGate()
-
-	RunningGate = ""
-
-	Dim i
-
-	On Error Resume Next
-	For i = 1 To 4
-		gGateFlag = False
-		Execute "gGateFlag = xatm_TA.Running" & (i * 100)
-		If CBool(gGateFlag) Then RunningGate = CStr(i * 100)
-	Next
-	Err.Clear
-	On Error Goto 0
-
-End Function
-
-
-' Scratch cell for the late-bound read, the way ReadGate keeps one.
-Dim gGateFlag
-
-
-' The per-contingency Running points, all four put out - the copy this
-' tag needs, one scope being unable to call another's.
-Sub ClearGateRunning()
-
-	Dim i
-
-	On Error Resume Next
-	For i = 1 To 4
-		Execute "xatm_TA.Running" & (i * 100) & " = False"
-	Next
-	Err.Clear
-	On Error Goto 0
-
-End Sub
-
-
-' The end of a run, which takes two passes at 99.
-'
-' The outcome lives in the gap between them. Set and left standing it never
-' returns to normal, so its alarm never leaves the list of current alarms.
-' Raised on one pass and cleared on the next it is an event: it goes to the
-' log and comes off the list by itself.
-'
-' Both endings arrive here - a transfer that finished and one that ended in
-' lockout - so there is one place an outcome is raised and one it is put
-' out.
-Sub Main_Finish()
-
-	If xatm_TA.Successful Or xatm_TA.Unsuccessful Then
-		Main_Completed()
-	Else
-		Main_Outcome()
-	End If
-
-End Sub
-
-
-' The outcome raised, on the first of the two passes at 99.
-'
-' Only the good one is raised here. A transfer that failed has already set
-' Unsuccessful on its way through the lockout, which is what sends the pass
-' after this one straight to Main_Completed.
-Sub Main_Outcome()
-
-	xatm_TA.Successful = True
-	SetGateResult "Successful"
-	WriteLog "Automation completed successfully."
-
-End Sub
-
-
-' The per-contingency outcomes, all eight put out - the copy this tag
-' needs, one scope being unable to call another's.
-Sub ClearGateResults()
-
-	Dim i
-
-	On Error Resume Next
-	For i = 1 To 4
-		Execute "xatm_TA.Successful" & (i * 100) & " = False"
-		Execute "xatm_TA.Unsuccessful" & (i * 100) & " = False"
-	Next
-	Err.Clear
-	On Error Goto 0
-
-End Sub
 <xatm_TA.Signals.Blocked:Blocked_OnChangedValue()>
 Sub Blocked_OnChangedValue()
 	
 	xatm_TA.Blocked = Value
-	
+
 End Sub
 
 <xatm_TMTNM.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
@@ -5618,31 +5618,6 @@ Sub ResetDevices(folder)
 	Next
 
 End Sub
-	
-Sub WriteLog(message)
-	
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-	
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-	
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-	
-End Sub
-
-<xatm_TMTNM.Commands.Reset:Reset_Reset()>
-Sub Reset_Reset()
-	
-	If xatm_TMTNM.CommandReset.Value = 0 Then Exit Sub
-	
-	WriteEx True
-		
-End Sub
 
 
 
@@ -5674,7 +5649,6 @@ Sub ClearRunningGates()
 
 End Sub
 
-
 ' Every per-gate outcome put out.
 '
 ' At the start of a run and at a reset, because what stands is the last
@@ -5699,6 +5673,32 @@ Sub ClearGateResults()
 	On Error Goto 0
 
 End Sub
+	
+Sub WriteLog(message)
+	
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+	
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+	
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+	
+End Sub
+
+<xatm_TMTNM.Commands.Reset:Reset_Reset()>
+Sub Reset_Reset()
+	
+	If xatm_TMTNM.CommandReset.Value = 0 Then Exit Sub
+	
+	WriteEx True
+		
+End Sub
+
 <xatm_TMTNM.Commands.Start:Start_CommandStartNM()>
 Sub Start_CommandStartNM()
 	
@@ -6039,7 +6039,7 @@ Sub Start_OnChangedValue()
 	xatm_TMTNM.Item("FSM").Item("StepTimer").WriteEx 0
 	xatm_TMTNM.Item("FSM").Item("Main").WriteEx 0
 	xatm_TMTNM.Running = True
-
+	
 	' And the one point that says which maneuver it is. Every other is put
 	' out first, so a gate left standing by a run that ended badly cannot
 	' show a second maneuver as EM CURSO alongside this one.
@@ -6457,24 +6457,6 @@ Sub Reject(reason, ts)
 
 End Sub
 
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Parent.Parent.Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
-	End If
-
-End Sub
-
-
-
 ' Every per-gate Running put out.
 '
 ' All ten rather than the one that was lit: nothing has to be remembered
@@ -6528,6 +6510,24 @@ Sub ClearGateResults()
 	On Error Goto 0
 
 End Sub
+
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
 <xatm_TMTNM.FSM.Main:Main_Completed()>
 Sub Main_Completed()
 
@@ -6558,33 +6558,6 @@ End Sub
 ' Split out of Main_Completed so that the pass which sets these is not the
 ' pass which clears them. Everything it reads - Reverting, and the gate
 ' still lit - is torn down by the pass after this one.
-' The end of a run, which takes two passes at 99.
-'
-' The outcome lives in the gap between them. Set and left standing it
-' never returns to normal, so its alarm never leaves the list of current
-' alarms - acknowledged or not, BEM SUCEDIDA would sit there until the
-' next run of that maneuver. Raised on one pass and cleared on the next it
-' is an event: it goes to the log and comes off the list by itself.
-'
-' Every ending arrives here - a maneuver that finished, one that unwound
-' itself, and one that ended in lockout - so there is one place where an
-' outcome is raised and one where it is put out.
-'
-' Which pass this is, asked of the outcome rather than of the step timer.
-' Both are cleared when a maneuver starts, so neither can be set on the
-' way in; the timer reads zero here only because all eleven places that
-' end a sequence remember to reset it.
-Sub Main_Finish()
-
-	If xatm_TMTNM.Successful Or xatm_TMTNM.Unsuccessful Then
-		Main_Completed()
-	Else
-		Main_Outcome()
-	End If
-
-End Sub
-
-
 Sub Main_Outcome()
 
 	Dim reverted, ranGate
@@ -7032,6 +7005,113 @@ Sub SBB(stepNumber, mode)
 End Sub
 
 
+' Every per-gate Running put out.
+'
+' All ten rather than the one that was lit: nothing has to be remembered
+' between the start of a maneuver and the end of it, and a point stranded
+' by a restart or by a manifest rebuilt mid-run is cleared by the next
+' pass rather than sitting at EM CURSO in the control room for ever.
+'
+' Late bound, the way ReadGate reads a gate - E3 gives no way to index an
+' XObject's properties by name, and a property that is not there is not
+' worth stopping a maneuver over.
+Sub ClearRunningGates()
+
+	Dim gm, gi, g
+
+	On Error Resume Next
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+			If gi = 0 Then g = gm Else g = gm & (gi * 100)
+			Execute "xatm_TMTNM.Running" & g & " = False"
+		Next
+	Next
+
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' Which maneuver is running, as its gate suffix - "" when none is.
+'
+' Read off the ten Running points rather than off AutomationType. That
+' tag is torn down at the end of a run, and it spells a busbar maneuver
+' TMB1A where the gate for it is plain TM. The lit point is the gate,
+' exactly, and it is still lit when this is asked.
+Function RunningGate()
+
+	RunningGate = ""
+
+	Dim gm, gi, g
+
+	On Error Resume Next
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+
+			If gi = 0 Then g = gm Else g = gm & (gi * 100)
+
+			gResultValue = False
+			Execute "gResultValue = xatm_TMTNM.Running" & g
+
+			If CBool(gResultValue) Then RunningGate = g
+
+		Next
+	Next
+
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
+
+' One outcome point set, for the gate that ran.
+'
+' Nothing is set where the gate is not known. A run whose point was
+' already out leaves the instance's own Successful or Unsuccessful to say
+' what happened, which is what the control room had before these existed
+' - a result missing from one of twenty is better than one invented on
+' the wrong gate.
+Sub SetGateResult(kind, gate)
+
+	If gate = "" Then Exit Sub
+
+	On Error Resume Next
+	Execute "xatm_TMTNM." & kind & gate & " = True"
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+' Scratch cell for the late-bound read, the way ReadGate keeps one.
+Dim gResultValue
+
+' The per-gate outcomes, all twenty put out.
+'
+' The copy this tag needs. Commands.Start and Commands.Reset keep one
+' each for the same reason - one scope cannot call another's.
+Sub ClearGateResults()
+
+	Dim gm, gi, g
+
+	On Error Resume Next
+
+	For Each gm In Array("TM", "NM")
+		For gi = 0 To 4
+			If gi = 0 Then g = gm Else g = gm & (gi * 100)
+			Execute "xatm_TMTNM.Successful" & g & " = False"
+			Execute "xatm_TMTNM.Unsuccessful" & g & " = False"
+		Next
+	Next
+
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
 Sub WriteLog(message)
 	
 	Dim consoleLogEngine
@@ -7075,31 +7155,17 @@ Sub Main_GlobalLockout()
 
 	End If
 
-	' Which maneuver this was, off the point still lit for it - the reading
-	' Main_Outcome takes, and for its reason.
+	' Taken before the points go out, for Main_Completed's reason.
 	Dim ranGate
 	ranGate = RunningGate()
 
+	xatm_TMTNM.Running      = False
+	ClearRunningGates
 	xatm_TMTNM.GeneralBlock = True
 	xatm_TMTNM.Unsuccessful = True
 	SetGateResult "Unsuccessful", ranGate
 
 	WriteLog "Global lockout activated due to automation failure."
-
-	' Out through the same door as a maneuver that finished, rather than
-	' stopping here.
-	'
-	' An outcome has to go True and then False or its alarm never leaves the
-	' list, and stopping here left this one True for good: Running went False
-	' and the dispatcher gave up before the Select Case, so nothing ever came
-	' back to put it out. Running is left alone for this one pass, 99 is
-	' reached again, and Main_Completed clears the outcome and stops the run.
-	'
-	' GeneralBlock and the step latches are not touched there. They are the
-	' standing fault - the thing an operator has to see and clear - and they
-	' wait for a Reset, which is the whole difference between them and an
-	' outcome.
-	Value = 99
 
 End Sub
 
@@ -7176,7 +7242,7 @@ Function IsReverting()
 End Function
 
 Sub EndOfScope()
-
+	
 End Sub
 
 <xatm_TMTNM.FSM.Main:Main_Main()>
@@ -7188,7 +7254,6 @@ Sub Main_Main()
 		
 		WriteLog "Automation not enabled."
 		xatm_TMTNM.Running = False
-		ClearRunningGates
 		Exit Sub
 	
 	End If
@@ -7306,7 +7371,23 @@ Sub Main_Main()
 
         Case 99
 			
-			Main_Finish()
+			' Two passes at 99, and the outcome lives in the gap between them.
+			'
+			' Set and left standing, an outcome never returns to normal, so its
+			' alarm never leaves the list of current alarms - acknowledged or
+			' not, BEM SUCEDIDA sits there until the next run of that maneuver.
+			' Raised on one pass and cleared on the next it is an event: it goes
+			' to the log and comes off the list by itself.
+			'
+			' Which pass this is, asked of the outcome rather than of the step
+			' timer. Both are cleared when a maneuver starts, so neither is set
+			' on the way in - and the timer reads zero here only because all
+			' eleven places that end a sequence remember to reset it.
+			If xatm_TMTNM.Successful Or xatm_TMTNM.Unsuccessful Then
+				Main_Completed()
+			Else
+				Main_Outcome()
+			End If
 			
 	End Select
 	
@@ -8535,120 +8616,6 @@ Sub S6TM(triggerId, impedeId)
 
 End Sub
 
-
-
-' Every per-gate Running put out.
-'
-' All ten rather than the one that was lit: nothing has to be remembered
-' between the start of a maneuver and the end of it, and a point stranded
-' by a restart or by a manifest rebuilt mid-run is cleared by the next
-' pass rather than sitting at EM CURSO in the control room for ever.
-'
-' Late bound, the way ReadGate reads a gate - E3 gives no way to index an
-' XObject's properties by name, and a property that is not there is not
-' worth stopping a maneuver over.
-Sub ClearRunningGates()
-
-	Dim gm, gi, g
-
-	On Error Resume Next
-
-	For Each gm In Array("TM", "NM")
-		For gi = 0 To 4
-			If gi = 0 Then g = gm Else g = gm & (gi * 100)
-			Execute "xatm_TMTNM.Running" & g & " = False"
-		Next
-	Next
-
-	Err.Clear
-	On Error Goto 0
-
-End Sub
-
-
-' Which maneuver is running, as its gate suffix - "" when none is.
-'
-' Read off the ten Running points rather than off AutomationType. That
-' tag is torn down at the end of a run, and it spells a busbar maneuver
-' TMB1A where the gate for it is plain TM. The lit point is the gate,
-' exactly, and it is still lit when this is asked.
-Function RunningGate()
-
-	RunningGate = ""
-
-	Dim gm, gi, g
-
-	On Error Resume Next
-
-	For Each gm In Array("TM", "NM")
-		For gi = 0 To 4
-
-			If gi = 0 Then g = gm Else g = gm & (gi * 100)
-
-			gResultValue = False
-			Execute "gResultValue = xatm_TMTNM.Running" & g
-
-			If CBool(gResultValue) Then RunningGate = g
-
-		Next
-	Next
-
-	Err.Clear
-	On Error Goto 0
-
-End Function
-
-
-' One outcome point set, for the gate that ran.
-'
-' Nothing is set where the gate is not known. A run whose point was
-' already out leaves the instance's own Successful or Unsuccessful to say
-' what happened, which is what the control room had before these existed
-' - a result missing from one of twenty is better than one invented on
-' the wrong gate.
-Sub SetGateResult(kind, gate)
-
-	If gate = "" Then Exit Sub
-
-	On Error Resume Next
-	Execute "xatm_TMTNM." & kind & gate & " = True"
-	Err.Clear
-	On Error Goto 0
-
-End Sub
-
-
-' Scratch cell for the late-bound read, the way ReadGate keeps one.
-Dim gResultValue
-
-
-' A Function may not be the last thing in a scope.
-Sub EndOfResultHelpers()
-End Sub
-
-
-' The per-gate outcomes, all twenty put out.
-'
-' The copy this tag needs. Commands.Start and Commands.Reset keep one
-' each for the same reason - one scope cannot call another's.
-Sub ClearGateResults()
-
-	Dim gm, gi, g
-
-	On Error Resume Next
-
-	For Each gm In Array("TM", "NM")
-		For gi = 0 To 4
-			If gi = 0 Then g = gm Else g = gm & (gi * 100)
-			Execute "xatm_TMTNM.Successful" & g & " = False"
-			Execute "xatm_TMTNM.Unsuccessful" & g & " = False"
-		Next
-	Next
-
-	Err.Clear
-	On Error Goto 0
-
-End Sub
 <xatm_TMTNM.Signals.BlockedNM:BlockedNM_OnChangedValue()>
 Sub BlockedNM_OnChangedValue()
 	

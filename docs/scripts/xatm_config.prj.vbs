@@ -2,7 +2,7 @@
 Documentação de Scripts
 -----------------------
 XATM_CONFIG (C:\ProjDev\edp_sp\xatm_config.prj)
-Mon Aug 31 17:10:01 2026
+Thu Sep  3 15:37:07 2026
 -----------------------
 
 <xatm_config_data.Catalog.XMLBuilderAfterDelay:XMLBuilderAfterDelay_Functions()>
@@ -251,6 +251,650 @@ Sub XMLBuilderAfterDelay_ThickCountdown()
 	
 	End If
 		
+End Sub
+
+<xatm_config_data.Config.BindPositions:BindPositions_OnChangedValue()>
+Sub BindPositions_OnChangedValue()
+
+	' Every breaker and disconnector wired to the tags the substation side
+	' already reads and operates it on.
+	'
+	' The engineer configures the PowerSubstation first - every device bound
+	' to its measurements and its commands - and then had to bind the same
+	' tags a second time on the automation, by hand, once per property. The
+	' two sides already agree on the device names, so the second pass is
+	' derivable from the first.
+	'
+	' Staged in the document and not written into the project. The panel is
+	' built from the document and Save is what pushes it into E3, so a
+	' property written straight into the object would be overwritten by the
+	' next Save with whatever the document still held. This goes the same
+	' way a tag picked by hand goes.
+
+	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub
+	If Trim(CStr(Value)) = "" Then Exit Sub
+
+	Dim ts
+	ts = TimeStamp                         ' preserved for the silent clear
+
+	' Which substation to take the tags from. It travels as the payload
+	' because the server cannot ask: a domain can hold more than one, and
+	' the button is where the choosing happens.
+	Dim substationPath
+	substationPath = Trim(CStr(Value))
+
+	Dim substation
+	Set substation = Nothing
+	On Error Resume Next
+	Set substation = Application.GetObject(substationPath)
+	On Error Goto 0
+
+	If substation Is Nothing Then
+		Fail "there is nothing at " & substationPath & ".", ts
+		Exit Sub
+	End If
+
+	' Every Power device of that substation, by name. Built once: the
+	' alternative is walking it again for each of the twenty-odd automation
+	' objects.
+	Dim byName
+	Set byName = CreateObject("Scripting.Dictionary")
+
+	' Names are matched without case. The two sides are configured by
+	' different people at different times and DJ03 against dj03 is not a
+	' difference either of them meant.
+	byName.CompareMode = 1
+
+	gClashes = 0
+
+	IndexClass BREAKER_CLASS, substationPath, byName
+	IndexClass SWITCH_CLASS, substationPath, byName
+
+	If byName.Count = 0 Then
+		Fail substationPath & " holds no " & BREAKER_CLASS & " or " & _
+		     SWITCH_CLASS & " to take the tags from.", ts
+		Exit Sub
+	End If
+
+	Dim root
+	Set root = Nothing
+	On Error Resume Next
+	Set root = Application.GetObject(DATA_ROOT)
+	On Error Goto 0
+
+	If root Is Nothing Then
+		Fail "the project has no " & DATA_ROOT & ".", ts
+		Exit Sub
+	End If
+
+	gBound   = 0
+	gDevices = 0
+	gMissing = 0
+	gNoTag   = 0
+	gNoCommand = 0
+	gNoDefect  = 0
+	gRefused = 0
+
+	Dim problem
+	problem = ""
+
+	BindFolder root, byName, problem
+
+	WriteLog gBound & " properties bound on " & gDevices & " devices, from " & _
+	         substationPath & "."
+
+	' Said as a count and not as a fault. A device that is only monitored
+	' carries no command point at all, and listing each one would turn an
+	' ordinary run into a failed one.
+	If gNoCommand > 0 Then
+		WriteLog gNoCommand & " devices have no " & COMMANDS & "." & COMMAND_POINT & _
+		         " and were bound for reading only."
+	End If
+
+	If gNoDefect > 0 Then
+		WriteLog gNoDefect & " devices carry none of the signals that block a " & _
+		         "manoeuvre, and were left without a Defective expression."
+	End If
+
+	If gClashes > 0 Then
+		WriteLog gClashes & " Power devices share a name " & "with another; the first of each was used."
+	End If
+
+	If problem <> "" Then
+		WriteLog "Not everything was bound:" & problem
+		DocString = EXIT_FAILURE
+		WriteEx Empty, ts
+		Exit Sub
+	End If
+
+	DocString = EXIT_SUCCESS
+	WriteEx Empty, ts                      ' clear without re-firing
+
+End Sub
+
+
+' What the two sides are called.
+Const BREAKER_CLASS = "PowerBreaker"
+Const SWITCH_CLASS  = "PowerSwitch"
+
+' Where the position lives on the Power side: the measurement named for
+' the device state, and the Scada child under it that names the tag.
+Const MEASUREMENTS  = "Measurements"
+Const MEASUREMENT   = "0EST"
+Const SCADA         = "Scada"
+
+' And where the command lives: a collection of its own under a point of
+' the same name, holding one PowerCommandUnit per action. Spelled out
+' apart from the measurement even though the two read alike today - they
+' are two points on the Power side and nothing binds them to stay equal.
+Const COMMANDS      = "Commands"
+Const COMMAND_POINT = "0EST"
+Const OPEN_UNIT     = "Open"
+Const CLOSE_UNIT    = "Close"
+
+' The measurements that say a device cannot be worked, and the reading
+' each one says it on. Written name;value the way EDP gave the list, so
+' a fourth signal is one more entry and nothing else.
+Const DEFECT_SIGNALS = "52ML;1|00LR;0|CBTL;0"
+
+' The automation properties they are copied onto: the position onto both
+' of the position pair, each command unit onto the one it names, and
+' everything that blocks a manoeuvre onto the one expression.
+Const PROP_OPEN      = "PositionOpen"
+Const PROP_CLOSED    = "PositionClosed"
+Const PROP_CMD_OPEN  = "CommandOpen"
+Const PROP_CMD_CLOSE = "CommandClose"
+Const PROP_DEFECTIVE = "Defective"
+
+Const DATA_ROOT     = "XATM_Data"
+Const FIND_OBJECTS  = "xatm_config_data.Config.FindObjects"
+Const FOUND_OBJECTS = "xatm_config_data.Config.FoundObjects"
+Const SET_PROPERTY  = "xatm_config_data.Config.SetProperty"
+Const PROPERTY_VALUE = "xatm_config_data.Config.PropertyValue"
+Const KIND_SOURCE   = "source"
+
+Const EXIT_SUCCESS  = "EXIT_SUCCESS"
+Const EXIT_FAILURE  = "EXIT_FAILURE"
+
+Dim gBound
+Dim gDevices
+Dim gMissing
+Dim gNoTag
+Dim gNoCommand
+Dim gNoDefect
+Dim gRefused
+Dim gClashes
+
+
+' Every object of one class inside the chosen substation, added to the
+' index by name.
+'
+' Asked of FindObjects rather than walked here: that tag already scans for
+' a class and answers on FoundObjects, and a second walker would be a
+' second thing to keep in step for no gain. It scans the whole domain
+' though, so what comes back is filtered to the substation - see Under.
+Sub IndexClass(className, substationPath, byName)
+
+	Dim finder, answerTag
+	Set finder = Nothing
+	Set answerTag = Nothing
+
+	On Error Resume Next
+	Set finder = Application.GetObject(FIND_OBJECTS)
+	Set answerTag = Application.GetObject(FOUND_OBJECTS)
+	On Error Goto 0
+
+	If finder Is Nothing Or answerTag Is Nothing Then
+		WriteLog FIND_OBJECTS & " and " & FOUND_OBJECTS & _
+		         " are what the search runs on, and one of them is missing."
+		Exit Sub
+	End If
+
+	finder.WriteEx className
+
+	If finder.DocString <> EXIT_SUCCESS Then
+		WriteLog "The search for " & className & " got nowhere."
+		Exit Sub
+	End If
+
+	Dim list, i, path, obj
+	list = Split(CStr(answerTag.Value & ""), vbCrLf)
+
+	For i = 0 To UBound(list)
+
+		path = Trim(list(i))
+
+		If path <> "" And Under(path, substationPath) Then
+
+			Set obj = Nothing
+			On Error Resume Next
+			Set obj = Application.GetObject(path)
+			On Error Goto 0
+
+			If Not obj Is Nothing Then
+				If byName.Exists(obj.Name) Then
+					gClashes = gClashes + 1
+				Else
+					byName.Add obj.Name, path
+				End If
+			End If
+
+		End If
+
+	Next
+
+End Sub
+
+
+' Whether a path sits inside the substation that was chosen.
+'
+' A domain can hold more than one PowerSubstation - the picker on the
+' button exists for exactly that - and two of them can each carry a DJ03.
+' Without this the index would keep whichever the domain scan met first
+' and bind the automation to another station's tag without a word about
+' it.
+Function Under(path, root)
+
+	Under = False
+
+	If Len(root) = 0 Then Exit Function
+	If Len(path) <= Len(root) Then Exit Function
+
+	Under = (LCase(Left(path, Len(root) + 1)) = LCase(root & "."))
+
+End Function
+
+
+' One folder of the data project, then whatever is under it - the walk the
+' alarms and the export do, so a device is found where the tree says it.
+Sub BindFolder(folder, byName, problem)
+
+	Dim item, where
+
+	For Each item In folder
+
+		where = ""
+		On Error Resume Next
+		where = item.Name
+		On Error Goto 0
+
+		Select Case LCase(TypeName(item))
+
+			Case "xatm_breaker", "xatm_disconnector"
+				BindDevice item, byName, problem
+
+			Case Else
+
+				' Anything else is taken for a folder and walked. The error is
+				' kept rather than dropped: swallowing it here would abandon
+				' the rest of the folder and report nothing at all.
+				On Error Resume Next
+				Err.Clear
+
+				BindFolder item, byName, problem
+
+				If Err.Number <> 0 Then
+					problem = problem & vbCrLf & "  " & where & " (" & _
+					          TypeName(item) & ") - " & Err.Description
+					Err.Clear
+				End If
+
+				On Error Goto 0
+
+		End Select
+
+	Next
+
+End Sub
+
+
+' One device: the Power object of the same name, and what it is read and
+' operated on copied off it.
+'
+' The two halves are bound apart. A device configured for one and not the
+' other is ordinary here - a disconnector that is only monitored has no
+' command units at all - so a missing half is accounted for and the other
+' half still lands.
+Sub BindDevice(obj, byName, problem)
+
+	If Not byName.Exists(obj.Name) Then
+		gMissing = gMissing + 1
+		problem = problem & vbCrLf & "  " & obj.Name & " - the domain has no " & _
+		          BREAKER_CLASS & " or " & SWITCH_CLASS & " of that name."
+		Exit Sub
+	End If
+
+	Dim objPath
+	objPath = ""
+	On Error Resume Next
+	objPath = obj.PathName
+	On Error Goto 0
+
+	If objPath = "" Then Exit Sub
+
+	Dim powerPath, before
+	powerPath = byName(obj.Name)
+	before = gBound
+
+	BindPositionsOf obj, objPath, powerPath, problem
+	BindCommandsOf obj, objPath, powerPath, problem
+	BindDefectiveOf obj, objPath, powerPath, problem
+
+	' Counted as a device only where something was actually bound onto it.
+	If gBound > before Then gDevices = gDevices + 1
+
+End Sub
+
+
+' The position tag onto both of the position properties.
+Sub BindPositionsOf(obj, objPath, powerPath, problem)
+
+	Dim tagPath
+	tagPath = ScadaTagOf(powerPath, MEASUREMENT)
+
+	If tagPath = "" Then
+		gNoTag = gNoTag + 1
+		problem = problem & vbCrLf & "  " & obj.Name & " - nothing at " & _
+		          MEASUREMENTS & "." & MEASUREMENT & "." & SCADA & ".Tag."
+		Exit Sub
+	End If
+
+	StageOne objPath, PROP_OPEN, tagPath, obj.Name, problem
+	StageOne objPath, PROP_CLOSED, tagPath, obj.Name, problem
+
+End Sub
+
+
+' Each command unit onto the command property it names.
+'
+' No command point at all is not a fault and is only counted - see the
+' summary. The point with a unit missing off it, or a unit carrying no
+' write tag, is half configured and is named.
+Sub BindCommandsOf(obj, objPath, powerPath, problem)
+
+	Dim openTag, closeTag
+
+	If Not CommandTagsOf(powerPath, openTag, closeTag) Then
+		gNoCommand = gNoCommand + 1
+		Exit Sub
+	End If
+
+	If openTag = "" Then
+		problem = problem & vbCrLf & "  " & obj.Name & " - no " & OPEN_UNIT & _
+		          " unit with a write tag under " & COMMANDS & "." & COMMAND_POINT & "."
+	Else
+		StageOne objPath, PROP_CMD_OPEN, openTag, obj.Name, problem
+	End If
+
+	If closeTag = "" Then
+		problem = problem & vbCrLf & "  " & obj.Name & " - no " & CLOSE_UNIT & _
+		          " unit with a write tag under " & COMMANDS & "." & COMMAND_POINT & "."
+	Else
+		StageOne objPath, PROP_CMD_CLOSE, closeTag, obj.Name, problem
+	End If
+
+End Sub
+
+
+' Everything that blocks a manoeuvre on this device, as one expression.
+'
+' Each of them is a measurement of its own and a device carries as many
+' as it was configured with, so the expression is built out of the ones
+' that are there. A device with none of them is left alone rather than
+' given an expression that can never come true.
+'
+' Defective is a Boolean and holds no tag, so this is an expression and
+' not an association - which is why .Value belongs on the end here and is
+' stripped off the positions. It is put back rather than kept, so the
+' expression reads the same whichever way the Power side spelled the tag.
+Sub BindDefectiveOf(obj, objPath, powerPath, problem)
+
+	Dim signals, i, piece, tagPath, terms
+	signals = Split(DEFECT_SIGNALS, "|")
+	terms = ""
+
+	For i = 0 To UBound(signals)
+
+		piece = Split(signals(i), ";")
+
+		If UBound(piece) = 1 Then
+
+			tagPath = ScadaTagOf(powerPath, Trim(piece(0)))
+
+			If tagPath <> "" Then
+				If terms <> "" Then terms = terms & " Or "
+				terms = terms & tagPath & ".Value = " & Trim(piece(1))
+			End If
+
+		End If
+
+	Next
+
+	If terms = "" Then
+		gNoDefect = gNoDefect + 1
+		Exit Sub
+	End If
+
+	StageOne objPath, PROP_DEFECTIVE, terms, obj.Name, problem
+
+End Sub
+
+
+' The tag one Power measurement is read on, "" when there is none.
+'
+' The .Value on the end is taken off, whatever the caller wants the tag
+' for: an IOTag property holds the tag and not one of its members, and an
+' expression puts .Value back itself. The Power side spells the same tag
+' both ways depending on who wired it, so neither caller can be handed
+' what is written there.
+Function ScadaTagOf(powerPath, measurementName)
+
+	ScadaTagOf = ""
+
+	Dim tagText
+	tagText = ""
+
+	On Error Resume Next
+	Err.Clear
+
+	tagText = CStr(Application.GetObject(powerPath) _
+	          .Item(MEASUREMENTS).Item(measurementName).Item(SCADA).Tag & "")
+
+	If Err.Number <> 0 Then
+		tagText = ""
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+	ScadaTagOf = WithoutValue(Trim(tagText))
+
+End Function
+
+
+Function WithoutValue(text)
+
+	Dim s
+	s = Trim(text & "")
+
+	If Len(s) > 6 Then
+		If LCase(Right(s, 6)) = ".value" Then s = Left(s, Len(s) - 6)
+	End If
+
+	WithoutValue = s
+
+End Function
+
+
+' The two tags one Power device is operated on, and whether it carries a
+' command point at all - which is the difference between a device that
+' cannot be operated and one that was configured badly.
+Function CommandTagsOf(powerPath, openTag, closeTag)
+
+	CommandTagsOf = False
+	openTag = ""
+	closeTag = ""
+
+	Dim point
+	Set point = Nothing
+
+	On Error Resume Next
+	Set point = Application.GetObject(powerPath).Item(COMMANDS).Item(COMMAND_POINT)
+	On Error Goto 0
+
+	If point Is Nothing Then Exit Function
+
+	CommandTagsOf = True
+
+	Dim seen, unit, i
+	seen = 0
+
+	On Error Resume Next
+
+	For Each unit In point
+
+		' Counted on what came out and not on the turn of the loop. Where the
+		' enumeration is refused outright the count has to stay at nothing, or
+		' the fallback below reads as unnecessary and never runs.
+		If IsObject(unit) Then
+			seen = seen + 1
+			TakeUnit unit, openTag, closeTag
+		End If
+
+	Next
+
+	' A collection that will not enumerate still answers by index. Walked
+	' from 0 through the count rather than 1 through it, because that spans
+	' a collection numbered either way and the one subscript off the end of
+	' whichever it is costs nothing under the guard.
+	If seen = 0 Then
+		Err.Clear
+		For i = 0 To CountOf(point)
+			Set unit = Nothing
+			Set unit = point.Item(i)
+			If Not (unit Is Nothing) Then TakeUnit unit, openTag, closeTag
+			Err.Clear
+		Next
+	End If
+
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
+
+' One command unit read onto whichever of the two tags its CommandName
+' calls for.
+'
+' Taken off the name and not off the order they arrive in: a device that
+' carries them the other way round, or carries only one of them, still
+' lands on the right property. A unit with nothing to write on is left
+' out, so the caller can tell it apart from one that is not there.
+Sub TakeUnit(unit, openTag, closeTag)
+
+	Dim action, tagText
+	action = ""
+	tagText = ""
+
+	On Error Resume Next
+	action = LCase(Trim(CStr(unit.CommandName & "")))
+	tagText = WithoutValue(Trim(CStr(unit.OperateWriteTag & "")))
+	Err.Clear
+	On Error Goto 0
+
+	If tagText = "" Then Exit Sub
+
+	If action = LCase(OPEN_UNIT) Then
+		openTag = tagText
+	ElseIf action = LCase(CLOSE_UNIT) Then
+		closeTag = tagText
+	End If
+
+End Sub
+
+
+' How many a collection holds, 0 where it will not say.
+Function CountOf(collection)
+
+	CountOf = 0
+
+	On Error Resume Next
+	CountOf = CLng(collection.Count)
+	Err.Clear
+	On Error Goto 0
+
+End Function
+
+
+' One property staged in the document, on the two tags every other edit on
+' this panel travels on: the value on one, and the command that reads it
+' on the other.
+'
+' The key is the object's own path, which is what the document writes on
+' each object element - so nothing here has to know about the id: form the
+' panel rows use.
+Sub StageOne(objPath, propName, tagPath, deviceName, problem)
+
+	Dim command, valueTag
+	Set command = Nothing
+	Set valueTag = Nothing
+
+	On Error Resume Next
+	Set command = Application.GetObject(SET_PROPERTY)
+	Set valueTag = Application.GetObject(PROPERTY_VALUE)
+	On Error Goto 0
+
+	If command Is Nothing Or valueTag Is Nothing Then
+		gRefused = gRefused + 1
+		problem = problem & vbCrLf & "  " & deviceName & "." & propName & _
+		          " - " & SET_PROPERTY & " and " & PROPERTY_VALUE & _
+		          " are what carry an edit, and one of them is missing."
+		Exit Sub
+	End If
+
+	' The value first, so it is standing by when the command fires, and on a
+	' tag of its own so nothing in a path has to be escaped or split.
+	valueTag.WriteEx tagPath
+
+	command.WriteEx KIND_SOURCE & "|" & objPath & "|" & propName
+
+	If command.DocString <> EXIT_SUCCESS Then
+		gRefused = gRefused + 1
+		problem = problem & vbCrLf & "  " & deviceName & "." & propName & _
+		          " - the document would not take " & tagPath & "."
+		Exit Sub
+	End If
+
+	gBound = gBound + 1
+
+End Sub
+
+
+' Said, logged, and the command cleared, for a run that got nowhere.
+Sub Fail(message, ts)
+
+	DocString = EXIT_FAILURE
+	WriteLog message
+	WriteEx Empty, ts
+
+End Sub
+
+
+' The console the automation logs to, and the E3 trace either way.
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+	
 End Sub
 
 <xatm_config_data.Config.BuildAlarms:BuildAlarms_OnChangedValue()>
@@ -2033,658 +2677,6 @@ Sub WriteLog(message)
 	
 End Sub
 
-<xatm_config_data.Config.BindPositions:BindPositions_OnChangedValue()>
-Sub BindPositions_OnChangedValue()
-
-	' Every breaker and disconnector wired to the tags the substation side
-	' already reads and operates it on.
-	'
-	' The engineer configures the PowerSubstation first - every device bound
-	' to its measurements and its commands - and then had to bind the same
-	' tags a second time on the automation, by hand, once per property. The
-	' two sides already agree on the device names, so the second pass is
-	' derivable from the first.
-	'
-	' Staged in the document and not written into the project. The panel is
-	' built from the document and Save is what pushes it into E3, so a
-	' property written straight into the object would be overwritten by the
-	' next Save with whatever the document still held. This goes the same
-	' way a tag picked by hand goes.
-
-	If IsEmpty(Value) Or IsNull(Value) Then Exit Sub
-	If Trim(CStr(Value)) = "" Then Exit Sub
-
-	Dim ts
-	ts = TimeStamp                         ' preserved for the silent clear
-
-	' Which substation to take the tags from. It travels as the payload
-	' because the server cannot ask: a domain can hold more than one, and
-	' the button is where the choosing happens.
-	Dim substationPath
-	substationPath = Trim(CStr(Value))
-
-	Dim substation
-	Set substation = Nothing
-	On Error Resume Next
-	Set substation = Application.GetObject(substationPath)
-	On Error Goto 0
-
-	If substation Is Nothing Then
-		Fail "there is nothing at " & substationPath & ".", ts
-		Exit Sub
-	End If
-
-	' Every Power device of that substation, by name. Built once: the
-	' alternative is walking it again for each of the twenty-odd automation
-	' objects.
-	Dim byName
-	Set byName = CreateObject("Scripting.Dictionary")
-
-	' Names are matched without case. The two sides are configured by
-	' different people at different times and DJ03 against dj03 is not a
-	' difference either of them meant.
-	byName.CompareMode = 1
-
-	gClashes = 0
-
-	IndexClass BREAKER_CLASS, substationPath, byName
-	IndexClass SWITCH_CLASS, substationPath, byName
-
-	If byName.Count = 0 Then
-		Fail substationPath & " holds no " & BREAKER_CLASS & " or " & _
-		     SWITCH_CLASS & " to take the tags from.", ts
-		Exit Sub
-	End If
-
-	Dim root
-	Set root = Nothing
-	On Error Resume Next
-	Set root = Application.GetObject(DATA_ROOT)
-	On Error Goto 0
-
-	If root Is Nothing Then
-		Fail "the project has no " & DATA_ROOT & ".", ts
-		Exit Sub
-	End If
-
-	gBound   = 0
-	gDevices = 0
-	gMissing = 0
-	gNoTag   = 0
-	gNoCommand = 0
-	gNoDefect  = 0
-	gRefused = 0
-
-	Dim problem
-	problem = ""
-
-	BindFolder root, byName, problem
-
-	WriteLog gBound & " properties bound on " & gDevices & " devices, from " & _
-	         substationPath & "."
-
-	' Said as a count and not as a fault. A device that is only monitored
-	' carries no command point at all, and listing each one would turn an
-	' ordinary run into a failed one.
-	If gNoCommand > 0 Then
-		WriteLog gNoCommand & " devices have no " & COMMANDS & "." & COMMAND_POINT & _
-		         " and were bound for reading only."
-	End If
-
-	If gNoDefect > 0 Then
-		WriteLog gNoDefect & " devices carry none of the signals that block a " & _
-		         "manoeuvre, and were left without a Defective expression."
-	End If
-
-	If gClashes > 0 Then
-		WriteLog gClashes & " Power devices share a name " & "with another; the first of each was used."
-	End If
-
-	If problem <> "" Then
-		WriteLog "Not everything was bound:" & problem
-		DocString = EXIT_FAILURE
-		WriteEx Empty, ts
-		Exit Sub
-	End If
-
-	DocString = EXIT_SUCCESS
-	WriteEx Empty, ts                      ' clear without re-firing
-
-End Sub
-
-
-' What the two sides are called.
-Const BREAKER_CLASS = "PowerBreaker"
-Const SWITCH_CLASS  = "PowerSwitch"
-
-' Where the position lives on the Power side: the measurement named for
-' the device state, and the Scada child under it that names the tag.
-Const MEASUREMENTS  = "Measurements"
-Const MEASUREMENT   = "0EST"
-Const SCADA         = "Scada"
-
-' And where the command lives: a collection of its own under a point of
-' the same name, holding one PowerCommandUnit per action. Spelled out
-' apart from the measurement even though the two read alike today - they
-' are two points on the Power side and nothing binds them to stay equal.
-Const COMMANDS      = "Commands"
-Const COMMAND_POINT = "0EST"
-Const OPEN_UNIT     = "Open"
-Const CLOSE_UNIT    = "Close"
-
-' The measurements that say a device cannot be worked, and the reading
-' each one says it on. Written name;value the way EDP gave the list, so
-' a fourth signal is one more entry and nothing else.
-Const DEFECT_SIGNALS = "52ML;1|00LR;0|CBTL;0"
-
-' The automation properties they are copied onto: the position onto both
-' of the position pair, each command unit onto the one it names, and
-' everything that blocks a manoeuvre onto the one expression.
-Const PROP_OPEN      = "PositionOpen"
-Const PROP_CLOSED    = "PositionClosed"
-Const PROP_CMD_OPEN  = "CommandOpen"
-Const PROP_CMD_CLOSE = "CommandClose"
-Const PROP_DEFECTIVE = "Defective"
-
-Const DATA_ROOT     = "XATM_Data"
-Const FIND_OBJECTS  = "xatm_config_data.Config.FindObjects"
-Const FOUND_OBJECTS = "xatm_config_data.Config.FoundObjects"
-Const SET_PROPERTY  = "xatm_config_data.Config.SetProperty"
-Const PROPERTY_VALUE = "xatm_config_data.Config.PropertyValue"
-Const KIND_SOURCE   = "source"
-
-Const EXIT_SUCCESS  = "EXIT_SUCCESS"
-Const EXIT_FAILURE  = "EXIT_FAILURE"
-
-Dim gBound
-Dim gDevices
-Dim gMissing
-Dim gNoTag
-Dim gNoCommand
-Dim gNoDefect
-Dim gRefused
-Dim gClashes
-
-
-' Every object of one class inside the chosen substation, added to the
-' index by name.
-'
-' Asked of FindObjects rather than walked here: that tag already scans for
-' a class and answers on FoundObjects, and a second walker would be a
-' second thing to keep in step for no gain. It scans the whole domain
-' though, so what comes back is filtered to the substation - see Under.
-Sub IndexClass(className, substationPath, byName)
-
-	Dim finder, answerTag
-	Set finder = Nothing
-	Set answerTag = Nothing
-
-	On Error Resume Next
-	Set finder = Application.GetObject(FIND_OBJECTS)
-	Set answerTag = Application.GetObject(FOUND_OBJECTS)
-	On Error Goto 0
-
-	If finder Is Nothing Or answerTag Is Nothing Then
-		WriteLog FIND_OBJECTS & " and " & FOUND_OBJECTS & _
-		         " are what the search runs on, and one of them is missing."
-		Exit Sub
-	End If
-
-	finder.WriteEx className
-
-	If finder.DocString <> EXIT_SUCCESS Then
-		WriteLog "The search for " & className & " got nowhere."
-		Exit Sub
-	End If
-
-	Dim list, i, path, obj
-	list = Split(CStr(answerTag.Value & ""), vbCrLf)
-
-	For i = 0 To UBound(list)
-
-		path = Trim(list(i))
-
-		If path <> "" And Under(path, substationPath) Then
-
-			Set obj = Nothing
-			On Error Resume Next
-			Set obj = Application.GetObject(path)
-			On Error Goto 0
-
-			If Not obj Is Nothing Then
-				If byName.Exists(obj.Name) Then
-					gClashes = gClashes + 1
-				Else
-					byName.Add obj.Name, path
-				End If
-			End If
-
-		End If
-
-	Next
-
-End Sub
-
-
-' Whether a path sits inside the substation that was chosen.
-'
-' A domain can hold more than one PowerSubstation - the picker on the
-' button exists for exactly that - and two of them can each carry a DJ03.
-' Without this the index would keep whichever the domain scan met first
-' and bind the automation to another station's tag without a word about
-' it.
-Function Under(path, root)
-
-	Under = False
-
-	If Len(root) = 0 Then Exit Function
-	If Len(path) <= Len(root) Then Exit Function
-
-	Under = (LCase(Left(path, Len(root) + 1)) = LCase(root & "."))
-
-End Function
-
-
-' One folder of the data project, then whatever is under it - the walk the
-' alarms and the export do, so a device is found where the tree says it.
-Sub BindFolder(folder, byName, problem)
-
-	Dim item, where
-
-	For Each item In folder
-
-		where = ""
-		On Error Resume Next
-		where = item.Name
-		On Error Goto 0
-
-		Select Case LCase(TypeName(item))
-
-			Case "xatm_breaker", "xatm_disconnector"
-				BindDevice item, byName, problem
-
-			Case Else
-
-				' Anything else is taken for a folder and walked. The error is
-				' kept rather than dropped: swallowing it here would abandon
-				' the rest of the folder and report nothing at all.
-				On Error Resume Next
-				Err.Clear
-
-				BindFolder item, byName, problem
-
-				If Err.Number <> 0 Then
-					problem = problem & vbCrLf & "  " & where & " (" & _
-					          TypeName(item) & ") - " & Err.Description
-					Err.Clear
-				End If
-
-				On Error Goto 0
-
-		End Select
-
-	Next
-
-End Sub
-
-
-' One device: the Power object of the same name, and what it is read and
-' operated on copied off it.
-'
-' The two halves are bound apart. A device configured for one and not the
-' other is ordinary here - a disconnector that is only monitored has no
-' command units at all - so a missing half is accounted for and the other
-' half still lands.
-Sub BindDevice(obj, byName, problem)
-
-	If Not byName.Exists(obj.Name) Then
-		gMissing = gMissing + 1
-		problem = problem & vbCrLf & "  " & obj.Name & " - the domain has no " & _
-		          BREAKER_CLASS & " or " & SWITCH_CLASS & " of that name."
-		Exit Sub
-	End If
-
-	Dim objPath
-	objPath = ""
-	On Error Resume Next
-	objPath = obj.PathName
-	On Error Goto 0
-
-	If objPath = "" Then Exit Sub
-
-	Dim powerPath, before
-	powerPath = byName(obj.Name)
-	before = gBound
-
-	BindPositionsOf obj, objPath, powerPath, problem
-	BindCommandsOf obj, objPath, powerPath, problem
-	BindDefectiveOf obj, objPath, powerPath, problem
-
-	' Counted as a device only where something was actually bound onto it.
-	If gBound > before Then gDevices = gDevices + 1
-
-End Sub
-
-
-' The position tag onto both of the position properties.
-Sub BindPositionsOf(obj, objPath, powerPath, problem)
-
-	Dim tagPath
-	tagPath = ScadaTagOf(powerPath, MEASUREMENT)
-
-	If tagPath = "" Then
-		gNoTag = gNoTag + 1
-		problem = problem & vbCrLf & "  " & obj.Name & " - nothing at " & _
-		          MEASUREMENTS & "." & MEASUREMENT & "." & SCADA & ".Tag."
-		Exit Sub
-	End If
-
-	StageOne objPath, PROP_OPEN, tagPath, obj.Name, problem
-	StageOne objPath, PROP_CLOSED, tagPath, obj.Name, problem
-
-End Sub
-
-
-' Each command unit onto the command property it names.
-'
-' No command point at all is not a fault and is only counted - see the
-' summary. The point with a unit missing off it, or a unit carrying no
-' write tag, is half configured and is named.
-Sub BindCommandsOf(obj, objPath, powerPath, problem)
-
-	Dim openTag, closeTag
-
-	If Not CommandTagsOf(powerPath, openTag, closeTag) Then
-		gNoCommand = gNoCommand + 1
-		Exit Sub
-	End If
-
-	If openTag = "" Then
-		problem = problem & vbCrLf & "  " & obj.Name & " - no " & OPEN_UNIT & _
-		          " unit with a write tag under " & COMMANDS & "." & COMMAND_POINT & "."
-	Else
-		StageOne objPath, PROP_CMD_OPEN, openTag, obj.Name, problem
-	End If
-
-	If closeTag = "" Then
-		problem = problem & vbCrLf & "  " & obj.Name & " - no " & CLOSE_UNIT & _
-		          " unit with a write tag under " & COMMANDS & "." & COMMAND_POINT & "."
-	Else
-		StageOne objPath, PROP_CMD_CLOSE, closeTag, obj.Name, problem
-	End If
-
-End Sub
-
-
-' Everything that blocks a manoeuvre on this device, as one expression.
-'
-' Each of them is a measurement of its own and a device carries as many
-' as it was configured with, so the expression is built out of the ones
-' that are there. A device with none of them is left alone rather than
-' given an expression that can never come true.
-'
-' Defective is a Boolean and holds no tag, so this is an expression and
-' not an association - which is why .Value belongs on the end here and is
-' stripped off the positions. It is put back rather than kept, so the
-' expression reads the same whichever way the Power side spelled the tag.
-Sub BindDefectiveOf(obj, objPath, powerPath, problem)
-
-	Dim signals, i, piece, tagPath, terms
-	signals = Split(DEFECT_SIGNALS, "|")
-	terms = ""
-
-	For i = 0 To UBound(signals)
-
-		piece = Split(signals(i), ";")
-
-		If UBound(piece) = 1 Then
-
-			tagPath = ScadaTagOf(powerPath, Trim(piece(0)))
-
-			If tagPath <> "" Then
-				If terms <> "" Then terms = terms & " Or "
-				terms = terms & tagPath & ".Value = " & Trim(piece(1))
-			End If
-
-		End If
-
-	Next
-
-	If terms = "" Then
-		gNoDefect = gNoDefect + 1
-		Exit Sub
-	End If
-
-	StageOne objPath, PROP_DEFECTIVE, terms, obj.Name, problem
-
-End Sub
-
-
-' The tag one Power measurement is read on, "" when there is none.
-'
-' The .Value on the end is taken off, whatever the caller wants the tag
-' for: an IOTag property holds the tag and not one of its members, and an
-' expression puts .Value back itself. The Power side spells the same tag
-' both ways depending on who wired it, so neither caller can be handed
-' what is written there.
-Function ScadaTagOf(powerPath, measurementName)
-
-	ScadaTagOf = ""
-
-	Dim tagText
-	tagText = ""
-
-	On Error Resume Next
-	Err.Clear
-
-	tagText = CStr(Application.GetObject(powerPath) _
-	          .Item(MEASUREMENTS).Item(measurementName).Item(SCADA).Tag & "")
-
-	If Err.Number <> 0 Then
-		tagText = ""
-		Err.Clear
-	End If
-
-	On Error Goto 0
-
-	ScadaTagOf = WithoutValue(Trim(tagText))
-
-End Function
-
-
-Function WithoutValue(text)
-
-	Dim s
-	s = Trim(text & "")
-
-	If Len(s) > 6 Then
-		If LCase(Right(s, 6)) = ".value" Then s = Left(s, Len(s) - 6)
-	End If
-
-	WithoutValue = s
-
-End Function
-
-
-' The two tags one Power device is operated on, and whether it carries a
-' command point at all - which is the difference between a device that
-' cannot be operated and one that was configured badly.
-Function CommandTagsOf(powerPath, openTag, closeTag)
-
-	CommandTagsOf = False
-	openTag = ""
-	closeTag = ""
-
-	Dim point
-	Set point = Nothing
-
-	On Error Resume Next
-	Set point = Application.GetObject(powerPath).Item(COMMANDS).Item(COMMAND_POINT)
-	On Error Goto 0
-
-	If point Is Nothing Then Exit Function
-
-	CommandTagsOf = True
-
-	Dim seen, unit, i
-	seen = 0
-
-	On Error Resume Next
-
-	For Each unit In point
-
-		' Counted on what came out and not on the turn of the loop. Where the
-		' enumeration is refused outright the count has to stay at nothing, or
-		' the fallback below reads as unnecessary and never runs.
-		If IsObject(unit) Then
-			seen = seen + 1
-			TakeUnit unit, openTag, closeTag
-		End If
-
-	Next
-
-	' A collection that will not enumerate still answers by index. Walked
-	' from 0 through the count rather than 1 through it, because that spans
-	' a collection numbered either way and the one subscript off the end of
-	' whichever it is costs nothing under the guard.
-	If seen = 0 Then
-		Err.Clear
-		For i = 0 To CountOf(point)
-			Set unit = Nothing
-			Set unit = point.Item(i)
-			If Not (unit Is Nothing) Then TakeUnit unit, openTag, closeTag
-			Err.Clear
-		Next
-	End If
-
-	Err.Clear
-	On Error Goto 0
-
-End Function
-
-
-' One command unit read onto whichever of the two tags its CommandName
-' calls for.
-'
-' Taken off the name and not off the order they arrive in: a device that
-' carries them the other way round, or carries only one of them, still
-' lands on the right property. A unit with nothing to write on is left
-' out, so the caller can tell it apart from one that is not there.
-Sub TakeUnit(unit, openTag, closeTag)
-
-	Dim action, tagText
-	action = ""
-	tagText = ""
-
-	On Error Resume Next
-	action = LCase(Trim(CStr(unit.CommandName & "")))
-	tagText = WithoutValue(Trim(CStr(unit.OperateWriteTag & "")))
-	Err.Clear
-	On Error Goto 0
-
-	If tagText = "" Then Exit Sub
-
-	If action = LCase(OPEN_UNIT) Then
-		openTag = tagText
-	ElseIf action = LCase(CLOSE_UNIT) Then
-		closeTag = tagText
-	End If
-
-End Sub
-
-
-' How many a collection holds, 0 where it will not say.
-Function CountOf(collection)
-
-	CountOf = 0
-
-	On Error Resume Next
-	CountOf = CLng(collection.Count)
-	Err.Clear
-	On Error Goto 0
-
-End Function
-
-
-' One property staged in the document, on the two tags every other edit on
-' this panel travels on: the value on one, and the command that reads it
-' on the other.
-'
-' The key is the object's own path, which is what the document writes on
-' each object element - so nothing here has to know about the id: form the
-' panel rows use.
-Sub StageOne(objPath, propName, tagPath, deviceName, problem)
-
-	Dim command, valueTag
-	Set command = Nothing
-	Set valueTag = Nothing
-
-	On Error Resume Next
-	Set command = Application.GetObject(SET_PROPERTY)
-	Set valueTag = Application.GetObject(PROPERTY_VALUE)
-	On Error Goto 0
-
-	If command Is Nothing Or valueTag Is Nothing Then
-		gRefused = gRefused + 1
-		problem = problem & vbCrLf & "  " & deviceName & "." & propName & _
-		          " - " & SET_PROPERTY & " and " & PROPERTY_VALUE & _
-		          " are what carry an edit, and one of them is missing."
-		Exit Sub
-	End If
-
-	' The value first, so it is standing by when the command fires, and on a
-	' tag of its own so nothing in a path has to be escaped or split.
-	valueTag.WriteEx tagPath
-
-	command.WriteEx KIND_SOURCE & "|" & objPath & "|" & propName
-
-	If command.DocString <> EXIT_SUCCESS Then
-		gRefused = gRefused + 1
-		problem = problem & vbCrLf & "  " & deviceName & "." & propName & _
-		          " - the document would not take " & tagPath & "."
-		Exit Sub
-	End If
-
-	gBound = gBound + 1
-
-End Sub
-
-
-' Said, logged, and the command cleared, for a run that got nowhere.
-Sub Fail(message, ts)
-
-	DocString = EXIT_FAILURE
-	WriteLog message
-	WriteEx Empty, ts
-
-End Sub
-
-
-' The console the automation logs to, and the E3 trace either way.
-Sub WriteLog(message)
-
-	Dim consoleLogEngine
-	Set consoleLogEngine = Nothing
-
-	On Error Resume Next
-	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
-	Application.Trace "[" & Name & "] - " & message
-	On Error Goto 0
-
-	If Not consoleLogEngine Is Nothing Then
-		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
-	End If
-
-End Sub
-
-<xatm_config_data.Config.BindPositions:BindPositions_OnStartRunning()>
-Sub BindPositions_OnStartRunning()
-
-	DocString = ""
-
-End Sub
-
-
 <xatm_config_data.Config.FindObjects:FindObjects_OnChangedValue()>
 Sub FindObjects_OnChangedValue()
 
@@ -3245,7 +3237,7 @@ End Sub
 ' source for a path would send an expression to be looked up as though it
 ' were one and report it missing.
 Sub WriteSource(obj, name, dataType, path, report, where)
-
+	
 	' An empty path is not skipped. It is what the panel's clear button
 	' leaves behind, and it means take the source off - so it goes the same
 	' way a real one goes, and each of the two below knows what to do with
@@ -3589,7 +3581,7 @@ Sub WriteLog(message)
 	If Not consoleLogEngine Is Nothing Then
 		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
 	End If
-	
+		
 End Sub
 
 <xatm_config_data.Config.ImportXml:ImportXml_OnStartRunning()>
@@ -5708,7 +5700,7 @@ Sub xatm_RASEAT_OnStartRunning()
 	SetExposure bag, "Enabled", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
 	SetExposure bag, "Blocked", EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
-
+	
 	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "OperatorBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
@@ -6046,7 +6038,6 @@ Sub xatm_TA_OnStartRunning()
 		"True when an automatic transfer could not start - disabled, blocked by the operator or the general interlock, or barred by the field.", _
 		"True quando uma transferência automÁtica não pode partir - desabilitado, bloqueado pelo operador ou pelo intertravamento geral, ou barrado pelo campo."
 
-
 	' How the last transfer went, on the footing the manual automation and
 	' the reclosing already use.
 	'
@@ -6067,7 +6058,7 @@ Sub xatm_TA_OnStartRunning()
 	AddProperty bag, "Unsuccessful", "Boolean", False, _
 		"True when the last automatic transfer did not complete - a step failed and the sequence stopped on it.", _
 		"True quando a última transferência automática não foi concluída - um passo falhou e a sequência parou nele."
-
+	
 	' And the same three per contingency.
 	'
 	' A TA runs a different sequence depending on which other transformer is
@@ -6097,8 +6088,7 @@ Sub xatm_TA_OnStartRunning()
 			"True quando a última transferência automática com o transformador " & (i * 100) & " impedido não foi concluída."
 
 	Next
-
-
+		
 	' --- the command interface ------------------------------------------
 	'
 	' No CommandStart of any kind. Over IEC 60870-5-104 an address means
@@ -6139,17 +6129,17 @@ Sub xatm_TA_OnStartRunning()
 
 	SetExposure bag, "Blocked", EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Running", EXPOSE_INTERFACE + EXPOSE_IOTAG
-
+	
 	SetExposure bag, "Successful",   EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Unsuccessful", EXPOSE_INTERFACE + EXPOSE_IOTAG
-
+	
 	' The per-contingency three, the same way.
 	For i = 1 To 4
 		SetExposure bag, "Running"      & (i * 100), EXPOSE_INTERFACE + EXPOSE_IOTAG
 		SetExposure bag, "Successful"   & (i * 100), EXPOSE_INTERFACE + EXPOSE_IOTAG
 		SetExposure bag, "Unsuccessful" & (i * 100), EXPOSE_INTERFACE + EXPOSE_IOTAG
 	Next
-
+	
 	For i = 1 To 6
 		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
 	Next
@@ -6170,7 +6160,7 @@ Sub xatm_TA_OnStartRunning()
 	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO TA", PAIR_BLOCKED,      SEV_MEDIUM
 
 	SetAlarm bag, "Blocked",       "TRANSFERÊNCIA AUTOMÁTICA", PAIR_BLOCKED, SEV_MEDIUM
-
+	
 	' Low on the one that went well and high on the one that did not, the
 	' way the manual automation and the reclosing are graded.
 	SetAlarm bag, "Successful",    "TRANSFERÊNCIA AUTOMÁTICA BEM SUCEDIDA", PAIR_ACTUATED, SEV_LOW
@@ -6528,7 +6518,7 @@ Sub xatm_TMTNM_OnStartRunning()
 			AddProperty bag, "Preconditions" & gate, "Boolean", True, _
 				"Field conditions that have to hold before " & whatEN & outEN & " may start. Bound to an expression - True while the maneuver is permitted.", _
 				"Condições de campo que devem valer antes que " & whatPT & outPT & " possa partir. Vinculada a uma expressão - True enquanto a manobra é permitida."
-
+		
 			' One point per maneuver, which is what the control room's list
 			' asks for and what level 3 can carry: a point, never a value
 			' saying which of them is running. The same reason there are ten
@@ -6681,7 +6671,7 @@ Sub xatm_TMTNM_OnStartRunning()
 			If gi = 0 Then gate = gm Else gate = gm & (gi * 100)
 			SetExposure bag, "Preconditions"  & gate, EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
 			SetExposure bag, "AutomaticBlock" & gate, EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
-
+			
 			' Exposed the way the instance's own three are, and for their
 			' reason: the automation talking about itself, carried to level 3
 			' and to a screen, with nothing on the configuration panel to
@@ -8707,179 +8697,6 @@ Sub Foo()
 			
 End Sub
 
-<xatm_config_screens.Config.btnBindPositions:btnBindPositions_Click()>
-Sub btnBindPositions_Click()
-
-	' Asked before it runs, because it does not ask per device.
-	'
-	' Every breaker and disconnector that finds a Power device of its name
-	' has its position, command and Defective properties overwritten. A tag
-	' or an expression somebody put in by hand goes with them, which is the
-	' whole point on a first pass and a loss on a project already tuned.
-	'
-	' So the box warns rather than asks - vbExclamation and not vbQuestion,
-	' and it says out loud that there is no undo on this screen, because
-	' there is not one: what this overwrites comes back only by being
-	' configured again by hand, one property at a time.
-	'
-	' In Portuguese, alone among the dialogs here, because this is the one
-	' that can cost somebody an afternoon and it should be read rather than
-	' translated at a glance.
-
-	Dim substation
-	substation = ChosenSubstation()
-
-	If substation = "" Then Exit Sub
-
-	If MsgBox( _
-		"ATENÇÃO - esta rotina sobrescreve o que já está " & _
-		"configurado." & vbCrLf & vbCrLf & _
-		"Vincular os sinais de todos os disjuntores e seccionadoras a " & _
-		"partir da PowerSubstation?" & vbCrLf & vbCrLf & _
-		"PositionOpen, PositionClosed, CommandOpen, CommandClose e " & _
-		"Defective serão substituídos em todo dispositivo que tiver um " & _
-		"equivalente de mesmo nome na PowerSubstation - inclusive onde a " & _
-		"tag ou a expressão foi escolhida à mão." & vbCrLf & vbCrLf & _
-		"Não há desfazer nesta tela: o que for sobrescrito só volta " & _
-		"reconfigurando à mão, um por um." & vbCrLf & vbCrLf & _
-		"Nada chega ao projeto até você clicar em Salvar.", _
-		vbYesNo + vbExclamation + vbDefaultButton2, BIND_TITLE) <> vbYes Then Exit Sub
-
-	Dim binder
-	Set binder = Nothing
-
-	On Error Resume Next
-	Set binder = Application.GetObject(BIND_POSITIONS)
-	On Error Goto 0
-
-	If binder Is Nothing Then
-		MsgBox "Este projeto não tem a tag " & BIND_POSITIONS & ", " & _
-		       "então não há como vincular nada.", vbCritical, BIND_TITLE
-		Exit Sub
-	End If
-
-	binder.WriteEx substation
-
-	If binder.DocString <> EXIT_SUCCESS Then
-		MsgBox "Nem tudo foi vinculado - o console diz quais dispositivos " & _
-		       "e por quê.", vbExclamation, BIND_TITLE
-		Exit Sub
-	End If
-
-	MsgBox "Os sinais de posição, comando e Defective foram " & _
-	       "preenchidos." & vbCrLf & vbCrLf & _
-	       "Revise no painel e clique em Salvar para gravar no projeto.", _
-	       vbInformation, BIND_TITLE
-
-End Sub
-
-Const BIND_POSITIONS = "xatm_config_data.Config.BindPositions"
-Const EXIT_SUCCESS   = "EXIT_SUCCESS"
-Const BIND_TITLE     = "Vincular sinais"
-
-' The tag that does the looking, and the one it answers on. Written out
-' again here because one E3 object cannot call another's - the alarms
-' button keeps the same pair for the same reason.
-Const FIND_OBJECTS     = "xatm_config_data.Config.FindObjects"
-Const FOUND_OBJECTS    = "xatm_config_data.Config.FoundObjects"
-Const SUBSTATION_CLASS = "PowerSubstation"
-
-
-' The substation to take the tags from, or "" when there is none or the
-' operator backed out of choosing.
-Function ChosenSubstation()
-
-	ChosenSubstation = ""
-
-	Dim finder
-	Set finder = Nothing
-	On Error Resume Next
-	Set finder = Application.GetObject(FIND_OBJECTS)
-	On Error Goto 0
-
-	If finder Is Nothing Then
-		MsgBox "Este projeto não tem a tag " & FIND_OBJECTS & ", " & _
-		       "então não há como procurar as subestações.", _
-		       vbCritical, BIND_TITLE
-		Exit Function
-	End If
-
-	finder.WriteEx SUBSTATION_CLASS
-
-	If finder.DocString <> EXIT_SUCCESS Then
-		MsgBox "Não foi possível procurar as subestações - o " & _
-		       "console diz por quê.", vbCritical, BIND_TITLE
-		Exit Function
-	End If
-
-	Dim answer
-	answer = ""
-	On Error Resume Next
-	answer = CStr(Application.GetObject(FOUND_OBJECTS).Value)
-	On Error Goto 0
-
-	If Trim(answer) = "" Then
-		MsgBox "Nenhuma " & SUBSTATION_CLASS & " foi encontrada neste " & _
-		       "domínio.", vbExclamation, BIND_TITLE
-		Exit Function
-	End If
-
-	Dim found
-	found = Split(answer, vbCrLf)
-
-	If UBound(found) = 0 Then
-		ChosenSubstation = found(0)
-		Exit Function
-	End If
-
-	ChosenSubstation = PickSubstation(found)
-
-End Function
-
-
-' Which of several, asked as a number against a numbered list - the same
-' box the alarms button puts up, because a viewer has nothing better.
-Function PickSubstation(found)
-
-	PickSubstation = ""
-
-	Dim prompt, i
-	prompt = "Foi encontrada mais de uma " & SUBSTATION_CLASS & "." & _
-	         vbCrLf & "Digite o número da que deve fornecer os sinais:" & _
-	         vbCrLf & vbCrLf
-
-	For i = 0 To UBound(found)
-		prompt = prompt & "  " & (i + 1) & " - " & found(i) & vbCrLf
-	Next
-
-	Dim reply
-	reply = InputBox(prompt, BIND_TITLE, "1")
-
-	' Cancel and an empty box both come back "", and neither is a choice.
-	If Trim(reply) = "" Then Exit Function
-
-	If Not IsNumeric(reply) Then
-		MsgBox "'" & reply & "' não é um dos números da lista.", _
-		       vbExclamation, BIND_TITLE
-		Exit Function
-	End If
-
-	Dim choice
-	choice = CLng(reply)
-
-	If choice < 1 Or choice > UBound(found) + 1 Then
-		MsgBox "Não existe " & choice & " na lista.", vbExclamation, BIND_TITLE
-		Exit Function
-	End If
-
-	PickSubstation = found(choice - 1)
-
-End Function
-
-Sub EndOfScope()
-End Sub
-
-
 <xatm_config_screens.Config.btnAlarms:btnAlarms_Click()>
 Sub btnAlarms_Click()
 	
@@ -10403,6 +10220,179 @@ Sub EndOfScope()
 
 End Sub
 
+<xatm_config_screens.Config.btnBindSignals:btnBindSignals_Click()>
+Sub btnBindSignals_Click()
+
+	' Asked before it runs, because it does not ask per device.
+	'
+	' Every breaker and disconnector that finds a Power device of its name
+	' has its position, command and Defective properties overwritten. A tag
+	' or an expression somebody put in by hand goes with them, which is the
+	' whole point on a first pass and a loss on a project already tuned.
+	'
+	' So the box warns rather than asks - vbExclamation and not vbQuestion,
+	' and it says out loud that there is no undo on this screen, because
+	' there is not one: what this overwrites comes back only by being
+	' configured again by hand, one property at a time.
+	'
+	' In Portuguese, alone among the dialogs here, because this is the one
+	' that can cost somebody an afternoon and it should be read rather than
+	' translated at a glance.
+
+	Dim substation
+	substation = ChosenSubstation()
+
+	If substation = "" Then Exit Sub
+
+	If MsgBox( _
+		"ATENÇÃO - esta rotina sobrescreve o que já está " & _
+		"configurado." & vbCrLf & vbCrLf & _
+		"Vincular os sinais de todos os disjuntores e seccionadoras a " & _
+		"partir da PowerSubstation?" & vbCrLf & vbCrLf & _
+		"PositionOpen, PositionClosed, CommandOpen, CommandClose e " & _
+		"Defective serão substituídos em todo dispositivo que tiver um " & _
+		"equivalente de mesmo nome na PowerSubstation - inclusive onde a " & _
+		"tag ou a expressão foi escolhida à mão." & vbCrLf & vbCrLf & _
+		"Não há desfazer nesta tela: o que for sobrescrito só volta " & _
+		"reconfigurando à mão, um por um." & vbCrLf & vbCrLf & _
+		"Nada chega ao projeto até você clicar em Salvar.", _
+		vbYesNo + vbExclamation + vbDefaultButton2, BIND_TITLE) <> vbYes Then Exit Sub
+
+	Dim binder
+	Set binder = Nothing
+
+	On Error Resume Next
+	Set binder = Application.GetObject(BIND_POSITIONS)
+	On Error Goto 0
+
+	If binder Is Nothing Then
+		MsgBox "Este projeto não tem a tag " & BIND_POSITIONS & ", " & _
+		       "então não há como vincular nada.", vbCritical, BIND_TITLE
+		Exit Sub
+	End If
+
+	binder.WriteEx substation
+
+	If binder.DocString <> EXIT_SUCCESS Then
+		MsgBox "Nem tudo foi vinculado - o console diz quais dispositivos " & _
+		       "e por quê.", vbExclamation, BIND_TITLE
+		Exit Sub
+	End If
+
+	MsgBox "Os sinais de posição, comando e Defective foram " & _
+	       "preenchidos." & vbCrLf & vbCrLf & _
+	       "Revise no painel e clique em Salvar para gravar no projeto.", _
+	       vbInformation, BIND_TITLE
+
+End Sub
+
+Const BIND_POSITIONS = "xatm_config_data.Config.BindPositions"
+Const EXIT_SUCCESS   = "EXIT_SUCCESS"
+Const BIND_TITLE     = "Vincular sinais"
+
+' The tag that does the looking, and the one it answers on. Written out
+' again here because one E3 object cannot call another's - the alarms
+' button keeps the same pair for the same reason.
+Const FIND_OBJECTS     = "xatm_config_data.Config.FindObjects"
+Const FOUND_OBJECTS    = "xatm_config_data.Config.FoundObjects"
+Const SUBSTATION_CLASS = "PowerSubstation"
+
+
+' The substation to take the tags from, or "" when there is none or the
+' operator backed out of choosing.
+Function ChosenSubstation()
+
+	ChosenSubstation = ""
+
+	Dim finder
+	Set finder = Nothing
+	On Error Resume Next
+	Set finder = Application.GetObject(FIND_OBJECTS)
+	On Error Goto 0
+
+	If finder Is Nothing Then
+		MsgBox "Este projeto não tem a tag " & FIND_OBJECTS & ", " & _
+		       "então não há como procurar as subestações.", _
+		       vbCritical, BIND_TITLE
+		Exit Function
+	End If
+
+	finder.WriteEx SUBSTATION_CLASS
+
+	If finder.DocString <> EXIT_SUCCESS Then
+		MsgBox "Não foi possível procurar as subestações - o " & _
+		       "console diz por quê.", vbCritical, BIND_TITLE
+		Exit Function
+	End If
+
+	Dim answer
+	answer = ""
+	On Error Resume Next
+	answer = CStr(Application.GetObject(FOUND_OBJECTS).Value)
+	On Error Goto 0
+
+	If Trim(answer) = "" Then
+		MsgBox "Nenhuma " & SUBSTATION_CLASS & " foi encontrada neste " & _
+		       "domínio.", vbExclamation, BIND_TITLE
+		Exit Function
+	End If
+
+	Dim found
+	found = Split(answer, vbCrLf)
+
+	If UBound(found) = 0 Then
+		ChosenSubstation = found(0)
+		Exit Function
+	End If
+
+	ChosenSubstation = PickSubstation(found)
+
+End Function
+
+
+' Which of several, asked as a number against a numbered list - the same
+' box the alarms button puts up, because a viewer has nothing better.
+Function PickSubstation(found)
+
+	PickSubstation = ""
+
+	Dim prompt, i
+	prompt = "Foi encontrada mais de uma " & SUBSTATION_CLASS & "." & _
+	         vbCrLf & "Digite o número da que deve fornecer os sinais:" & _
+	         vbCrLf & vbCrLf
+
+	For i = 0 To UBound(found)
+		prompt = prompt & "  " & (i + 1) & " - " & found(i) & vbCrLf
+	Next
+
+	Dim reply
+	reply = InputBox(prompt, BIND_TITLE, "1")
+
+	' Cancel and an empty box both come back "", and neither is a choice.
+	If Trim(reply) = "" Then Exit Function
+
+	If Not IsNumeric(reply) Then
+		MsgBox "'" & reply & "' não é um dos números da lista.", _
+		       vbExclamation, BIND_TITLE
+		Exit Function
+	End If
+
+	Dim choice
+	choice = CLng(reply)
+
+	If choice < 1 Or choice > UBound(found) + 1 Then
+		MsgBox "Não existe " & choice & " na lista.", vbExclamation, BIND_TITLE
+		Exit Function
+	End If
+
+	PickSubstation = found(choice - 1)
+
+End Function
+
+Sub EndOfScope()
+	
+End Sub
+
 <xatm_config_screens.Config.btnDistribution:btnDistribution_Click()>
 Sub btnDistribution_Click()
 
@@ -11296,6 +11286,145 @@ Sub Config_OnPreShow(Arg)
 		
 End Sub
 
+<xatm_config_screens.ConsoleLogExpanded.ListBox:ListBox_MouseUp(Button, Shift, X, Y)>
+Sub ListBox_MouseUp(Button, Shift, X, Y)
+	
+	If Button <> 2 Then
+		Exit Sub
+	End If
+	
+	Dim userOption
+	userOption = Application.SelectMenu("Clear...")
+	
+	If userOption = 1 Then
+		
+		Dim contentTag
+		Set contentTag = Nothing
+		On Error Resume Next
+		Set contentTag = Application.GetObject("xatm_config_data.ConsoleLogEngine.Data.Content")
+		On Error Goto 0
+		
+		If contentTag Is Nothing Then
+			MsgBox "No 'Console Log Engine' was bound to '" & Me.PathName & "'.", vbExclamation, "Error"
+			Exit Sub
+		End If
+		
+		contentTag.WriteEx Empty
+		
+	End If
+		
+End Sub
+
+<xatm_config_screens.ConsoleLogExpanded.ListBox:ListBox_OnChangedContent()>
+Sub ListBox_OnChangedContent()
+	
+	' Initialize DocString property as timer helper
+	DocString = "0"
+
+End Sub
+
+<xatm_config_screens.ConsoleLogExpanded.ListBox:ListBox_OnStartRunning()>
+Sub ListBox_OnStartRunning()
+
+	ListBox_OnChangedContent
+	
+End Sub
+
+<xatm_config_screens.ConsoleLogExpanded.ListBox:ListBox_Timer()>
+Sub ListBox_Timer()
+	
+	Const DELAY = 1
+	
+	If CInt(DocString) >= DELAY Then
+		
+		' Finish timer
+		DocString = "-1"
+		
+		AddArrayContentToList
+		
+	Else
+	
+		DocString = CInt(DocString) + 1
+		
+	End If
+	
+End Sub
+
+
+' The longest item the list box is asked to take.
+Const MAX_ITEM_LENGTH = 512
+
+
+' What the list box will accept: one line, and a bounded one.
+'
+' The engine writes one physical line per entry now, so this is a belt on
+' top of braces. It stays because AddItem refuses an item carrying a line
+' break outright, and the loop below stops at the first refusal - so one
+' bad entry would not cost one row, it would hide every row after it.
+Function SafeItem(v)
+
+    Dim s
+    s = ""
+
+    On Error Resume Next
+    s = CStr(v)
+    On Error Goto 0
+
+    s = Replace(s, vbCrLf, " ")
+    s = Replace(s, vbCr, " ")
+    s = Replace(s, vbLf, " ")
+
+    If Len(s) > MAX_ITEM_LENGTH Then s = Left(s, MAX_ITEM_LENGTH - 3) & "..."
+
+    SafeItem = s
+
+End Function
+
+Sub AddArrayContentToList()
+
+    Dim contentTag
+    Set contentTag = Nothing
+    On Error Resume Next
+    Set contentTag = Application.GetObject("xatm_config_data.ConsoleLogEngine").Item("Data").Item("Content")
+    On Error Goto 0
+
+    If contentTag Is Nothing Then
+        MsgBox "No 'Console Log Engine' was bound to '" & Me.PathName & "'.", vbExclamation, "Error"
+        Exit Sub
+    End If
+
+    If IsEmpty(contentTag.Value) Then
+        Clear()
+        Exit Sub
+    End If
+
+    If Not IsArray(contentTag.Value) Then
+        Exit Sub
+    End If
+
+    Dim contentArr
+    contentArr = contentTag.Value
+
+    Dim arrSize
+    arrSize = UBound(contentArr) + 1
+
+    ' If ListCount >= arrSize, buffer is full and shifted — full redraw needed
+    If ListCount >= arrSize Then
+        Clear()
+    End If
+
+    Dim i
+    For i = ListCount To UBound(contentArr)
+    
+    	AddItem SafeItem(contentArr(i)), 0
+    	
+        'If Application.GetObject("xatm_config_data.ConsoleLogEngine").AutoScrolling Then
+            ListIndex = 0
+        'End If
+    Next
+    
+End Sub
+
 <xatm_config_screens.DomainBrowser.TreeView:TreeView_Expand(Node)>
 Sub TreeView_Expand(Node)
 
@@ -11602,6 +11731,7 @@ Function TreeNodeTagPath(tagText)
 
 End Function
 
+
 ' The catalogue, off the one tag that holds it - the same tag the
 ' OnPreShow copy reads, and for the reason written out there. This copy
 ' used to fall back to C:\temp\appbrowser\elipse-catalog.xml, a file
@@ -11627,7 +11757,6 @@ End Function
 ' Where the catalogue lives. Written out again because this is another
 ' tag's scope and cannot see the copy over in OnPreShow.
 Const CATALOG_CONTENT = "xatm_config_data.Catalog.XMLContent"
-
 
 Function Pad2(value)
 
@@ -12267,69 +12396,6 @@ Sub DomainBrowser_OnShow()
 		
 End Sub
 
-<xatm_config_screens.Footer.btnExpandConsole:btnExpandConsole_Click()>
-Sub btnExpandConsole_Click()
-
-	Const CONSOLE_SCREEN = "xatm_config_screens.ConsoleLogExpanded"
-	Const CONSOLE_FRAME  = "xatm_ConsoleLog"
-	Const CONSOLE_TITLE  = "Console"
-	Const CONSOLE_LEFT   = 0
-	Const CONSOLE_TOP    = 0
-	Dim CONSOLE_WIDTH 	 : CONSOLE_WIDTH  = 1366 + 24
-	Dim CONSOLE_HEIGHT   : CONSOLE_HEIGHT = 768 + 48
-
-	Dim FLAGS : FLAGS = 1 + 2 + 4 + 8 + 16 + 32 + 64 + 2048
-
-	Dim panel
-	Set panel = Nothing
-
-	On Error Resume Next
-	Set panel = Application.GetFrame(CONSOLE_FRAME)
-	On Error Goto 0
-
-	If panel Is Nothing Then
-		MsgBox "The console has nowhere to open. This project has no frame " & _
-		       "called " & CONSOLE_FRAME & ". Add one to the frameset.", _
-		       vbExclamation, CONSOLE_TITLE
-		Exit Sub
-	End If
-
-	panel.MoveFrame CONSOLE_LEFT, CONSOLE_TOP, CONSOLE_WIDTH, CONSOLE_HEIGHT
-	panel.SetFrameOptions CONSOLE_TITLE, FLAGS
-	
-	panel.OpenScreen CONSOLE_SCREEN & "?4?0", 0
-	
-End Sub
-
-<xatm_config_screens.Footer.ListBox:ListBox_MouseUp(Button, Shift, X, Y)>
-Sub ListBox_MouseUp(Button, Shift, X, Y)
-	
-	If Button <> 2 Then
-		Exit Sub
-	End If
-	
-	Dim userOption
-	userOption = Application.SelectMenu("Clear...")
-	
-	If userOption = 1 Then
-		
-		Dim contentTag
-		Set contentTag = Nothing
-		On Error Resume Next
-		Set contentTag = Application.GetObject("xatm_config_data.ConsoleLogEngine.Data.Content")
-		On Error Goto 0
-		
-		If contentTag Is Nothing Then
-			MsgBox "No 'Console Log Engine' was bound to '" & Me.PathName & "'.", vbExclamation, "Error"
-			Exit Sub
-		End If
-		
-		contentTag.WriteEx Empty
-		
-	End If
-		
-End Sub
-
 <xatm_config_screens.Footer.ListBox:ListBox_OnChangedContent()>
 Sub ListBox_OnChangedContent()
 	
@@ -12438,6 +12504,58 @@ Sub AddArrayContentToList()
         'End If
     Next
     
+End Sub
+
+<xatm_config_screens.Footer.btnClear:btnClear_Click()>
+Sub btnClear_Click()
+
+	Dim contentTag
+	Set contentTag = Nothing
+	On Error Resume Next
+	Set contentTag = Application.GetObject("xatm_config_data.ConsoleLogEngine.Data.Content")
+	On Error Goto 0
+	
+	If contentTag Is Nothing Then
+		MsgBox "No 'Console Log Engine' was bound to '" & Me.PathName & "'.", vbExclamation, "Error"
+		Exit Sub
+	End If
+	
+	contentTag.WriteEx Empty	
+	
+End Sub
+
+<xatm_config_screens.Footer.btnExpandConsole:btnExpandConsole_Click()>
+Sub btnExpandConsole_Click()
+
+	Const CONSOLE_SCREEN = "xatm_config_screens.ConsoleLogExpanded"
+	Const CONSOLE_FRAME  = "xatm_ConsoleLog"
+	Const CONSOLE_TITLE  = "Console"
+	Const CONSOLE_LEFT   = 0
+	Const CONSOLE_TOP    = 0
+	Dim CONSOLE_WIDTH 	 : CONSOLE_WIDTH  = 1366 + 24
+	Dim CONSOLE_HEIGHT   : CONSOLE_HEIGHT = 768 + 48
+
+	Dim FLAGS : FLAGS = 1 + 2 + 4 + 8 + 16 + 32 + 64 + 2048
+
+	Dim panel
+	Set panel = Nothing
+
+	On Error Resume Next
+	Set panel = Application.GetFrame(CONSOLE_FRAME)
+	On Error Goto 0
+
+	If panel Is Nothing Then
+		MsgBox "The console has nowhere to open. This project has no frame " & _
+		       "called " & CONSOLE_FRAME & ". Add one to the frameset.", _
+		       vbExclamation, CONSOLE_TITLE
+		Exit Sub
+	End If
+
+	panel.MoveFrame CONSOLE_LEFT, CONSOLE_TOP, CONSOLE_WIDTH, CONSOLE_HEIGHT
+	panel.SetFrameOptions CONSOLE_TITLE, FLAGS
+	
+	panel.OpenScreen CONSOLE_SCREEN & "?4?0", 0
+	
 End Sub
 
 <xatm_config_screens.Frame.Divisor.Direito.Superior:Superior_OnScreenChange()>
