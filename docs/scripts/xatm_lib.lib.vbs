@@ -3437,23 +3437,44 @@ Function OpenDocument(filePath)
 	exists = fso.FileExists(filePath)
 	On Error Goto 0
 
+	Dim loaded
+	loaded = False
+
 	If exists Then
 
 		On Error Resume Next
 		doc.load filePath
 		On Error Goto 0
 
-		If doc.parseError.errorCode <> 0 Then
+		If doc.parseError.errorCode = 0 Then
+
+			loaded = True
+
+		ElseIf HasContent(fso, filePath) Then
+
+			' Something is in there and it is not XML. Said, and the file left
+			' where it is: the kept values are in it, and writing a fresh one
+			' over the top would throw away the one thing this object is for.
 			TraceOut filePath & " will not parse - " & _
 			         OneLine(doc.parseError.reason)
 			Exit Function
+
 		End If
 
-	Else
+	End If
 
-		' A file that is not there is an empty one and not a failure. The
-		' declaration is written out so that what this makes reads like what
-		' everything else writes.
+	If Not loaded Then
+
+		' No file, or one with nothing in it.
+		'
+		' A file that is not there is an empty one and not a failure - and so
+		' is one somebody made by touching it, or that a save left blank
+		' halfway through. Both come back as "must have a top level element",
+		' and both are answered the same way: build the structure here and let
+		' the first save put it on disk.
+		'
+		' The declaration is written out so that what this makes reads like
+		' what everything else writes.
 		On Error Resume Next
 		doc.appendChild doc.createProcessingInstruction("xml", _
 		                "version=""1.0"" encoding=""utf-8"" standalone=""no""")
@@ -3469,6 +3490,37 @@ Function OpenDocument(filePath)
 	End If
 
 	Set OpenDocument = doc
+
+End Function
+
+
+' Whether the file holds anything but whitespace.
+'
+' The difference between a file to rebuild and a file to leave alone. An
+' empty one and a corrupt one fail to parse with the same words, and this
+' is the only thing that tells them apart - so it decides whether a save
+' is allowed to write over what is there.
+Function HasContent(fso, filePath)
+
+	HasContent = False
+
+	Dim stream, text
+	text = ""
+
+	' ReadAll on a file of no bytes raises rather than answering "", which
+	' is the commonest shape of the case this exists for.
+	On Error Resume Next
+	Set stream = fso.OpenTextFile(filePath, 1)
+	text = stream.ReadAll()
+	stream.Close
+	Err.Clear
+	On Error Goto 0
+
+	' Trim takes spaces off and nothing else, so the line breaks and tabs
+	' come out first - a file of blank lines is still a blank file.
+	text = Replace(Replace(Replace(text & "", vbCr, ""), vbLf, ""), vbTab, "")
+
+	HasContent = (Trim(text) <> "")
 
 End Function
 
