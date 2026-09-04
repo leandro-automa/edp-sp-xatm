@@ -11156,6 +11156,28 @@ End Sub
 <xatm_config_screens.Config.btnSave:btnSave_Click()>
 Sub btnSave_Click()
 
+	' Asked before anything is written, and asked in Portuguese.
+	'
+	' The same reasoning as the bind button: this is a dialog that has to be
+	' read rather than translated at a glance. Three of the four things below
+	' are destructive in a way the word Save does not suggest - the interface
+	' is not brought up to date but built again from nothing, the readings are
+	' put back whatever the plant is doing, and the file on disk is written
+	' with no undo behind it.
+	If MsgBox( _
+		"ATENÇÃO - salvar grava no projeto e não há desfazer." & vbCrLf & vbCrLf & _
+		"1. O que está nesta tela é escrito nos objetos do XATM_Data. " & _
+		"Objetos serão criados, renomeados ou removidos conforme a tela." & vbCrLf & vbCrLf & _
+		"2. O XATM_Interface é refeito do zero: tudo que existe embaixo dele " & _
+		"é apagado e as tags serão criadas de novo, uma para cada propriedade " & _
+		"marcada para a interface. Tag criada ali à mão se perde." & vbCrLf & vbCrLf & _
+		"3. As leituras voltam ao valor padrão da classe - precondições, " & _
+		"bloqueios, em curso, falhas de passo. Só o que é configuração " & _
+		"(Enabled, RevertOnFailure, UseDoublePoints e afins) é gravado como está." & vbCrLf & vbCrLf & _
+		"4. O projeto e o arquivo XML serão gravados em disco." & vbCrLf & vbCrLf & _
+		"Esta rotina pode levar algum tempo. Continuar?", _
+		vbYesNo + vbExclamation + vbDefaultButton2, SAVE_TITLE) <> vbYes Then Exit Sub
+
 	' 1. The document into the project.
 	Dim importer
 	Set importer = Application.GetObject(IMPORT_XML)
@@ -11235,11 +11257,31 @@ Sub btnSave_Click()
 		Exit Sub
 	End If
 
+	' Said out loud, because until now the button that did the most said the
+	' least: it spoke only when something went wrong, and a save that worked
+	' looked exactly like a button that had not been wired.
+	'
+	' And the restart with it. What was written is the project on disk; the
+	' domain in memory is still the one from before, holding the tags it had
+	' when it started. A tag created by this save is in the file and not yet
+	' in the running server, so anything looking for it - a driver, a client,
+	' another project - will not find it until the server comes up again.
+	MsgBox "Projeto e interface salvos, e o arquivo XML foi escrito." & vbCrLf & vbCrLf & _
+	       "CONSIDERE REINICIAR O <<E3 SERVER>>." & vbCrLf & vbCrLf & _
+	       "As tags criadas agora existem no projeto gravado, mas o " & _
+	       "domínio em execução ainda é o de antes de salvar. " & _
+	       "Reiniciar o servidor é o que faz o que está rodando bater " & _
+	       "com o que foi gravado.", vbInformation, SAVE_TITLE
+
 End Sub
 
 Const IMPORT_XML   = "xatm_config_data.Config.ImportXml"
 Const SAVE_XML     = "xatm_config_data.Config.SaveXML"
 Const EXIT_SUCCESS = "EXIT_SUCCESS"
+
+' The two dialogs the operator is meant to read, so they carry the word
+' that is on the button rather than the one in the source.
+Const SAVE_TITLE   = "Salvar"
 
 
 ' ------------------------------------------------------------
