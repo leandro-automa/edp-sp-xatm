@@ -1680,14 +1680,38 @@ Sub CheckExtendedParallel()
 
 	SetFlag "Parallel", True
 
-	' Counted up rather than down from the timeout, so that the screen can say
-	' how long it has been and so that a timeout edited during a parallel takes
-	' effect on this one instead of on the next.
-	Value = Value + 1
-	SetElapsed Value
+	' Counted up rather than down from the timeout, so the screen can say how
+	' far along it is while it is still counting. And stopped the moment the
+	' alarm is raised.
+	'
+	' Past that it has nothing left to measure. How long the alarm has been
+	' standing is on the alarm itself, where E3 stamps it and the operator
+	' reads it off the list - so counting on would be a tag changing every
+	' second, all night, to say worse what is already said there. It is also
+	' what would put a night, 43200 of these, into an integer that may not be
+	' wide enough to hold it.
+	'
+	' So it settles at ExtendedParallelTimeout and stays until the parallel
+	' ends, which is what ClearParallel is for. That also caps it: whatever
+	' the timeout is set to is as high as this can go.
+	If Not xatm_Monitor.ExtendedParallel Then
+		Value = Value + 1
+		SetElapsed Value
+	End If
 
+	' Latched once raised, rather than recomputed from the clock every pass.
+	'
+	' The clock above stops at the timeout, so the comparison would go on
+	' holding by itself - until somebody raises the timeout, and then it would
+	' not. An alarm that puts itself out because a setpoint was edited reads
+	' as the condition having gone away, and this one has not: the station was
+	' in parallel too long, and moving the limit afterwards does not undo
+	' that. Lowering it still bites at once, on the parallel in progress.
+	'
+	' Nothing sticks: ClearParallel puts it out on the pass the last tie
+	' opens, which is the only thing that ends a parallel.
 	Dim extended
-	extended = (Value >= TimeoutSeconds())
+	extended = xatm_Monitor.ExtendedParallel Or (Value >= TimeoutSeconds())
 
 	If extended And Not xatm_Monitor.ExtendedParallel Then
 		WriteLog "Transformers " & inParallel & " have been in parallel for " & _

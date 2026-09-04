@@ -5624,7 +5624,7 @@ Sub xatm_Monitor_OnStartRunning()
 		"True while the extended parallel check runs. False leaves the points it writes where they stood.", _
 		"True enquanto a verificação de paralelo prolongado roda. False deixa como estavam os pontos que ela escreve."
 
-	AddProperty bag, "ExtendedParallelTimeout", "Integer", 300, _
+	AddProperty bag, "ExtendedParallelTimeout", "Integer", 15, _
 		"How many seconds two transformers may feed the same busbars before ExtendedParallel is raised.", _
 		"Quantos segundos dois transformadores podem alimentar os mesmos barramentos antes que ExtendedParallel seja marcada."
 
@@ -5633,8 +5633,8 @@ Sub xatm_Monitor_OnStartRunning()
 		"True enquanto dois ou mais transformadores alimentam uma mesma ilha de barramentos eletricamente ligada."
 
 	AddProperty bag, "ParallelElapsed", "Integer", 0, _
-		"Seconds the station has been in parallel. Back to zero the moment it is not.", _
-		"Segundos em que a subestação está em paralelo. Volta a zero assim que deixa de estar."
+		"Seconds counted towards ExtendedParallelTimeout. Stops there once the alarm is raised, and back to zero when the parallel ends.", _
+		"Segundos contados até o ExtendedParallelTimeout. Para ali quando o alarme é levantado, e volta a zero quando o paralelo termina."
 
 	AddProperty bag, "ExtendedParallel", "Boolean", False, _
 		"True when the parallel has lasted longer than ExtendedParallelTimeout. This is the point the operator is alarmed on.", _
