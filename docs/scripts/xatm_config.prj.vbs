@@ -3103,11 +3103,16 @@ Sub ImportObject(folder, folderPath, objectElement, existing, report, problem)
 		WriteProperty obj, property, report, folderPath & "." & name
 	Next
 
-	' The document says nothing about a reading, so a reading goes back to
-	' the default its class declares. Container.Save writes whatever the
-	' live objects hold - so without this, a step failure latched during a
-	' test, or a block left set, is saved into xatm_dados.prj as though
-	' somebody had configured it that way.
+	' A reading goes back to the default its class declares.
+	'
+	' The document carries that default rather than a reading, so this mostly
+	' agrees with what the loop above has just written. It still runs, and has
+	' to: a property the document leaves out is one the loop never reached,
+	' and it would keep whatever the run had put in it.
+	'
+	' Container.Save writes whatever the live objects hold - so without this,
+	' a step failure latched during a test, or a block left set, is saved into
+	' xatm_data.prj as though somebody had configured it that way.
 	ResetReadings obj, className, report, folderPath & "." & name
 
 End Sub
@@ -4317,15 +4322,38 @@ Function ExportObject(obj, bag, indent)
 
 		' Where the value comes from, and the value itself. A property has
 		' one or the other: an IOTag is an association and carries no value
-		' of its own, and a bound property's value is whatever its expression
-		' last worked out to.
+		' of its own.
 		Dim value, source
 		source = SourceOf(obj, p.Name, p.DataType)
 		
 		If IsLinkType(p.DataType) Then
+
 			value = Empty
+
+		ElseIf Not p.IsSaved() Then
+
+			' A reading, and what it holds this moment is not configuration.
+			'
+			' It used to go out as it stood, which put the plant into the
+			' document: a bound gate exported whatever its expression had last
+			' worked out to, a step failure exported the failure. Two exports a
+			' minute apart gave two different documents with nothing configured
+			' in between, and the configured column on the panel showed a
+			' reading as though somebody had set it.
+			'
+			' It also made the import's own account of itself untrue. That side
+			' says the document is silent about readings and puts them back to
+			' their defaults on the strength of it - and then found a value here
+			' and wrote it in first.
+			'
+			' The default goes out instead, so the document describes the object
+			' as it should start rather than as the plant left it.
+			value = p.InitialValue
+
 		Else
+
 			value = ReadProperty(obj, p.Name)
+
 		End If
 
 		xml = xml & indent & vbTab & "<property name=""" & EscapeXml(p.Name) & """" & _
@@ -11162,6 +11190,20 @@ Sub btnSave_Click()
 	layoutFolder.Item("Transformer").WriteEx Screen.Item("SelectLayoutTransformer").Index
 	layoutFolder.Item("Busbar").WriteEx Screen.Item("SelectLayoutBusbar").Index
 
+	' And the readings once more, as the last thing before the write.
+	'
+	' The sweep inside RebuildInterface is for the tags, which follow the
+	' properties through the links made just before it and have to be right
+	' by the time that data server saves itself. This one is for the objects.
+	'
+	' Two of them because of what sits in between: root.Save() is a long call
+	' and E3 dispatches while it runs, so the link events the rebuild queued -
+	' every interface tag destroyed and made again at zero - land after the
+	' first sweep and drive every bound reading back to what a half-built
+	' interface said. Whatever else is queued, nothing is given the chance to
+	' run between here and the line below.
+	ResetProjectReadings
+
 	' Save answers True or False and raises nothing. Unchecked, a refused
 	' save reported success and the file went out against a project that
 	' had not taken the changes - which is the one thing the import is
@@ -11255,6 +11297,22 @@ Sub RebuildInterface()
 	problem = ""
 
 	InterfaceFolder root, Application.GetObject(DATA_ROOT), "", problem
+
+	' And the readings put back, here and nowhere else.
+	'
+	' The import resets the objects it writes, and then this rebuild undoes
+	' it. ClearFolder destroys every interface tag and the loop above makes
+	' them again at zero, so every expression reading one sees its source
+	' change and every link fires. What lands in the property is not what the
+	' switchyard is saying - it is what a half-built interface was saying -
+	' and that is the False the Studio shows in bold against a property whose
+	' default is True.
+	'
+	' Put back at this point the tags follow, through the links just made, so
+	' both containers go out carrying defaults. Nothing is lost by it: every
+	' link fires again as the project comes up, and a reading is driven from
+	' the plant before anything can read it.
+	ResetProjectReadings
 
 	' Written here, and not left to the Save that persists XATM_Data: the
 	' interface is a data server of its own, and the container holding the
@@ -11553,6 +11611,122 @@ Function ManifestOf(className)
 	On Error Goto 0
 
 End Function
+
+
+' Every reading in the project back to the value its class declares for it.
+'
+' EXPOSE_SAVED is the whole of the question. What carries it is somebody's
+' configuration and goes into the file as they left it; what does not is a
+' reading that belongs to the run, and a run has no business in a file that
+' is opened next in the Studio.
+Sub ResetProjectReadings()
+
+	Dim root
+	Set root = Nothing
+
+	On Error Resume Next
+	Set root = Application.GetObject(DATA_ROOT)
+	On Error Goto 0
+
+	If root Is Nothing Then Exit Sub
+
+	gReadings = 0
+	ResetFolderReadings root
+
+	If gReadings > 0 Then
+		WriteLog "Readings - " & gReadings & " put back to their defaults."
+	End If
+
+End Sub
+
+
+' The walk. Objects sit at every depth of the data root, and anything that
+' is not one of ours is a folder to go down into - the same shape of walk
+' the interface build just made.
+Sub ResetFolderReadings(folder)
+
+	Dim obj
+
+	For Each obj In folder
+
+		If IsOurClass(TypeName(obj)) Then
+			ResetObjectReadings obj
+		Else
+			On Error Resume Next
+			ResetFolderReadings obj
+			On Error Goto 0
+		End If
+
+	Next
+
+End Sub
+
+
+Function IsOurClass(className)
+
+	IsOurClass = (LCase(Left(CStr(className), 5)) = "xatm_")
+
+End Function
+
+
+' One object, and only the properties the manifest calls readings.
+Sub ResetObjectReadings(obj)
+
+	Dim bag
+	Set bag = ManifestOf(TypeName(obj))
+	If bag Is Nothing Then Exit Sub
+
+	Dim key, p
+	For Each key In bag.Keys
+
+		Set p = bag(key)
+
+		If Not (p.IsSaved() Or IsAssociation(p.DataType)) Then
+
+			gDefaultValue = p.InitialValue
+
+			On Error Resume Next
+			Execute "obj." & p.Name & " = gDefaultValue"
+			Err.Clear
+			On Error Goto 0
+
+			gReadings = gReadings + 1
+
+		End If
+
+	Next
+
+End Sub
+
+
+' A property that names something rather than holds a value: a tag, or
+' another object.
+'
+' Every one of these carries EXPOSE_SAVED today, so the test never fires -
+' and it is here because of what happens on the day one does not. Writing a
+' default over a command's InternalTag does not reset a reading, it takes
+' the interface tag off the command, and the automation goes deaf with
+' nothing said.
+Function IsAssociation(dataType)
+
+	IsAssociation = False
+
+	Select Case LCase(CStr(dataType))
+		Case "iotag", "internaltag" : IsAssociation = True
+	End Select
+
+	If LCase(Left(CStr(dataType), 5)) = "xatm_" Then IsAssociation = True
+
+End Function
+
+
+' Scratch cell for the late-bound write, the way the interface build keeps
+' one for the tag it hands over. Execute runs in the global scope and cannot
+' see a local.
+Dim gDefaultValue
+
+' What the last sweep put back, for the line it writes to the log.
+Dim gReadings
 
 
 ' The console the automation logs to, and the E3 trace either way.
