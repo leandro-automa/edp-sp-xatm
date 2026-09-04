@@ -5595,6 +5595,291 @@ Sub SetExposure(bag, name, exposure)
 	
 End Sub
 
+<xatm_config_data.PropertiesHelper.xatm_Monitor:xatm_Monitor_OnStartRunning()>
+Sub xatm_Monitor_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	' What this object watches the station for, and what it says when it
+	' finds it.
+	'
+	' One instance carrying every check, rather than one instance per check.
+	' The first of them is the extended parallel: two or more transformers
+	' left feeding the same busbars for longer than the operation allows.
+	'
+	' A check added later brings its own enable and its own timeout and
+	' shares the rest of this. That is why the two below are named for the
+	' check they belong to and not simply Enabled and Timeout - the plain
+	' names would have to be renamed the day a second check arrives.
+
+	AddProperty bag, "Enabled", "Boolean", True, _
+		"Master enable of this monitor. Every check stops while it is False.", _
+		"Habilitação geral deste supervisor. Toda verificação para enquanto estiver False."
+
+
+	' --- extended parallel ----------------------------------------------
+
+	AddProperty bag, "DetectExtendedParallel", "Boolean", True, _
+		"True while the extended parallel check runs. False leaves the points it writes where they stood.", _
+		"True enquanto a verificação de paralelo prolongado roda. False deixa como estavam os pontos que ela escreve."
+
+	AddProperty bag, "ExtendedParallelTimeout", "Integer", 300, _
+		"How many seconds two transformers may feed the same busbars before ExtendedParallel is raised.", _
+		"Quantos segundos dois transformadores podem alimentar os mesmos barramentos antes que ExtendedParallel seja marcada."
+
+	AddProperty bag, "Parallel", "Boolean", False, _
+		"True while two or more transformers are feeding one electrically connected island of busbars.", _
+		"True enquanto dois ou mais transformadores alimentam uma mesma ilha de barramentos eletricamente ligada."
+
+	AddProperty bag, "ParallelElapsed", "Integer", 0, _
+		"Seconds the station has been in parallel. Back to zero the moment it is not.", _
+		"Segundos em que a subestação está em paralelo. Volta a zero assim que deixa de estar."
+
+	AddProperty bag, "ExtendedParallel", "Boolean", False, _
+		"True when the parallel has lasted longer than ExtendedParallelTimeout. This is the point the operator is alarmed on.", _
+		"True quando o paralelo dura mais que ExtendedParallelTimeout. É este o ponto que alarma o operador."
+
+
+	' --- what the screen may do, and what leaves the station -------------
+
+	SetExposure bag, "Enabled",                 EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "DetectExtendedParallel",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "ExtendedParallelTimeout", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+
+	SetExposure bag, "Parallel",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "ExtendedParallel", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	' Shown and interfaced, and not carried to level 3. A counter that moves
+	' every second is a point that would send a change every second, which is
+	' not what an address is for.
+	SetExposure bag, "ParallelElapsed", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE
+
+
+	' --- what the operator is alarmed on ---------------------------------
+	'
+	' One alarm, on the one point that stands for the fault. Parallel says
+	' the station is paralleled, which is a normal thing to be during a
+	' transfer and no cause to tell anybody; this says it has been paralleled
+	' too long, which is not.
+	'
+	' Which transformers is not published at all. It is read off the busbars
+	' on the screen, where the breaker positions that decide it are already
+	' drawn - and having it as four more points would be four addresses to
+	' map and maintain for something the one-line already shows.
+	'
+	' It needs no pulse either. A parallel is a condition and not an outcome:
+	' it returns to normal when the parallel ends, and its alarm leaves the
+	' list by itself.
+	SetAlarm bag, "ExtendedParallel", "PARALELO PROLONGADO", PAIR_ACTUATED, SEV_MEDIUM
+
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
+Const EXPOSE_IOTAG      = 128   ' level 3 is given a point for it, over 104
+
+
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "CONCLUÍDO|EM ANDAMENTO|1"
+
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
+
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+	
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
+	End Function
+
+	' Whether level 3 is given a point for it.
+	'
+	' A separate question from IsInterfaced, and asked separately. The
+	' interface is where the Elipse application meets the automation; the
+	' distribution is what leaves the station. Everything distributed is
+	' interfaced - the distribution reads off the interface - but not
+	' everything interfaced is distributed, and conflating the two left no
+	' way to say so except a list of names kept somewhere else.
+	Public Function IsIOTagged()
+		IsIOTagged = Has(EXPOSE_IOTAG)
+	End Function
+
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	Public Function AlarmLimit()
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
+	
+	
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+		
+End Sub
+
+
 <xatm_config_data.PropertiesHelper.xatm_RASEAT:xatm_RASEAT_OnStartRunning()>
 Sub xatm_RASEAT_OnStartRunning()
 
@@ -8965,6 +9250,11 @@ Sub btnApply_Click()
 	' after SyncAutomation, which shares the folder and prunes only its
 	' own class.
 	SyncRASEAT doc, RASEATCount(incomerType), removed, added, failed
+
+	' And the monitor, which takes no count from either axis: every station
+	' is watched, and what differs between layouts is the topology table the
+	' check reads, which is in the library and not here.
+	SyncMonitor doc, removed, added, failed
 	
 	SetLayoutTag doc, "Transformer", transformerType
 	SetLayoutTag doc, "Busbar", busbarType
@@ -8989,7 +9279,14 @@ Const INCOMER_PATH     = "/xatm-config/folder[@name='Substation']/folder[@name='
 Const TMTNM_CLASS       = "xatm_TMTNM"
 Const TA_CLASS          = "xatm_TA"
 Const RASEAT_CLASS      = "xatm_RASEAT"
+Const MONITOR_CLASS     = "xatm_Monitor"
 Const TRANSFORMER_CLASS = "xatm_Transformer"
+
+' The station's monitor, named without a number unlike RASEAT1. There is
+' nothing for a number to distinguish - one substation, one of these - and an
+' object with no Id is keyed on its name, so the name is the whole of what has
+' to stay put across an Apply.
+Const MONITOR_NAME      = "Monitor"
 
 Const NODE_ELEMENT = 1
 Const NODE_TEXT    = 3
@@ -9758,6 +10055,59 @@ Sub SyncRASEAT(doc, keepCount, removed, added, failed)
 		End If
 
 	Next
+
+End Sub
+
+
+' Puts the station's monitor in the Automation folder, and keeps it to one.
+'
+' The same shape as SyncRASEAT and, like it, selecting by type so that four
+' classes can share the folder without any of them pruning another. What it
+' does not take is a keepCount: there is no layout under which a substation
+' goes unwatched, so the answer is always one.
+Sub SyncMonitor(doc, removed, added, failed)
+
+	Dim folder
+	Set folder = doc.selectSingleNode(AUTOMATION_PATH)
+
+	If folder Is Nothing Then
+		failed = failed & vbCrLf & "  the Automation folder is not in the document"
+		Exit Sub
+	End If
+
+	Dim nodes, node, n, count
+	Set nodes = folder.selectNodes("object[@type='" & MONITOR_CLASS & "']")
+	count = nodes.length
+
+	' The first stays and any others go. Two of them would write the same
+	' points every second and spend the whole time contradicting each other.
+	'
+	' Collected before any of it is dropped, the way SyncRASEAT does it -
+	' taking a node out from under the list being walked is what leaves the
+	' walk skipping the one after it.
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	For n = 1 To count - 1
+		Set node = nodes.item(n)
+		removed = removed & vbCrLf & "  " & node.getAttribute("name") & " from Automation"
+		doomed.Add n, node
+	Next
+
+	For Each n In doomed.Keys
+		Set node = doomed(n)
+		DropNode node
+	Next
+
+	If count > 0 Then Exit Sub
+
+	Set node = NewObject(folder, MONITOR_CLASS, MONITOR_NAME, Array())
+
+	If node Is Nothing Then
+		failed = failed & vbCrLf & "  " & MONITOR_NAME & " in Automation - no manifest for " & MONITOR_CLASS
+	Else
+		added = added & vbCrLf & "  " & MONITOR_NAME & " in Automation"
+	End If
 
 End Sub
 

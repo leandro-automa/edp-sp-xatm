@@ -1626,6 +1626,514 @@ Sub WriteLog(message)
 
 End Sub
 
+<xatm_Monitor.Data.Scan:Scan_Timer()>
+Sub Scan_Timer()
+
+	' Every check this object watches the station with, once a second.
+	'
+	' The tag's Scan is 1000 ms and the counting below is in ticks, which is
+	' the arrangement CommandTimer and UndervoltageRelay already run on.
+	'
+	' One tag ticking for all the checks rather than one tag each: they read
+	' the same breakers, and reading them once is the difference between a
+	' scan costing a single pass over the substation folder and one costing a
+	' pass per check.
+	If Not xatm_Monitor.Enabled Then Exit Sub
+
+	CheckExtendedParallel()
+
+End Sub
+
+
+' Two or more transformers left feeding the same busbars for longer than the
+' operation allows.
+'
+' Paralleling is not the fault, and is not rare: every transfer this library
+' performs goes through one, because a TM closes the tie before it opens the
+' breaker precisely so the load never goes dark. What is not allowed is
+' staying there. Two transformers in parallel add their short circuit
+' contributions together, and the protection downstream was set for one.
+'
+' So what is watched is not the parallel but how long it has lasted - and no
+' exception is made for a maneuver in progress. A transfer is through its
+' parallel in a few steps; one still parallel five minutes later is a
+' transfer that stopped, which is a case this exists to catch and not one to
+' excuse.
+Sub CheckExtendedParallel()
+
+	If Not xatm_Monitor.DetectExtendedParallel Then Exit Sub
+
+	Dim inParallel
+	inParallel = ParallelTransformers()
+
+	If inParallel = "" Then
+		ClearParallel()
+		Exit Sub
+	End If
+
+	' Which transformers is said once, in the log, and is not a point.
+	' The screen reads it off the busbars, where the breaker positions that
+	' decide it are already drawn.
+	If Not xatm_Monitor.Parallel Then
+		WriteLog "Transformers " & inParallel & " are in parallel."
+	End If
+
+	SetFlag "Parallel", True
+
+	' Counted up rather than down from the timeout, so that the screen can say
+	' how long it has been and so that a timeout edited during a parallel takes
+	' effect on this one instead of on the next.
+	Value = Value + 1
+	SetElapsed Value
+
+	Dim extended
+	extended = (Value >= TimeoutSeconds())
+
+	If extended And Not xatm_Monitor.ExtendedParallel Then
+		WriteLog "Transformers " & inParallel & " have been in parallel for " & _
+		         Value & "s - extended parallel."
+	End If
+
+	SetFlag "ExtendedParallel", extended
+
+End Sub
+
+
+' Back to rest, on the pass that finds the station radial again.
+'
+' Nothing here waits for a Reset. A parallel is a condition and not an
+' outcome: it is true while it is true, and its alarm leaves the list of
+' current alarms by itself when the last tie opens. That is the difference
+' between this and the Successful and Unsuccessful of a maneuver, which
+' describe something that has already finished happening.
+Sub ClearParallel()
+
+	If xatm_Monitor.Parallel Then WriteLog "Parallel cleared."
+
+	SetFlag "Parallel", False
+	SetFlag "ExtendedParallel", False
+
+	If Value <> 0 Then Value = 0
+	SetElapsed 0
+
+End Sub
+
+
+' The transformers sharing busbars with another transformer, as a comma
+' separated list of their ids - "100,200" - and "" when the station is radial.
+'
+' Worked out rather than looked up. There is no busbar object at runtime to
+' ask: XATM_Data.Substation.Busbar holds the tie breakers, and B1A to B4A
+' exist only in the drawings and in the Id scheme. So the connectivity is
+' declared as data, and the answer is arrived at the way it would be on the
+' panel:
+'
+'   1. every busbar starts as an island of its own
+'   2. a closed tie merges the two islands it joins
+'   3. a closed breaker credits its island with its transformer
+'   4. an island with two or more transformers is a parallel
+'
+' Which is layout independent. The ring, the chain and the pair are the same
+' problem, and the only thing that changes between them is the table.
+Function ParallelTransformers()
+
+	ParallelTransformers = ""
+
+	Dim rows
+	rows = Split(TopologyOf(GetLayoutType()), "|")
+	If UBound(rows) < 0 Then Exit Function
+	If rows(0) = "" Then Exit Function
+
+	' One walk of the substation folder for the whole answer. The ring layout
+	' asks after ten breakers, and this runs every second for as long as the
+	' project does.
+	Dim map
+	map = PositionMap()
+
+	Dim i, j, parts, a, b, keep, drop
+
+	' --- 1. the busbars, in the order the table first names them ---------
+	Dim busNames
+	busNames = ""
+
+	For i = 0 To UBound(rows)
+
+		parts = Split(rows(i), ":")
+
+		If parts(0) = "CB" Then
+			busNames = AddName(busNames, parts(3))
+		Else
+			busNames = AddName(busNames, parts(2))
+			busNames = AddName(busNames, parts(3))
+		End If
+
+	Next
+
+	Dim bus
+	bus = Split(busNames, ",")
+
+	Dim island()
+	ReDim island(UBound(bus))
+
+	For i = 0 To UBound(bus)
+		island(i) = i
+	Next
+
+	' --- 2. one pass over the ties ---------------------------------------
+	'
+	' One pass is enough because a merge relabels every member of the island
+	' it absorbs and not just the busbar the row names. After tie k has been
+	' read, everything joined by ties 0 to k carries one label - the ring
+	' included, whose last tie closes back onto an island the first tie built.
+	For i = 0 To UBound(rows)
+
+		parts = Split(rows(i), ":")
+
+		If parts(0) = "TIE" Then
+			If IsClosed(map, parts(1)) Then
+
+				a = IndexOf(bus, parts(2))
+				b = IndexOf(bus, parts(3))
+
+				If a >= 0 And b >= 0 Then
+					If island(a) <> island(b) Then
+
+						keep = island(a)
+						drop = island(b)
+
+						If drop < keep Then
+							keep = island(b)
+							drop = island(a)
+						End If
+
+						For j = 0 To UBound(island)
+							If island(j) = drop Then island(j) = keep
+						Next
+
+					End If
+				End If
+
+			End If
+		End If
+
+	Next
+
+	' --- 3. the transformers each island is fed by -----------------------
+	'
+	' "0:100,0:200" - the island, and the transformer standing on it. A
+	' transformer whose secondary breaker is open feeds nothing and is not
+	' here at all, which is why a tripped transformer sitting on a busbar
+	' another one is now carrying does not read as a parallel.
+	Dim feeds
+	feeds = ""
+
+	For i = 0 To UBound(rows)
+
+		parts = Split(rows(i), ":")
+
+		If parts(0) = "CB" Then
+			If IsClosed(map, parts(1)) Then
+
+				a = IndexOf(bus, parts(3))
+
+				If a >= 0 Then
+					If feeds <> "" Then feeds = feeds & ","
+					feeds = feeds & island(a) & ":" & parts(2)
+				End If
+
+			End If
+		End If
+
+	Next
+
+	If feeds = "" Then Exit Function
+
+	' --- 4. the islands carrying more than one ---------------------------
+	Dim entries, mine, n, result
+	entries = Split(feeds, ",")
+	result  = ""
+
+	For i = 0 To UBound(entries)
+
+		mine = Split(entries(i), ":")(0)
+
+		n = 0
+		For j = 0 To UBound(entries)
+			If Split(entries(j), ":")(0) = mine Then n = n + 1
+		Next
+
+		If n >= 2 Then
+			If result <> "" Then result = result & ","
+			result = result & Split(entries(i), ":")(1)
+		End If
+
+	Next
+
+	ParallelTransformers = result
+
+End Function
+
+
+' How the station is wired, for the layouts this library knows.
+'
+'   CB:<breaker>:<transformer>:<busbar>    a transformer's secondary breaker
+'   TIE:<breaker>:<busbar>:<busbar>        the two busbars a tie joins
+'
+' Ids are the logical ones - the .Id property, which is the contract - and
+' never the display names. The mapping to real equipment is in docs/layouts.
+Function TopologyOf(layoutType)
+
+	Select Case layoutType
+
+		Case "4TR4LV_6BB6TIERING"
+
+			' Four transformers, six busbars, six ties, and 900 normally open
+			' so the ring is a chain until somebody closes it.
+			'
+			' TR1 lands on B1B and not on B1A: B1A is fed through tie 700,
+			' which is the one thing about this layout that does not follow
+			' from the numbering.
+			TopologyOf = "CB:120:100:B1B|"  & _
+			             "CB:220:200:B2A|"  & _
+			             "CB:320:300:B3A|"  & _
+			             "CB:420:400:B4A|"  & _
+			             "TIE:700:B1B:B1A|" & _
+			             "TIE:710:B2A:B1B|" & _
+			             "TIE:720:B2B:B2A|" & _
+			             "TIE:730:B3A:B2B|" & _
+			             "TIE:740:B4A:B3A|" & _
+			             "TIE:900:B1A:B4A"
+
+		Case "2TR2LV_2BB1TIE"
+
+			TopologyOf = "CB:120:100:B1|" & _
+			             "CB:220:200:B2|" & _
+			             "TIE:700:B1:B2"
+
+		Case Else
+
+			' Nothing said about this layout, so nothing claimed about it. A
+			' check that does not run beats one alarming on a topology it
+			' guessed at, and the guess here would be about paralleling.
+			TopologyOf = ""
+
+	End Select
+
+End Function
+
+
+' The name added to a comma separated list, once.
+Function AddName(list, busName)
+
+	AddName = list
+
+	If InStr("," & list & ",", "," & busName & ",") > 0 Then Exit Function
+
+	If list = "" Then
+		AddName = busName
+	Else
+		AddName = list & "," & busName
+	End If
+
+End Function
+
+
+' Where a name sits in the array, and -1 for one that is not in it.
+Function IndexOf(arr, busName)
+
+	IndexOf = -1
+
+	Dim i
+
+	For i = 0 To UBound(arr)
+		If arr(i) = busName Then
+			IndexOf = i
+			Exit Function
+		End If
+	Next
+
+End Function
+
+
+' Whether a device is closed.
+'
+' A device the table names but the project does not have answers False. A tie
+' that is not there cannot join two busbars, and reading it as closed would
+' merge islands that are not merged - which is the error that alarms.
+Function IsClosed(map, id)
+
+	IsClosed = (PositionOf(map, id) = 2)
+
+End Function
+
+
+' The position of one device out of the map, and 0 for one not in it.
+Function PositionOf(map, id)
+
+	PositionOf = 0
+
+	Dim head, at, tail
+	head = "," & id & ":"
+
+	at = InStr(map, head)
+	If at = 0 Then Exit Function
+
+	tail = Mid(map, at + Len(head))
+	at   = InStr(tail, ",")
+	If at > 0 Then tail = Left(tail, at - 1)
+
+	If IsNumeric(tail) Then PositionOf = CLng(tail)
+
+End Function
+
+
+' Every switching device in the substation and where it is, as
+' ",120:2,220:2,700:1" - the leading comma on every entry is what keeps a
+' lookup for ",120:" from matching inside ",2120:".
+Function PositionMap()
+
+	PositionMap = ""
+
+	On Error Resume Next
+	CollectPositions Application.GetObject("XATM_Data.Substation"), PositionMap
+	On Error Goto 0
+
+End Function
+
+
+' The walk, folder by folder - the ties and the secondary breakers live in
+' different ones, and this is the same shape of walk GetDeviceById makes to
+' find a single device.
+Sub CollectPositions(folder, ByRef acc)
+
+	Dim obj
+
+	For Each obj In folder
+
+		Select Case UCase(TypeName(obj))
+
+			Case "XATM_BREAKER", "XATM_DISCONNECTOR"
+
+				On Error Resume Next
+				acc = acc & "," & obj.Id & ":" & _
+				      obj.Item("Data").Item("Position").Value
+				On Error Goto 0
+
+			Case "XATM_TRANSFORMER"
+
+				' A leaf with no position, and nothing under it that has one -
+				' its secondary breaker is its sibling in the folder and not
+				' its child.
+
+			Case Else
+
+				' Not a device, so a subfolder.
+				On Error Resume Next
+				CollectPositions obj, acc
+				On Error Goto 0
+
+		End Select
+
+	Next
+
+End Sub
+
+
+' The configured timeout in seconds, and five minutes when it is not set.
+'
+' Zero is not a configuration anybody means - it would make every parallel
+' extended the instant it formed, and it is what the property holds before
+' anybody has given it a value.
+Function TimeoutSeconds()
+
+	TimeoutSeconds = 300
+
+	On Error Resume Next
+	If xatm_Monitor.ExtendedParallelTimeout > 0 Then
+		TimeoutSeconds = CLng(xatm_Monitor.ExtendedParallelTimeout)
+	End If
+	On Error Goto 0
+
+End Function
+
+
+Sub SetElapsed(seconds)
+
+	On Error Resume Next
+	If xatm_Monitor.ParallelElapsed <> seconds Then
+		xatm_Monitor.ParallelElapsed = seconds
+	End If
+	On Error Goto 0
+
+End Sub
+
+
+' Scratch cell for the late-bound read, the way ReadGate keeps one.
+Dim gFlag
+
+
+' Writes a property only when it is not already saying that.
+'
+' Every one of these is an interface tag and most are addressed to level 3.
+' Writing the same value each second would put a scan's worth of changes a
+' second on the wire and hand the operator an alarm that never settles.
+'
+' E3 gives no way to index an XObject's properties, so both halves are late
+' bound. The read goes through a cell at module level because Execute runs in
+' the global scope and cannot see a local, and the write builds the literal
+' rather than passing one for the same reason.
+Sub SetFlag(propertyName, state)
+
+	gFlag = Null
+
+	On Error Resume Next
+	Execute "gFlag = xatm_Monitor." & propertyName
+	Err.Clear
+	On Error Goto 0
+
+	' Null is a property that is not there. That one is written anyway: the
+	' write fails the same way the read did, and the alternative is silently
+	' skipping a point somebody forgot to declare.
+	If Not IsNull(gFlag) Then
+		If CBool(gFlag) = CBool(state) Then Exit Sub
+	End If
+
+	Dim literal
+	literal = "False"
+	If state Then literal = "True"
+
+	On Error Resume Next
+	Execute "xatm_Monitor." & propertyName & " = " & literal
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+Function GetLayoutType()
+
+	GetLayoutType = Application.GetObject("XATM_Data.Automation.Layout.Transformer").Value & "_" & _
+					Application.GetObject("XATM_Data.Automation.Layout.Busbar").Value
+
+End Function
+
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
 <xatm_RASEAT.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
 Sub OperatorBlock_CommandOperatorBlock()
 
