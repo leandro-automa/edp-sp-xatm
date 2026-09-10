@@ -21,6 +21,9 @@ docs/sketches/*
 *.dll
 
 *.xml
+*.csv
+*.edb
+*.xls*
 
 GTW/*
 IHM/*
