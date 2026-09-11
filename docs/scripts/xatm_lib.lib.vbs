@@ -9348,12 +9348,6 @@ Sub WriteLog(message)
 	
 End Sub
 
-<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_OnCRTrip()>
-Sub RASEAT_OnCRTrip()
-	
-	RequestRASEAT()
-	
-End Sub
 
 <xatm_Transformer.Data.Triggers.TA:TA_Functions()>
 Sub TA_Functions()
