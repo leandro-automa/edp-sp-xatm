@@ -9699,6 +9699,10 @@ Sub btnApply_Click()
 	' own class.
 	SyncRASEAT doc, RASEATCount(incomerType), removed, added, failed
 
+	' And the line transfer, off the same axis and for the same reason: it
+	' operates the entry breakers, so it exists exactly where they do.
+	SyncTAL doc, TALCount(incomerType), removed, added, failed
+
 	' And the monitor, which takes no count from either axis: every station
 	' is watched, and what differs between layouts is the topology table the
 	' check reads, which is in the library and not here.
@@ -9727,6 +9731,7 @@ Const INCOMER_PATH     = "/xatm-config/folder[@name='Substation']/folder[@name='
 Const TMTNM_CLASS       = "xatm_TMTNM"
 Const TA_CLASS          = "xatm_TA"
 Const RASEAT_CLASS      = "xatm_RASEAT"
+Const TAL_CLASS         = "xatm_TAL"
 Const MONITOR_CLASS     = "xatm_Monitor"
 Const TRANSFORMER_CLASS = "xatm_Transformer"
 
@@ -9963,6 +9968,26 @@ Function RASEATCount(incomerType)
 
 End Function
 
+
+' How many line transfers the incomer layout wants, which is one or none.
+'
+' The same answer as the reclosing and asked separately all the same, so
+' that a layout with entry bays but no line to transfer between - one
+' incomer, or three - can say so here without disturbing the other.
+'
+' Which breakers it operates is not decided here. That is the library's
+' business, off the same incomer axis, because it is read when the
+' automation runs and not when the document is applied.
+Function TALCount(incomerType)
+
+	Select Case UCase(incomerType)
+		Case "2BR2BB" : TALCount = 1
+		Case Else     : TALCount = 0
+	End Select
+
+End Function
+
+' TODO: Rename AutomationCount function
 Function AutomationCount(layoutType)
 
 	Select Case UCase(layoutType)
@@ -10513,6 +10538,77 @@ End Sub
 ' classes can share the folder without any of them pruning another. What it
 ' does not take is a keepCount: there is no layout under which a substation
 ' goes unwatched, so the answer is always one.
+' Brings the Automation folder to the number of line transfers the incomer
+' layout wants - which is one, or none.
+'
+' SyncRASEAT's shape exactly, down to selecting by type so that five classes
+' can share the folder without any of them pruning another. The two are not
+' folded together even though they take the same count off the same axis:
+' they answer different questions of the layout, and a station that grows a
+' third entry bay will want different answers from each.
+Sub SyncTAL(doc, keepCount, removed, added, failed)
+
+	Dim folder
+	Set folder = doc.selectSingleNode(AUTOMATION_PATH)
+
+	If folder Is Nothing Then
+		failed = failed & vbCrLf & "  the Automation folder is not in the document"
+		Exit Sub
+	End If
+
+	Dim kept
+	Set kept = CreateObject("Scripting.Dictionary")
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim nodes, node, n, num
+	Set nodes = folder.selectNodes("object[@type='" & TAL_CLASS & "']")
+
+	For n = 0 To nodes.length - 1
+
+		Set node = nodes.item(n)
+		num = TrailingNumber(node.getAttribute("name"))
+
+		If num >= 1 And num <= keepCount Then
+			kept(num) = True
+		Else
+			removed = removed & vbCrLf & "  " & node.getAttribute("name") & " from Automation"
+			doomed.Add n, node
+		End If
+
+	Next
+
+	For Each n In doomed.Keys
+		Set node = doomed(n)
+		DropNode node
+	Next
+
+	Dim name
+	For n = 1 To keepCount
+
+		If Not kept.Exists(n) Then
+
+			name = "TAL" & n
+
+			' Numbered even though there is only ever one, for RASEAT1's reason:
+			' the object carries no Id, so both the import and the loop above go
+			' by the number on the end of the name.
+			Set node = NewObject(folder, TAL_CLASS, name, Array())
+
+			If node Is Nothing Then
+				failed = failed & vbCrLf & "  " & name & " in Automation - no manifest for " & TAL_CLASS
+			Else
+				added = added & vbCrLf & "  " & name & " in Automation"
+			End If
+
+		End If
+
+	Next
+
+End Sub
+
+
 Sub SyncMonitor(doc, removed, added, failed)
 
 	Dim folder
@@ -13876,6 +13972,70 @@ End Function
 
 Sub EndOfScope()
 	
+End Sub
+
+<xatm_config_screens.Menu.btnTAL:btnTAL_Click()>
+Sub btnTAL_Click()
+
+	Dim autos
+	Set autos = Application.GetObject("XATM_Data.Automation")
+
+	' One of these in a station, like the reclosing and unlike the transfers -
+	' so there is no list to order and no instance to choose between.
+	Dim obj, target
+	Set target = Nothing
+
+	For Each obj In autos
+		If TypeName(obj) = "xatm_TAL" Then
+			Set target = obj
+			Exit For
+		End If
+	Next
+
+	If target Is Nothing Then
+		MsgBox "No line transfer automation found!"
+		Exit Sub
+	End If
+
+	' --- the menu -------------------------------------------------------
+	'
+	' Two entries, and they are the two the specification asks for: selecting
+	' the function is supposed to offer bloqueio and servico. Operator Block
+	' is the first; Reset is the second, because clearing the general block is
+	' precisely how the operator selects the transfer back into service after
+	' a failed run or a field condition took it out.
+	'
+	' No force entry, unlike the reclosing and the transfers. Those answer a
+	' command or a relay, and a menu can send what the relay would. This one
+	' answers a line losing potential and nothing else - there is no Start to
+	' write. To exercise it, force HasVoltage False on the entry breaker from
+	' the property row: the automation cannot tell that from the real thing,
+	' which is the whole reason that flag is forceable.
+	Dim menu
+	menu = target.Name & "{" & _
+	       IIf(target.OperatorBlock, "*", "") & "Operator Block|" & _
+	       "Reset}"
+
+	Dim lOption
+	lOption = Application.SelectMenu(menu)
+	If lOption <= 0 Then Exit Sub
+
+	Select Case lOption
+
+		Case 1
+
+			' Operator Block toggle
+			target.OperatorBlock = Not target.OperatorBlock
+
+		Case 2
+
+			' Reset - clears the general block, which is what a failed transfer
+			' and a field condition both latch, and tears down a run that is
+			' stuck part way through.
+			target.Item("Commands").Item("Reset").WriteEx True
+
+	End Select
+
 End Sub
 
 <xatm_config_screens.Menu.btnTMTNM:btnTMTNM_Click()>
