@@ -6471,7 +6471,7 @@ Sub Blocked_OnChangedValue()
 	'
 	' The condition is an expression on this tag and not a line of script, which
 	' is how the transfer and the reclosing both keep theirs. The expression is
-	'
+	' 
 	'   Not xatm_TAL.Enabled Or xatm_TAL.OperatorBlock
 	'   Or xatm_TAL.GeneralBlock Or Not xatm_TAL.Preconditions
 	'

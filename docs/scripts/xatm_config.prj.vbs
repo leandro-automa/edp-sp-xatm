@@ -15071,6 +15071,7 @@ Sub SingleLineDiagram_OnPreShow(Arg)
 	' TODO: make dynamic
 	'On Error Resume Next
 	'Item("xatm_TMTNMStatus1").Source = Application.GetObject("XATM_Data.Automation.TMTNM1").PathName
+	Item("xatm_TALStatus1").Source = Application.GetObject("XATM_Data.Automation.TAL1").PathName
 	
 End Sub
 
