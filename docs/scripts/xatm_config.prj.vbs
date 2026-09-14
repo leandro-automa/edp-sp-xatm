@@ -5016,29 +5016,27 @@ Sub xatm_Breaker_OnStartRunning()
 	' is the same reason it is off the alarm table below.
 	SetExposure bag, "Defective", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
 
-	' Position is shown and never touched. Reading it back on the panel is
-	' how an engineer sees that the raw values above were configured the
-	' right way round, which is worth a row of its own; forcing it would
-	' only make the panel lie about the switchyard.
-	' Exposed the way Defective is: an expression is the configuration, a
-	' force is how it gets tested without a real trip, and it is not saved.
+	' The signals the automations read off the breaker, exposed the way
+	' Defective is - an expression is the configuration, a force is how it
+	' gets tested without a real trip, and none is saved - and with neither
+	' EXPOSE_INTERFACE nor EXPOSE_IOTAG.
 	'
-	' No EXPOSE_IOTAG, for Defective's reason: it is derived, and level 3
-	' is already told the raw currents it is derived from.
-	SetExposure bag, "HasLoadCurrent", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
-
-	' The ones the line transfer reads, exposed the way Defective is and with
-	' no EXPOSE_INTERFACE at all.
-	'
-	' Only the two entry breakers will ever carry a meaningful value, and an
-	' interfaced property is a tag on every breaker in the project - which is
-	' what the licence is counted against. xatm_TAL reads the property off
-	' the object, so it needs no tag to do its work; the day one of these has
-	' to reach level 3, it is one flag added to one class.
+	' No interface, because nothing outside the object reads them. The
+	' reclosing, the line transfer and the breaker's own menu all take the
+	' property straight off the object, and an interfaced property is a tag
+	' on every breaker in the project - which is what the licence is counted
+	' against. No IO tag, for Defective's reason: each is derived from raw
+	' points level 3 is already told, the currents among them. The day one of
+	' these has to reach level 3, it is one flag added to one class.
+	SetExposure bag, "HasLoadCurrent",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "UndervoltageRelay",     EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "LineVTFailure",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "BusbarLockingOutRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 
+	' Position is shown and never touched. Reading it back on the panel is
+	' how an engineer sees that the raw values above were configured the
+	' right way round, which is worth a row of its own; forcing it would
+	' only make the panel lie about the switchyard.
 	SetExposure bag, "Position", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE
 
 	' The two command failures are latches the automation sets and Reset
