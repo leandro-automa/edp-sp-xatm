@@ -59,13 +59,24 @@ Sub objButton_Click()
 	defective = CBool(source.Defective)
 	On Error Goto 0
 
-	' Line voltage, and only on the two entry breakers.
+	' The line's state, and only on the two entry breakers.
 	'
-	' Those are the two the line transfer reads HasVoltage from. On any other
-	' breaker the flag drives nothing, and a toggle there would look like a
-	' test that had been run. The Ids are the ones IncomerBreakers hands the
-	' transfer for a 2BR2BB incomer - written again here because a library
-	' control has no way to ask the automation for them.
+	' Those are the two the line transfer works dead and live out from. On any
+	' other breaker these flags drive nothing, and a toggle there would look
+	' like a test that had been run. The Ids are the ones IncomerBreakers
+	' hands the transfer for a 2BR2BB incomer - written again here because a
+	' library control has no way to ask the automation for them.
+	'
+	' Load current goes with them, the third of the signals the line transfer
+	' builds dead from. The reclosing reads it too, off whichever incomer is
+	' the primary; where that is not one of these two, the property row is
+	' where it gets forced.
+	'
+	' Offered as its absence. Every other check mark on this menu means
+	' something is wrong - a failure, a defect, a relay actuated - and a mark
+	' against Load Current would have meant the breaker was fine. So the entry
+	' is No Load Current, marked while the flag is False, and choosing it
+	' still flips HasLoadCurrent.
 	Dim deviceId
 	deviceId = 0
 
@@ -76,38 +87,51 @@ Sub objButton_Click()
 	Dim isEntry
 	isEntry = (deviceId = 10 Or deviceId = 20)
 
-	Dim lineLive
-	lineLive = True
+	Dim undervoltage, vtFailure, loadCurrent
+	undervoltage = False
+	vtFailure    = False
+	loadCurrent  = False
 
 	On Error Resume Next
-	lineLive = CBool(source.HasVoltage)
+	undervoltage = CBool(source.UndervoltageRelay)
+	vtFailure    = CBool(source.LineVTFailure)
+	loadCurrent  = CBool(source.HasLoadCurrent)
 	On Error Goto 0
 
 	' SelectMenu numbers the entries in order and skips the separators, so
-	' Reset moves down one when the voltage entry is there. Both numbers are
-	' worked out rather than written into the cases; -1 is a number no menu
-	' hands back.
-	Dim voltageEntry, voltageOption, resetOption
+	' Reset moves down three when the line entries are there.
+	' The numbers are worked out rather than written into the cases, and -1
+	' stands for an entry that is not on the menu - which can never match,
+	' because a dismissed menu is sent away before the cases are reached.
+	Dim lineEntries, undervoltageOption, vtFailureOption, loadCurrentOption, resetOption
 
 	If isEntry Then
-		voltageEntry  = IIf(lineLive, "*", "") & "Has Voltage|"
-		voltageOption = 5
-		resetOption   = 6
+		lineEntries        = IIf(undervoltage, "*", "") & "Undervoltage (27)|" & _
+		                     IIf(vtFailure, "*", "") & "Line VT Failure|" & _
+		                     IIf(loadCurrent, "", "*") & "No Load Current|"
+		undervoltageOption = 5
+		vtFailureOption    = 6
+		loadCurrentOption  = 7
+		resetOption        = 8
 	Else
-		voltageEntry  = ""
-		voltageOption = -1
-		resetOption   = 5
+		lineEntries        = ""
+		undervoltageOption = -1
+		vtFailureOption    = -1
+		loadCurrentOption  = -1
+		resetOption        = 5
 	End If
 
 	Dim options
 	options = "Command{" & openCmd & "|" & closeCmd & "||" & _
 	          IIf(CBool(failTag.Value), "*", "") & "Command Failure}|" & _
 	          IIf(defective, "*", "") & "Defective|" & _
-	          voltageEntry & _
+	          lineEntries & _
 	          "Reset||Cancel"
 
 	Dim userOption
 	userOption = Application.SelectMenu(options)
+
+	If userOption <= 0 Then Exit Sub
 
 	Select Case userOption
 
@@ -125,10 +149,22 @@ Sub objButton_Click()
 			source.Defective = Not defective
 			On Error Goto 0
 
-		Case voltageOption
+		Case undervoltageOption
 
 			On Error Resume Next
-			source.HasVoltage = Not lineLive
+			source.UndervoltageRelay = Not undervoltage
+			On Error Goto 0
+
+		Case vtFailureOption
+
+			On Error Resume Next
+			source.LineVTFailure = Not vtFailure
+			On Error Goto 0
+
+		Case loadCurrentOption
+
+			On Error Resume Next
+			source.HasLoadCurrent = Not loadCurrent
 			On Error Goto 0
 
 		Case resetOption

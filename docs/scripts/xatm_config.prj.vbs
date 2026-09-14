@@ -4914,6 +4914,35 @@ Sub xatm_Breaker_OnStartRunning()
 		"Equipment is defective and must not be operated. Bound to an expression - not in remote, spring discharged, whatever the panel reports.", _
 		"Equipamento com defeito e que não deve ser operado. Vinculada a uma expressão - fora de remoto, mola descarregada, o que o painel indicar."
 
+	' What the line transfer builds a line's state from, as three signals and
+	' not one bit summarised in the IED.
+	'
+	' One bit cannot say "don't know". A tripped VT mini breaker leaves a line
+	' neither dead nor live, and whichever way a single signal resolved that,
+	' one side of the transfer would act on it: failing live it transfers onto
+	' a line nobody can see, failing dead it starts from one. The transfer
+	' combines them itself, one expression for dead and one for live - see
+	' BindLine in xatm_TAL. HasLoadCurrent, below, is the third.
+	'
+	' All three rest at False, so one the site leaves unbound drops out of
+	' what the transfer works out instead of deciding it.
+	AddProperty bag, "UndervoltageRelay", "Boolean", False, _
+		"Undervoltage function (27) of this breaker's IED is actuated - the line has no voltage. Bound to an expression.", _
+		"Função de subtensão (27) do IED deste disjuntor atuada - a linha está sem tensão. Vinculada a uma expressão."
+
+	' The line's and not the breaker's, which is why it carries the prefix -
+	' the way BusbarLockingOutRelay names what it belongs to. Named for what
+	' it means to the automation rather than for the device, so a site that
+	' binds a fuse-failure function instead of the mini breaker contact is
+	' not left with a name that says otherwise.
+	AddProperty bag, "LineVTFailure", "Boolean", False, _
+		"The voltage transformer of the line at this breaker cannot be trusted - its mini circuit breaker has tripped. Bound to an expression. While True the line counts as neither dead nor live.", _
+		"O TP da linha neste disjuntor não é confiável - seu minidisjuntor desarmou. Vinculada a uma expressão. Enquanto True a linha não conta nem como morta nem como viva."
+
+	AddProperty bag, "BusbarLockingOutRelay", "Boolean", False, _
+		"Locking out relay (86) of the busbar this breaker feeds is actuated. Bound to an expression - a breaker must not be closed onto a busbar that is locked out.", _
+		"Relé de bloqueio (86) da barra que este disjuntor alimenta está atuado. Vinculada a uma expressão - um disjuntor não pode fechar sobre uma barra bloqueada."
+
 	' Whether the bay is carrying load, which is how a reclosing scheme
 	' confirms a close that the position contacts did not report.
 	'
@@ -4922,25 +4951,6 @@ Sub xatm_Breaker_OnStartRunning()
 	' reference logic disagree on that threshold - 0,1 pu against 1 A. Left
 	' as an expression, that stays a site decision instead of one the
 	' library has to arbitrate.
-	' One signal per line, and the IED is what decides it.
-	'
-	' The undervoltage element, the supervision of the VT and the phase
-	' currents are folded into this one bit inside the IED, so False means
-	' the line is genuinely dead and not that the VT has failed. Three
-	' analogues compared against a threshold belong in the device that
-	' measures them and not in a script reading them at scan rate.
-	'
-	' Which way a failed VT resolves is the IED's to declare, and the answer
-	' is live: a VT with a problem should make an automation do nothing,
-	' never make it act. True is the resting value for the same reason.
-	AddProperty bag, "HasVoltage", "Boolean", True, _
-		"The line at this breaker has voltage. One signal from the IED, which combines the undervoltage element, the VT supervision and the phase currents - so False means the line is genuinely dead and not that the VT has failed.", _
-		"A linha neste disjuntor tem tensão. Um único sinal do IED, que combina o elemento de subtensão, a supervisão do TP e as correntes de fase - de modo que False significa linha realmente morta e não TP com defeito."
-
-	AddProperty bag, "BusbarLockingOutRelay", "Boolean", False, _
-		"Locking out relay (86) of the busbar this breaker feeds is actuated. Bound to an expression - a breaker must not be closed onto a busbar that is locked out.", _
-		"Relé de bloqueio (86) da barra que este disjuntor alimenta está atuado. Vinculada a uma expressão - um disjuntor não pode fechar sobre uma barra bloqueada."
-
 	AddProperty bag, "HasLoadCurrent", "Boolean", False, _
 		"Load current is flowing through this breaker. Bound to an expression - the sum of the phase currents above whatever threshold the substation uses.", _
 		"Há corrente de carga neste disjuntor. Vinculada a uma expressão - a soma das correntes de fase acima do limiar que a subestação usar."
@@ -5017,7 +5027,7 @@ Sub xatm_Breaker_OnStartRunning()
 	' is already told the raw currents it is derived from.
 	SetExposure bag, "HasLoadCurrent", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
 
-	' The two the line transfer reads, exposed the way Defective is and with
+	' The ones the line transfer reads, exposed the way Defective is and with
 	' no EXPOSE_INTERFACE at all.
 	'
 	' Only the two entry breakers will ever carry a meaningful value, and an
@@ -5025,7 +5035,8 @@ Sub xatm_Breaker_OnStartRunning()
 	' what the licence is counted against. xatm_TAL reads the property off
 	' the object, so it needs no tag to do its work; the day one of these has
 	' to reach level 3, it is one flag added to one class.
-	SetExposure bag, "HasVoltage",            EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "UndervoltageRelay",     EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "LineVTFailure",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 	SetExposure bag, "BusbarLockingOutRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
 
 	SetExposure bag, "Position", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE
@@ -14008,9 +14019,10 @@ Sub btnTAL_Click()
 	' No force entry, unlike the reclosing and the transfers. Those answer a
 	' command or a relay, and a menu can send what the relay would. This one
 	' answers a line losing potential and nothing else - there is no Start to
-	' write. To exercise it, force HasVoltage False on the entry breaker from
-	' the property row: the automation cannot tell that from the real thing,
-	' which is the whole reason that flag is forceable.
+	' write. To exercise it, force UndervoltageRelay True on the entry breaker
+	' from the property row or the breaker's own menu: the automation cannot
+	' tell that from the real thing, which is the whole reason that flag is
+	' forceable.
 	Dim menu
 	menu = target.Name & "{" & _
 	       IIf(target.OperatorBlock, "*", "") & "Operator Block|" & _

@@ -6482,16 +6482,23 @@ Sub Blocked_OnChangedValue()
 
 End Sub
 
-<xatm_TAL.Signals.Line1HasVoltage:Line1HasVoltage_OnChangedValue()>
-Sub Line1HasVoltage_OnChangedValue()
+<xatm_TAL.Signals.Line1Dead:Line1Dead_OnChangedValue()>
+Sub Line1Dead_OnChangedValue()
 
 	' Wakes the watcher, and decides nothing.
 	'
-	' Four tags carry what the two breakers are doing, and a change in any of
-	' them can be the start of a transfer - a line going dead, or a breaker
-	' moving while the lines are already as they need to be. Each one only
-	' sets the watcher running; the watcher is where the question is asked, so
-	' there is one copy of the answer and not four.
+	' Six tags carry what the two breakers are doing, and a change in any of
+	' them can be the start of a transfer - a line going dead, a line coming
+	' back, or a breaker moving while the lines are already as they need to
+	' be. Each one only sets the watcher running; the watcher is where the
+	' question is asked, so there is one copy of the answer and not six.
+	Parent.Item("Watch").Value = 0
+
+End Sub
+
+<xatm_TAL.Signals.Line1Live:Line1Live_OnChangedValue()>
+Sub Line1Live_OnChangedValue()
+
 	Parent.Item("Watch").Value = 0
 
 End Sub
@@ -6503,8 +6510,15 @@ Sub Line1Position_OnChangedValue()
 
 End Sub
 
-<xatm_TAL.Signals.Line2HasVoltage:Line2HasVoltage_OnChangedValue()>
-Sub Line2HasVoltage_OnChangedValue()
+<xatm_TAL.Signals.Line2Dead:Line2Dead_OnChangedValue()>
+Sub Line2Dead_OnChangedValue()
+
+	Parent.Item("Watch").Value = 0
+
+End Sub
+
+<xatm_TAL.Signals.Line2Live:Line2Live_OnChangedValue()>
+Sub Line2Live_OnChangedValue()
 
 	Parent.Item("Watch").Value = 0
 
@@ -6560,7 +6574,7 @@ Sub Watch_Counter()
 	'
 	' It runs while Value is zero or more and stops by going to -1, the way
 	' UndervoltageRelay and CommandTimer already stop. Standing idle it does
-	' nothing at all: the four tags linked to the two breakers wake it when
+	' nothing at all: the six tags linked to the two breakers wake it when
 	' the switchyard moves, and it puts itself back to sleep below.
 
 	If Not xatm_TAL.Enabled Then
@@ -6673,7 +6687,12 @@ Sub RunPause()
 
 		Case 2
 
-			If Not BothDead() Then
+			' Called off by a line coming back, and by nothing else. A VT that
+			' fails part way through the count leaves its line neither dead nor
+			' live, and dropping out on that would leave two dead lines with no
+			' pause declared and nothing on the screen. The scheme this replaces
+			' kept counting too.
+			If EitherLive() Then
 				SetPauseStage 1
 				Exit Sub
 			End If
@@ -6780,20 +6799,21 @@ End Function
 
 ' A line with no potential, and one with potential.
 '
-' Not each other's opposite, which is the whole reason HasVoltage is one
-' signal decided in the IED. It folds the undervoltage element, the VT
-' supervision and the phase currents into one bit, so False here means the
-' line is genuinely dead rather than that the VT has failed.
+' Not each other's opposite. Each is a tag of its own, linked when the
+' project came up to an expression over three of the breaker's signals -
+' see BindLine - and a line whose VT cannot be trusted is neither: not dead,
+' so nothing is started from it, and not live, so nothing is transferred
+' onto it. An unlinked tag reads False, which is the same answer.
 Function Dead(n)
 
-	Dead = (Not CBool(LinkValue("Line" & n & "HasVoltage", False)))
+	Dead = CBool(LinkValue("Line" & n & "Dead", False))
 
 End Function
 
 
 Function Live(n)
 
-	Live = CBool(LinkValue("Line" & n & "HasVoltage", False))
+	Live = CBool(LinkValue("Line" & n & "Live", False))
 
 End Function
 
@@ -7010,7 +7030,16 @@ Sub Main_Step01()
 	If xatm_TAL.Blocked Then why = "the transfer was blocked"
 	If xatm_TAL.Paused Then why = "both lines lost voltage"
 	If Live(FromLine()) Then why = "voltage came back on line " & FromLine()
-	If Not Live(OntoLine()) Then why = "line " & OntoLine() & " lost voltage"
+
+	' A reserve that is not live has either lost its voltage or can no longer
+	' be read, and the log says which. Neither is somewhere to transfer to.
+	If Not Live(OntoLine()) Then
+		If Dead(OntoLine()) Then
+			why = "line " & OntoLine() & " lost voltage"
+		Else
+			why = "the voltage on line " & OntoLine() & " can no longer be confirmed"
+		End If
+	End If
 
 	If why <> "" Then
 		WriteLog "Step 1: transfer abandoned - " & why & "."
@@ -7220,9 +7249,18 @@ Function PositionOf(n)
 End Function
 
 
+' Off the same two tags the watcher reads, and for its reason: a line whose
+' VT cannot be trusted is neither.
 Function Live(n)
 
-	Live = CBool(LinkValue("Line" & n & "HasVoltage", False))
+	Live = CBool(LinkValue("Line" & n & "Live", False))
+
+End Function
+
+
+Function Dead(n)
+
+	Dead = CBool(LinkValue("Line" & n & "Dead", False))
 
 End Function
 
@@ -7440,7 +7478,7 @@ End Sub
 
 
 ' One line: the breaker's path written down for the two commands, and its
-' voltage and position linked in for everything else.
+' state and position linked in for everything else.
 Sub BindLine(n, id)
 
 	Dim breaker, exists
@@ -7454,11 +7492,32 @@ Sub BindLine(n, id)
 
 	SetPath n, breaker.PathName
 
-	' HasVoltage is a property of the breaker and Position is a tag under its
-	' Data folder, so the two sources are not shaped alike. The library reads
-	' Position that way everywhere.
-	Relink "Line" & n & "HasVoltage", breaker.PathName & ".HasVoltage"
-	Relink "Line" & n & "Position",   breaker.PathName & ".Data.Position"
+	Dim p
+	p = breaker.PathName
+
+	' Dead and live, each one expression over the breaker's own signals, so
+	' the watcher reads a tag and never the rule.
+	'
+	' Dead is the loss 10.4.1 describes: the undervoltage element actuated,
+	' the line's VT healthy, and no current through the breaker. Live is the
+	' voltage there and the VT healthy, with no current in it - the reserve
+	' breaker is open and carries none whatever its line is doing. On that
+	' open breaker the current term in Dead is always met, which is why the
+	' one expression serves the both-lines-dead pause as well.
+	'
+	' The three rest at False, so one the site leaves unbound drops out of
+	' both expressions instead of deciding them. Bind only the undervoltage
+	' element and dead and live become each other's opposite, which is the
+	' site's call to make. Parenthesised so the answer does not depend on
+	' where the expression engine puts Not.
+	Relink "Line" & n & "Dead", _
+		p & ".UndervoltageRelay And (Not " & p & ".LineVTFailure) And (Not " & p & ".HasLoadCurrent)"
+	Relink "Line" & n & "Live", _
+		"(Not " & p & ".UndervoltageRelay) And (Not " & p & ".LineVTFailure)"
+
+	' Position is a tag under the breaker's Data folder, and the library reads
+	' it that way everywhere.
+	Relink "Line" & n & "Position", p & ".Data.Position"
 
 	WriteLog "Line " & n & " bound to " & breaker.Name & "."
 
