@@ -59,14 +59,79 @@ Sub objButton_Click()
 	defective = CBool(source.Defective)
 	On Error Goto 0
 
+	' The line's state, and only on the two entry breakers.
+	'
+	' Those are the two the line transfer works dead and live out from. On any
+	' other breaker these flags drive nothing, and a toggle there would look
+	' like a test that had been run. The Ids are the ones IncomerBreakers
+	' hands the transfer for a 2BR2BB incomer - written again here because a
+	' library control has no way to ask the automation for them.
+	'
+	' Load current goes with them, the third of the signals the line transfer
+	' builds dead from. The reclosing reads it too, off whichever incomer is
+	' the primary; where that is not one of these two, the property row is
+	' where it gets forced.
+	'
+	' Offered as its absence. Every other check mark on this menu means
+	' something is wrong - a failure, a defect, a relay actuated - and a mark
+	' against Load Current would have meant the breaker was fine. So the entry
+	' is No Load Current, marked while the flag is False, and choosing it
+	' still flips HasLoadCurrent.
+	Dim deviceId
+	deviceId = 0
+
+	On Error Resume Next
+	deviceId = CLng(source.Id)
+	On Error Goto 0
+
+	Dim isEntry
+	isEntry = (deviceId = 10 Or deviceId = 20)
+
+	Dim undervoltage, vtFailure, loadCurrent
+	undervoltage = False
+	vtFailure    = False
+	loadCurrent  = False
+
+	On Error Resume Next
+	undervoltage = CBool(source.UndervoltageRelay)
+	vtFailure    = CBool(source.LineVTFailure)
+	loadCurrent  = CBool(source.HasLoadCurrent)
+	On Error Goto 0
+
+	' SelectMenu numbers the entries in order and skips the separators, so
+	' Reset moves down three when the line entries are there.
+	' The numbers are worked out rather than written into the cases, and -1
+	' stands for an entry that is not on the menu - which can never match,
+	' because a dismissed menu is sent away before the cases are reached.
+	Dim lineEntries, undervoltageOption, vtFailureOption, loadCurrentOption, resetOption
+
+	If isEntry Then
+		lineEntries        = IIf(undervoltage, "*", "") & "Undervoltage (27)|" & _
+		                     IIf(vtFailure, "*", "") & "Line VT Failure|" & _
+		                     IIf(loadCurrent, "", "*") & "No Load Current|"
+		undervoltageOption = 5
+		vtFailureOption    = 6
+		loadCurrentOption  = 7
+		resetOption        = 8
+	Else
+		lineEntries        = ""
+		undervoltageOption = -1
+		vtFailureOption    = -1
+		loadCurrentOption  = -1
+		resetOption        = 5
+	End If
+
 	Dim options
 	options = "Command{" & openCmd & "|" & closeCmd & "||" & _
 	          IIf(CBool(failTag.Value), "*", "") & "Command Failure}|" & _
 	          IIf(defective, "*", "") & "Defective|" & _
+	          lineEntries & _
 	          "Reset||Cancel"
 
 	Dim userOption
 	userOption = Application.SelectMenu(options)
+
+	If userOption <= 0 Then Exit Sub
 
 	Select Case userOption
 
@@ -84,7 +149,25 @@ Sub objButton_Click()
 			source.Defective = Not defective
 			On Error Goto 0
 
-		Case 5
+		Case undervoltageOption
+
+			On Error Resume Next
+			source.UndervoltageRelay = Not undervoltage
+			On Error Goto 0
+
+		Case vtFailureOption
+
+			On Error Resume Next
+			source.LineVTFailure = Not vtFailure
+			On Error Goto 0
+
+		Case loadCurrentOption
+
+			On Error Resume Next
+			source.HasLoadCurrent = Not loadCurrent
+			On Error Goto 0
+
+		Case resetOption
 
 			source.Item("Data").Item("Reset").WriteEx True
 
@@ -1627,6 +1710,94 @@ Sub objArea_OnStartRunning()
 		
 End Sub
 
+<xatm_TALStatus.Source:xatm_TALStatus_OnSourceChanged()>
+Sub xatm_TALStatus_OnSourceChanged()
+
+	' What the line transfer is doing, for the single-line diagram to show
+	' while it is doing it.
+	'
+	' The same shape as the manual transfer's status control next door: the
+	' object is handed over as the Source and every reading is a link, so the
+	' screen follows the automation without a line of script running on it.
+	'
+	' Two clocks and not one, because this automation has two that matter and
+	' they never run together. The step clock counts the wait before the
+	' breakers are commanded; the pause clock counts either of the two delays
+	' that the both-lines-dead machine uses. Which of those two it is counting
+	' towards is decided in the expression below, so the screen has one number
+	' to draw and not a rule to apply.
+
+	' --- is anything happening ------------------------------------------
+
+	Links.CreateLink "Running", Source.PathName & ".Running"
+	Links.CreateLink "Paused",  Source.PathName & ".Paused"
+	Links.CreateLink "Blocked", Source.PathName & ".Blocked"
+
+	' --- the sequence ---------------------------------------------------
+	'
+	' CurrentStep is FSM.Main's own value: 0 announcing, 1 waiting, 2 opening,
+	' 3 closing, 99 holding the outcome. Empty between runs.
+
+	Links.CreateLink "CurrentStep", Source.Item("FSM").Item("Main").PathName & ".Value"
+	Links.CreateLink "StepTimer",   Source.Item("FSM").Item("StepTimer").PathName & ".Value"
+
+	' Which way it is going. Zero between runs, so a screen can read either of
+	' these to know there is no direction to draw.
+	Links.CreateLink "FromLine", Source.Item("FSM").Item("FromLine").PathName & ".Value"
+	Links.CreateLink "OntoLine", Source.Item("FSM").Item("OntoLine").PathName & ".Value"
+
+	' Seconds left of the wait before the first breaker is commanded.
+	'
+	' Only meaningful at step 1 - it is the step clock against the step's own
+	' limit, and every other step is timed by the breaker rather than by this.
+	' The screen gates on CurrentStep, which is why the raw two are linked
+	' above as well.
+	Links.CreateLink "StepRemaining", _
+		Source.PathName & ".TransferDelay - " & _
+		Source.Item("FSM").Item("StepTimer").PathName & ".Value"
+
+	' --- the pause ------------------------------------------------------
+	'
+	' PauseStage is 1 watching, 2 counting the both-dead delay, 3 waiting for
+	' a line to come back, 4 counting the steady time before the pause lifts.
+
+	Links.CreateLink "PauseStage", Source.Item("Signals").Item("PauseStage").PathName & ".Value"
+	Links.CreateLink "PauseTimer", Source.Item("Signals").Item("PauseTimer").PathName & ".Value"
+
+	' Seconds left of whichever of the two delays is running.
+	'
+	' The choice is made here rather than on the screen. Stage 4 counts
+	' towards the steady time and every other counting stage towards the
+	' both-dead time, and a screen that had to know that would be a second
+	' place for the rule to go stale.
+	Links.CreateLink "PauseRemaining", _
+		"IIf(" & Source.Item("Signals").Item("PauseStage").PathName & ".Value = 4, " & _
+		Source.PathName & ".VoltageStableDelay, " & _
+		Source.PathName & ".BothLinesDeadDelay) - " & _
+		Source.Item("Signals").Item("PauseTimer").PathName & ".Value"
+
+	' The three configured limits, because a bar needs a denominator.
+	'
+	' The remaining counts above already resolve which limit applies, but a
+	' proportion cannot be built from a remainder alone - the screen divides
+	' the elapsed by one of these, and picks which one the same way.
+	Links.CreateLink "TransferDelay",      Source.PathName & ".TransferDelay"
+	Links.CreateLink "BothLinesDeadDelay", Source.PathName & ".BothLinesDeadDelay"
+	Links.CreateLink "VoltageStableDelay", Source.PathName & ".VoltageStableDelay"
+
+	' --- what the last run came to ---------------------------------------
+	'
+	' Held for OutcomeHoldTime and then put out, so a screen showing these is
+	' showing an event and not a state - which is the same thing the alarm
+	' list does with them.
+
+	Links.CreateLink "SuccessfulL1L2",   Source.PathName & ".SuccessfulL1L2"
+	Links.CreateLink "SuccessfulL2L1",   Source.PathName & ".SuccessfulL2L1"
+	Links.CreateLink "UnsuccessfulL1L2", Source.PathName & ".UnsuccessfulL1L2"
+	Links.CreateLink "UnsuccessfulL2L1", Source.PathName & ".UnsuccessfulL2L1"
+
+End Sub
+
 <xatm_TMTNMStatus.Source:xatm_TMTNMStatus_OnSourceChanged()>
 Sub xatm_TMTNMStatus_OnSourceChanged()
 	
@@ -1661,6 +1832,7 @@ Sub objButton_Click()
 	options = IIf(source.OutOfService,      "*", "") & "Out Of Service|" & _
 	          IIf(source.UndervoltageRelay, "*", "") & "Undervoltage (27)|" & _
 	          IIf(source.LockingOutRelay,   "*", "") & "Locking Out Relay (86)|" & _
+	          IIf(source.Isolated,          "*", "") & "Isolated|" & _
 	          "|Reset|Cancel"
 
 	Dim userOption
@@ -1678,6 +1850,9 @@ Sub objButton_Click()
 			source.LockingOutRelay = Not source.LockingOutRelay
 		
 		Case 4
+			source.Isolated = Not source.Isolated
+		
+		Case 5
 			' TODO: Reset
 
 	End Select

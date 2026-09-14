@@ -4914,6 +4914,35 @@ Sub xatm_Breaker_OnStartRunning()
 		"Equipment is defective and must not be operated. Bound to an expression - not in remote, spring discharged, whatever the panel reports.", _
 		"Equipamento com defeito e que não deve ser operado. Vinculada a uma expressão - fora de remoto, mola descarregada, o que o painel indicar."
 
+	' What the line transfer builds a line's state from, as three signals and
+	' not one bit summarised in the IED.
+	'
+	' One bit cannot say "don't know". A tripped VT mini breaker leaves a line
+	' neither dead nor live, and whichever way a single signal resolved that,
+	' one side of the transfer would act on it: failing live it transfers onto
+	' a line nobody can see, failing dead it starts from one. The transfer
+	' combines them itself, one expression for dead and one for live - see
+	' BindLine in xatm_TAL. HasLoadCurrent, below, is the third.
+	'
+	' All three rest at False, so one the site leaves unbound drops out of
+	' what the transfer works out instead of deciding it.
+	AddProperty bag, "UndervoltageRelay", "Boolean", False, _
+		"Undervoltage function (27) of this breaker's IED is actuated - the line has no voltage. Bound to an expression.", _
+		"Função de subtensão (27) do IED deste disjuntor atuada - a linha está sem tensão. Vinculada a uma expressão."
+
+	' The line's and not the breaker's, which is why it carries the prefix -
+	' the way BusbarLockingOutRelay names what it belongs to. Named for what
+	' it means to the automation rather than for the device, so a site that
+	' binds a fuse-failure function instead of the mini breaker contact is
+	' not left with a name that says otherwise.
+	AddProperty bag, "LineVTFailure", "Boolean", False, _
+		"The voltage transformer of the line at this breaker cannot be trusted - its mini circuit breaker has tripped. Bound to an expression. While True the line counts as neither dead nor live.", _
+		"O TP da linha neste disjuntor não é confiável - seu minidisjuntor desarmou. Vinculada a uma expressão. Enquanto True a linha não conta nem como morta nem como viva."
+
+	AddProperty bag, "BusbarLockingOutRelay", "Boolean", False, _
+		"Locking out relay (86) of the busbar this breaker feeds is actuated. Bound to an expression - a breaker must not be closed onto a busbar that is locked out.", _
+		"Relé de bloqueio (86) da barra que este disjuntor alimenta está atuado. Vinculada a uma expressão - um disjuntor não pode fechar sobre uma barra bloqueada."
+
 	' Whether the bay is carrying load, which is how a reclosing scheme
 	' confirms a close that the position contacts did not report.
 	'
@@ -4987,17 +5016,27 @@ Sub xatm_Breaker_OnStartRunning()
 	' is the same reason it is off the alarm table below.
 	SetExposure bag, "Defective", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
 
+	' The signals the automations read off the breaker, exposed the way
+	' Defective is - an expression is the configuration, a force is how it
+	' gets tested without a real trip, and none is saved - and with neither
+	' EXPOSE_INTERFACE nor EXPOSE_IOTAG.
+	'
+	' No interface, because nothing outside the object reads them. The
+	' reclosing, the line transfer and the breaker's own menu all take the
+	' property straight off the object, and an interfaced property is a tag
+	' on every breaker in the project - which is what the licence is counted
+	' against. No IO tag, for Defective's reason: each is derived from raw
+	' points level 3 is already told, the currents among them. The day one of
+	' these has to reach level 3, it is one flag added to one class.
+	SetExposure bag, "HasLoadCurrent",        EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "UndervoltageRelay",     EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "LineVTFailure",         EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+	SetExposure bag, "BusbarLockingOutRelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE
+
 	' Position is shown and never touched. Reading it back on the panel is
 	' how an engineer sees that the raw values above were configured the
 	' right way round, which is worth a row of its own; forcing it would
 	' only make the panel lie about the switchyard.
-	' Exposed the way Defective is: an expression is the configuration, a
-	' force is how it gets tested without a real trip, and it is not saved.
-	'
-	' No EXPOSE_IOTAG, for Defective's reason: it is derived, and level 3
-	' is already told the raw currents it is derived from.
-	SetExposure bag, "HasLoadCurrent", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE
-
 	SetExposure bag, "Position", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE
 
 	' The two command failures are latches the automation sets and Reset
@@ -5700,6 +5739,396 @@ Sub xatm_Monitor_OnStartRunning()
 	' it returns to normal when the parallel ends, and its alarm leaves the
 	' list by itself.
 	SetAlarm bag, "ExtendedParallel", "PARALELO PROLONGADO", PAIR_ACTUATED, SEV_MEDIUM
+
+	Set Value = bag
+
+End Sub
+
+' What the configuration screen may do with a property, and whether its
+' value is a setting at all. A bitmask: a property can be bound to an
+' expression and forced, or shown and not edited, and so on.
+'
+' AddProperty leaves every property at EXPOSE_NONE, so nothing appears on
+' the screen and nothing is written to the project until the table at the
+' foot of the manifest says so. Both defaults fail closed.
+Const EXPOSE_NONE       = 0
+Const EXPOSE_VIEW       = 1     ' a row appears for it
+Const EXPOSE_VALUE      = 2     ' its value is shown - never for a write-only command
+Const EXPOSE_EDIT       = 4     ' the value can be typed
+Const EXPOSE_EXPRESSION = 8     ' it can be bound to an expression
+Const EXPOSE_FORCE      = 16    ' it can be forced at runtime, and is never saved
+Const EXPOSE_SAVED      = 32    ' its value is configuration, not a reading
+Const EXPOSE_INTERFACE  = 64    ' the Elipse application is given a tag for it
+Const EXPOSE_IOTAG      = 128   ' level 3 is given a point for it, over 104
+
+
+' What the operator reads, and which state says it: normal|active|limit.
+'
+' One string rather than three fields because the polarity belongs with
+' the words. Preconditions is True while the maneuver is permitted, so
+' it alarms on 0 where the rest alarm on 1 - and a pair that carried
+' only the two words would let someone reword the message without ever
+' seeing that the state raising it was the healthy one.
+Const PAIR_ACTUATED     = "NORMAL|ATUADO|1"
+Const PAIR_BLOCKED      = "LIBERADO|BLOQUEADO|1"
+Const PAIR_PRECONDITION = "ATENDIDAS|NÃO ATENDIDAS|0"
+Const PAIR_RUNNING      = "CONCLUÍDO|EM ANDAMENTO|1"
+
+' DigitalSeverity, as Power numbers it.
+'
+' The scale runs backwards: the smaller the number the worse the alarm,
+' and -2 is the most severe value here rather than the least. Anything
+' comparing two of these has to be read twice - "worse than medium" is
+' a < and not a >. The manifests ask for medium unless a signal earns
+' otherwise; the overlay is what moves a single alarm off its default.
+Const SEV_CRITICAL = -2
+Const SEV_HIGH     =  0
+Const SEV_MEDIUM   =  1
+Const SEV_LOW      =  2
+Class PropertyInfo
+
+	Public Name
+	Public DataType
+	Public InitialValue
+	Public Exposure
+	Public HelpEn
+	Public HelpPt
+
+	' What the operator is told when this property changes, and which of
+	' its two states does the telling. Empty on every property until the
+	' alarm table at the foot of the manifest names it - the same way the
+	' exposure table is what makes a property appear on the panel. Both
+	' default to silence.
+	Public AlarmLabel
+	Public AlarmPair
+	Public AlarmSeverity
+
+	Public Function Help(lang)
+
+		If lang = "pt-BR" Then
+			Help = HelpPt
+		Else
+			Help = HelpEn
+		End If
+
+	End Function
+
+	' Asked of the property rather than of the caller, so the flags stay in
+	' the one scope that declares them. The instances travel to whatever
+	' scope reads the manifest and answer there just the same.
+	Public Function Shows()
+		Shows = Has(EXPOSE_VIEW)
+	End Function
+
+	Public Function ShowsValue()
+		ShowsValue = Has(EXPOSE_VALUE)
+	End Function
+
+	Public Function CanEdit()
+		CanEdit = Has(EXPOSE_EDIT)
+	End Function
+
+	Public Function CanBind()
+		CanBind = Has(EXPOSE_EXPRESSION)
+	End Function
+
+	Public Function CanForce()
+		CanForce = Has(EXPOSE_FORCE)
+	End Function
+
+	Public Function IsSaved()
+		IsSaved = Has(EXPOSE_SAVED)
+	End Function
+	
+	Public Function IsInterfaced()
+		IsInterfaced = Has(EXPOSE_INTERFACE)
+	End Function
+
+	' Whether level 3 is given a point for it.
+	'
+	' A separate question from IsInterfaced, and asked separately. The
+	' interface is where the Elipse application meets the automation; the
+	' distribution is what leaves the station. Everything distributed is
+	' interfaced - the distribution reads off the interface - but not
+	' everything interfaced is distributed, and conflating the two left no
+	' way to say so except a list of names kept somewhere else.
+	Public Function IsIOTagged()
+		IsIOTagged = Has(EXPOSE_IOTAG)
+	End Function
+
+	' An unnamed property raises nothing. Empty and "" compare equal in
+	' VBScript, so a property the alarm table never mentions answers no
+	' here without needing a flag of its own.
+	Public Function IsAlarmed()
+		IsAlarmed = (AlarmLabel <> "")
+	End Function
+
+	' The message either way, in the pattern the control room reads:
+	' a label and the state, joined by a dash.
+	Public Function AlarmNormalText()
+		AlarmNormalText = AlarmLabel & " - " & PairPart(0)
+	End Function
+
+	Public Function AlarmActiveText()
+		AlarmActiveText = AlarmLabel & " - " & PairPart(1)
+	End Function
+
+	Public Function AlarmLimit()
+		AlarmLimit = (CLng("0" & PairPart(2)) <> 0)
+	End Function
+
+	Private Function PairPart(i)
+
+		PairPart = ""
+
+		Dim parts
+		parts = Split(AlarmPair & "", "|")
+
+		If i <= UBound(parts) Then PairPart = parts(i)
+
+	End Function
+	
+	
+	' Empty And anything is 0, so a property nobody classified answers no
+	' to all of these.
+	Private Function Has(flag)
+		Has = ((Exposure And flag) <> 0)
+	End Function
+
+End Class
+
+Sub AddProperty(bag, name, dataType, initialValue, helpEn, helpPt)
+
+	Dim p
+	Set p = New PropertyInfo
+
+	p.Name         = name
+	p.DataType     = dataType
+	p.InitialValue = initialValue
+	p.Exposure     = EXPOSE_NONE
+	p.HelpEn       = helpEn
+	p.HelpPt       = helpPt
+
+	bag.Add LCase(name), p
+	
+End Sub
+
+' What the screen may do with a property. Set apart from AddProperty so
+' the classifications read as a table, and so changing one never means
+' touching the help text - which is where the accents live.
+' What the operator is alarmed on. Set apart from SetExposure for the
+' reason that one is set apart from AddProperty: the alarms read as a
+' table of their own, and a property left out of it raises nothing.
+'
+' A curated list and never a sweep of what is interfaced. An interface
+' tag exists so a screen can draw a value, which is a different question
+' from whether an operator should be told about it.
+Sub SetAlarm(bag, propertyName, label, pair, severity)
+
+	Dim k
+	k = LCase(propertyName)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).AlarmLabel    = label
+	bag(k).AlarmPair     = pair
+	bag(k).AlarmSeverity = severity
+
+End Sub
+Sub SetExposure(bag, name, exposure)
+
+	Dim k
+	k = LCase(name)
+
+	If Not bag.Exists(k) Then Exit Sub
+
+	bag(k).Exposure = exposure
+		
+End Sub
+
+
+<xatm_config_data.PropertiesHelper.xatm_TAL:xatm_TAL_OnStartRunning()>
+Sub xatm_TAL_OnStartRunning()
+
+	Dim bag
+	Set bag = CreateObject("Scripting.Dictionary")
+
+	' The automatic transfer of the high voltage line: one of the two entry
+	' lines loses potential and the other takes the substation over.
+	'
+	' Two directions and one object. Which way it runs is read off the
+	' breakers rather than chosen - whichever is closed is the line in
+	' service and the other is the reserve - so L1 to L2 and L2 to L1 are the
+	' same code with the two ends swapped.
+	'
+	' It holds no breaker of its own. The entry breakers come from the
+	' incomer layout and are resolved by Id, the way every other automation
+	' resolves the equipment it operates.
+
+
+	' --- configuration ---------------------------------------------------
+
+	AddProperty bag, "Enabled", "Boolean", True, _
+		"Master enable of this automation. Start requests are rejected and a running sequence stops while it is False.", _
+		"Habilitação geral deste automatismo. Pedidos de partida serão recusados e a sequência em andamento para enquanto estiver False."
+
+	AddProperty bag, "TransferDelay", "Integer", 45, _
+		"Time in seconds the line has to stay without voltage before the transfer is commanded.", _
+		"Tempo em segundos que a linha deve permanecer sem tensão antes que a transferência seja comandada."
+
+	AddProperty bag, "BothLinesDeadDelay", "Integer", 10, _
+		"Time in seconds both lines have to stay without voltage before the transfer is paused. There is nowhere to transfer to, so this is a pause and not a block.", _
+		"Tempo em segundos que as duas linhas devem permanecer sem tensão antes que a transferência entre em pausa. Não há para onde transferir, por isso é pausa e não bloqueio."
+
+	AddProperty bag, "VoltageStableDelay", "Integer", 120, _
+		"Time in seconds voltage has to stay back on one of the lines before the pause is lifted.", _
+		"Tempo em segundos que a tensão deve permanecer de volta em uma das linhas antes que a pausa seja levantada."
+
+	AddProperty bag, "OutcomeHoldTime", "Integer", 5, _
+		"Time in seconds an outcome stays up before it is put out. An outcome is an event and not a state, so it is held long enough to be read and then cleared.", _
+		"Tempo em segundos que um resultado permanece levantado antes de ser apagado. Um resultado é um evento e não um estado, então fica tempo suficiente para ser lido e depois é apagado."
+
+
+	' --- what the field has to say ---------------------------------------
+	'
+	' Two of them, and they are not each other's opposite. Preconditions is
+	' what lets the operator arm the automation at all; AutomaticBlock takes
+	' it out of service after it was armed. The RTAC this replaces kept the
+	' same pair - CondAtiv and CondBloq.
+
+	AddProperty bag, "Preconditions", "Boolean", True, _
+		"Field conditions that have to hold before the automation may be armed. Bound to an expression - True while the maneuver is permitted.", _
+		"Condições de campo que devem valer antes que o automatismo possa ser armado. Vinculada a uma expressão - True enquanto a manobra é permitida."
+
+	AddProperty bag, "AutomaticBlock", "Boolean", False, _
+		"Field conditions that take the automation out of service. Bound to an expression - True drops it even if it was already armed, which is what Preconditions alone cannot do.", _
+		"Condições de campo que tiram o automatismo de serviço. Vinculada a uma expressão - True o derruba mesmo já armado, que é o que a Preconditions sozinha não faz."
+
+
+	' --- the three ways it can be stopped, and the two commands ----------
+	'
+	' The same trio the other automations carry, because the RTAC's latch
+	' resolves into exactly it. That latch reset on CmdBloq OR CondBloq OR
+	' MalSuc, which is the operator, the field and a failed run - one each.
+	'
+	' GeneralBlock is the one that earns its place. The specification says a
+	' deviation takes the function out of service and that the operator has
+	' to select it back in, so it cannot come back on its own when the
+	' condition clears: latched here, cleared by Reset, exactly as a step
+	' failure is latched elsewhere.
+
+	AddProperty bag, "OperatorBlock", "Boolean", False, _
+		"Operator lock. Blocks the start until the operator releases it.", _
+		"Bloqueio do operador. Impede a partida até que o operador libere."
+
+	AddProperty bag, "GeneralBlock", "Boolean", False, _
+		"General interlock. Blocks the start, and is latched by a transfer that failed or by a field condition that dropped the automation, until Reset clears it.", _
+		"Intertravamento geral. Impede a partida e é selado por uma transferência mal sucedida ou por uma condição de campo que derrubou o automatismo, até que o Reset o apague."
+
+	AddProperty bag, "Blocked", "Boolean", False, _
+		"True when a transfer could not start - disabled, blocked by the operator or the general interlock, or barred by the field.", _
+		"True quando uma transferência não pode partir - desabilitado, bloqueado pelo operador ou pelo intertravamento geral, ou barrado pelo campo."
+
+	AddProperty bag, "CommandReset", "InternalTag", Empty, _
+		"Reset command. Clears the general block, which is how the operator selects the automation back into service.", _
+		"Comando de reset. Apaga o bloqueio geral, que é como o operador seleciona o automatismo de volta ao serviço."
+
+	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
+		"Operator lock command. Written by the operator's screen to set or release OperatorBlock.", _
+		"Comando de bloqueio do operador. Escrito pela tela do operador para marcar ou liberar o OperatorBlock."
+
+
+	' --- what leaves the station -----------------------------------------
+
+	AddProperty bag, "Paused", "Boolean", False, _
+		"True while both lines are without voltage. The automation stays armed - there is nowhere to transfer to, so this is not a block and needs nobody to clear it.", _
+		"True enquanto as duas linhas estão sem tensão. O automatismo continua armado - não há para onde transferir, então isto não é bloqueio e não precisa de ninguém para sair."
+
+	AddProperty bag, "Running", "Boolean", False, _
+		"True while a transfer is in progress. Read by the other automation objects for mutual exclusion, so only one runs at a time.", _
+		"True enquanto uma transferência está em andamento. Lido pelos demais automatismos para exclusão mútua, de modo que apenas um execute por vez."
+
+	' One trio per direction, and the suffix is spelled out. Everywhere else
+	' in this project a numeric suffix names a transformer, so RunningL1L2
+	' rather than Running12 - the latter would read as an Id.
+	Dim i, lineFrom, lineOnto
+	For i = 1 To 2
+
+		lineFrom = i
+		lineOnto = 3 - i
+
+		AddProperty bag, "RunningL" & lineFrom & "L" & lineOnto, "Boolean", False, _
+			"True while the transfer from line " & lineFrom & " to line " & lineOnto & " is the one in progress. Up from the moment the loss of voltage is confirmed, so it covers the wait as well as the commands.", _
+			"True enquanto a transferência da linha " & lineFrom & " para a linha " & lineOnto & " é a que está em andamento. Levantada desde que a falta de tensão é confirmada, de modo que cobre a espera e também os comandos."
+
+		AddProperty bag, "SuccessfulL" & lineFrom & "L" & lineOnto, "Boolean", False, _
+			"True when the transfer from line " & lineFrom & " to line " & lineOnto & " completed. An event and not a state - it goes up and comes back down after OutcomeHoldTime.", _
+			"True quando a transferência da linha " & lineFrom & " para a linha " & lineOnto & " foi concluída. É um evento e não um estado - sobe e volta a descer depois do OutcomeHoldTime."
+
+		AddProperty bag, "UnsuccessfulL" & lineFrom & "L" & lineOnto, "Boolean", False, _
+			"True when the transfer from line " & lineFrom & " to line " & lineOnto & " did not complete - a breaker did not answer its command. It also takes the automation out of service.", _
+			"True quando a transferência da linha " & lineFrom & " para a linha " & lineOnto & " não foi concluída - um disjuntor não atendeu ao comando. Também tira o automatismo de serviço."
+
+	Next
+
+
+	' --- what the screen may do, and what leaves the station -------------
+
+	SetExposure bag, "Enabled",            EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "TransferDelay",      EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "BothLinesDeadDelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "VoltageStableDelay", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+	SetExposure bag, "OutcomeHoldTime",    EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EDIT + EXPOSE_SAVED
+
+	SetExposure bag, "Preconditions",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "AutomaticBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_EXPRESSION + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	SetExposure bag, "OperatorBlock", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "GeneralBlock",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_FORCE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "Blocked",       EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	' The two commands, exposed the way every other command point is: shown,
+	' saved because what they carry is which tag they are wired to, and
+	' addressed so that level 3 can send them.
+	SetExposure bag, "CommandReset",         EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "CommandOperatorBlock", EXPOSE_VIEW + EXPOSE_SAVED + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	SetExposure bag, "Paused",  EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+	SetExposure bag, "Running", EXPOSE_VIEW + EXPOSE_VALUE + EXPOSE_INTERFACE + EXPOSE_IOTAG
+
+	For i = 1 To 2
+		lineFrom = i
+		lineOnto = 3 - i
+		SetExposure bag, "RunningL" & lineFrom & "L" & lineOnto,      EXPOSE_INTERFACE + EXPOSE_IOTAG
+		SetExposure bag, "SuccessfulL" & lineFrom & "L" & lineOnto,   EXPOSE_INTERFACE + EXPOSE_IOTAG
+		SetExposure bag, "UnsuccessfulL" & lineFrom & "L" & lineOnto, EXPOSE_INTERFACE + EXPOSE_IOTAG
+	Next
+
+
+	' --- what the operator is alarmed on ---------------------------------
+
+	SetAlarm bag, "GeneralBlock",   "BLOQUEIO GERAL",              PAIR_BLOCKED,      SEV_HIGH
+	SetAlarm bag, "OperatorBlock",  "BLOQUEIO OPERADOR",           PAIR_BLOCKED,      SEV_MEDIUM
+	SetAlarm bag, "Blocked",        "TRANSFERÊNCIA DE LINHA",      PAIR_BLOCKED,      SEV_MEDIUM
+	SetAlarm bag, "Running",        "TRANSFERÊNCIA DE LINHA",      PAIR_RUNNING,      SEV_LOW
+
+	SetAlarm bag, "Preconditions",  "PRECONDIÇÕES TAL",        PAIR_PRECONDITION, SEV_MEDIUM
+	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO TAL",     PAIR_BLOCKED,      SEV_MEDIUM
+
+	' Paused raises none. It says there is nowhere to transfer to, which the
+	' operator already knows from two dead lines, and a second line on the
+	' list would not tell them anything the first did not.
+
+	For i = 1 To 2
+		lineFrom = i
+		lineOnto = 3 - i
+		SetAlarm bag, "SuccessfulL" & lineFrom & "L" & lineOnto, _
+			"TRANSFERÊNCIA AUTOMÁTICA L" & lineFrom & " PARA L" & lineOnto & " BEM SUCEDIDA", _
+			PAIR_ACTUATED, SEV_LOW
+		SetAlarm bag, "UnsuccessfulL" & lineFrom & "L" & lineOnto, _
+			"TRANSFERÊNCIA AUTOMÁTICA L" & lineFrom & " PARA L" & lineOnto & " MAL SUCEDIDA", _
+			PAIR_ACTUATED, SEV_HIGH
+	Next
 
 	Set Value = bag
 
@@ -9279,6 +9708,10 @@ Sub btnApply_Click()
 	' own class.
 	SyncRASEAT doc, RASEATCount(incomerType), removed, added, failed
 
+	' And the line transfer, off the same axis and for the same reason: it
+	' operates the entry breakers, so it exists exactly where they do.
+	SyncTAL doc, TALCount(incomerType), removed, added, failed
+
 	' And the monitor, which takes no count from either axis: every station
 	' is watched, and what differs between layouts is the topology table the
 	' check reads, which is in the library and not here.
@@ -9307,6 +9740,7 @@ Const INCOMER_PATH     = "/xatm-config/folder[@name='Substation']/folder[@name='
 Const TMTNM_CLASS       = "xatm_TMTNM"
 Const TA_CLASS          = "xatm_TA"
 Const RASEAT_CLASS      = "xatm_RASEAT"
+Const TAL_CLASS         = "xatm_TAL"
 Const MONITOR_CLASS     = "xatm_Monitor"
 Const TRANSFORMER_CLASS = "xatm_Transformer"
 
@@ -9543,6 +9977,26 @@ Function RASEATCount(incomerType)
 
 End Function
 
+
+' How many line transfers the incomer layout wants, which is one or none.
+'
+' The same answer as the reclosing and asked separately all the same, so
+' that a layout with entry bays but no line to transfer between - one
+' incomer, or three - can say so here without disturbing the other.
+'
+' Which breakers it operates is not decided here. That is the library's
+' business, off the same incomer axis, because it is read when the
+' automation runs and not when the document is applied.
+Function TALCount(incomerType)
+
+	Select Case UCase(incomerType)
+		Case "2BR2BB" : TALCount = 1
+		Case Else     : TALCount = 0
+	End Select
+
+End Function
+
+' TODO: Rename AutomationCount function
 Function AutomationCount(layoutType)
 
 	Select Case UCase(layoutType)
@@ -10093,6 +10547,77 @@ End Sub
 ' classes can share the folder without any of them pruning another. What it
 ' does not take is a keepCount: there is no layout under which a substation
 ' goes unwatched, so the answer is always one.
+' Brings the Automation folder to the number of line transfers the incomer
+' layout wants - which is one, or none.
+'
+' SyncRASEAT's shape exactly, down to selecting by type so that five classes
+' can share the folder without any of them pruning another. The two are not
+' folded together even though they take the same count off the same axis:
+' they answer different questions of the layout, and a station that grows a
+' third entry bay will want different answers from each.
+Sub SyncTAL(doc, keepCount, removed, added, failed)
+
+	Dim folder
+	Set folder = doc.selectSingleNode(AUTOMATION_PATH)
+
+	If folder Is Nothing Then
+		failed = failed & vbCrLf & "  the Automation folder is not in the document"
+		Exit Sub
+	End If
+
+	Dim kept
+	Set kept = CreateObject("Scripting.Dictionary")
+
+	Dim doomed
+	Set doomed = CreateObject("Scripting.Dictionary")
+
+	Dim nodes, node, n, num
+	Set nodes = folder.selectNodes("object[@type='" & TAL_CLASS & "']")
+
+	For n = 0 To nodes.length - 1
+
+		Set node = nodes.item(n)
+		num = TrailingNumber(node.getAttribute("name"))
+
+		If num >= 1 And num <= keepCount Then
+			kept(num) = True
+		Else
+			removed = removed & vbCrLf & "  " & node.getAttribute("name") & " from Automation"
+			doomed.Add n, node
+		End If
+
+	Next
+
+	For Each n In doomed.Keys
+		Set node = doomed(n)
+		DropNode node
+	Next
+
+	Dim name
+	For n = 1 To keepCount
+
+		If Not kept.Exists(n) Then
+
+			name = "TAL" & n
+
+			' Numbered even though there is only ever one, for RASEAT1's reason:
+			' the object carries no Id, so both the import and the loop above go
+			' by the number on the end of the name.
+			Set node = NewObject(folder, TAL_CLASS, name, Array())
+
+			If node Is Nothing Then
+				failed = failed & vbCrLf & "  " & name & " in Automation - no manifest for " & TAL_CLASS
+			Else
+				added = added & vbCrLf & "  " & name & " in Automation"
+			End If
+
+		End If
+
+	Next
+
+End Sub
+
+
 Sub SyncMonitor(doc, removed, added, failed)
 
 	Dim folder
@@ -13458,6 +13983,71 @@ Sub EndOfScope()
 	
 End Sub
 
+<xatm_config_screens.Menu.btnTAL:btnTAL_Click()>
+Sub btnTAL_Click()
+
+	Dim autos
+	Set autos = Application.GetObject("XATM_Data.Automation")
+
+	' One of these in a station, like the reclosing and unlike the transfers -
+	' so there is no list to order and no instance to choose between.
+	Dim obj, target
+	Set target = Nothing
+
+	For Each obj In autos
+		If TypeName(obj) = "xatm_TAL" Then
+			Set target = obj
+			Exit For
+		End If
+	Next
+
+	If target Is Nothing Then
+		MsgBox "No line transfer automation found!"
+		Exit Sub
+	End If
+
+	' --- the menu -------------------------------------------------------
+	'
+	' Two entries, and they are the two the specification asks for: selecting
+	' the function is supposed to offer bloqueio and servico. Operator Block
+	' is the first; Reset is the second, because clearing the general block is
+	' precisely how the operator selects the transfer back into service after
+	' a failed run or a field condition took it out.
+	'
+	' No force entry, unlike the reclosing and the transfers. Those answer a
+	' command or a relay, and a menu can send what the relay would. This one
+	' answers a line losing potential and nothing else - there is no Start to
+	' write. To exercise it, force UndervoltageRelay True on the entry breaker
+	' from the property row or the breaker's own menu: the automation cannot
+	' tell that from the real thing, which is the whole reason that flag is
+	' forceable.
+	Dim menu
+	menu = target.Name & "{" & _
+	       IIf(target.OperatorBlock, "*", "") & "Operator Block|" & _
+	       "Reset}"
+
+	Dim lOption
+	lOption = Application.SelectMenu(menu)
+	If lOption <= 0 Then Exit Sub
+
+	Select Case lOption
+
+		Case 1
+
+			' Operator Block toggle
+			target.OperatorBlock = Not target.OperatorBlock
+
+		Case 2
+
+			' Reset - clears the general block, which is what a failed transfer
+			' and a field condition both latch, and tears down a run that is
+			' stuck part way through.
+			target.Item("Commands").Item("Reset").WriteEx True
+
+	End Select
+
+End Sub
+
 <xatm_config_screens.Menu.btnTMTNM:btnTMTNM_Click()>
 Sub btnTMTNM_Click()
 
@@ -14491,6 +15081,11 @@ Sub SingleLineDiagram_OnPreShow(Arg)
 	' TODO: make dynamic
 	'On Error Resume Next
 	'Item("xatm_TMTNMStatus1").Source = Application.GetObject("XATM_Data.Automation.TMTNM1").PathName
+	
+	On Error Resume Next
+	Item("xatm_TALStatus1").Source = Application.GetObject("XATM_Data.Automation.TAL1").PathName
+	If Err Then Item("xatm_TALStatus1").Visible = False
+	On Error Goto 0
 	
 End Sub
 

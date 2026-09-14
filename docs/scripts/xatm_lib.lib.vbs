@@ -6088,6 +6088,1582 @@ Sub Blocked_OnChangedValue()
 
 End Sub
 
+<xatm_TAL.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
+Sub OperatorBlock_CommandOperatorBlock()
+
+	' What the operator sent, and not the opposite of what is there.
+	'
+	' An absolute set rather than a toggle, the way every other automation
+	' takes this command: the client sends a 1 to block and a 0 to release,
+	' and a toggle would answer a repeated 1 by releasing.
+	Dim v
+	v = False
+
+	On Error Resume Next
+	v = CBool(xatm_TAL.CommandOperatorBlock.Value)
+	On Error Goto 0
+
+	xatm_TAL.OperatorBlock = v
+
+	Wake
+
+End Sub
+
+
+' Sets the watcher going, so a block reaches the screen now rather than
+' whenever the switchyard next moves.
+Sub Wake()
+
+	On Error Resume Next
+	Parent.Parent.Item("Signals").Item("Watch").Value = 0
+	On Error Goto 0
+
+End Sub
+
+<xatm_TAL.Commands.OperatorBlock:OperatorBlock_OnChangedValue()>
+Sub OperatorBlock_OnChangedValue()
+
+	If xatm_TAL.OperatorBlock Then
+		WriteLog "Blocked by operator."
+	Else
+		WriteLog "Released by operator."
+	End If
+
+End Sub
+
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_TAL.Commands.Reset:Reset_OnChangedTimeStamp()>
+Sub Reset_OnChangedTimeStamp()
+
+	' Only on a 1. The point is written back to nothing after it is acted on,
+	' and answering that would reset a second time for no reason.
+	If CBool(Value) Then Reset()
+
+End Sub
+
+
+' The operator selecting the transfer back into service.
+'
+' It tears a run down as well as clearing the block. A reset arriving while a
+' transfer is stuck halfway is the operator saying stop, and leaving the step
+' where it stood would let it carry on commanding the moment the block came
+' off.
+'
+' The operator block is not touched - that is the operator's own and is
+' released by its own command. Nor is the pause: it describes two dead lines
+' and is not something a reset has an opinion about.
+'
+' A field condition that is still true latches the block again on the next
+' pass, which is the point. A reset says the operator has looked, not that the
+' field is to be ignored.
+Sub Reset()
+
+	xatm_TAL.GeneralBlock = False
+	xatm_TAL.Running      = False
+
+	ClearRunning
+	ClearOutcomes
+
+	Dim tag
+	On Error Resume Next
+	For Each tag In xatm_TAL.Item("FSM")
+		If TypeName(tag) = "InternalTag" Then
+			tag.WriteEx Empty, tag.TimeStamp
+		End If
+	Next
+	On Error Goto 0
+
+	WriteLog "Reset - the general block is cleared."
+
+	On Error Resume Next
+	Parent.Parent.Item("Signals").Item("Watch").Value = 0
+	On Error Goto 0
+
+End Sub
+
+
+' The per direction points, cleared here as well as in the sequence - a scope
+' cannot call into another's, so each keeps its own copy.
+Sub ClearRunning()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 2
+		Execute "xatm_TAL.RunningL" & i & "L" & (3 - i) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+Sub ClearOutcomes()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 2
+		Execute "xatm_TAL.SuccessfulL" & i & "L" & (3 - i) & " = False"
+		Execute "xatm_TAL.UnsuccessfulL" & i & "L" & (3 - i) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_TAL.Commands.Start:Start_OnChangedValue()>
+Sub Start_OnChangedValue()
+
+	If Trim(Value & "") = "" Then Exit Sub      ' self-cleared write, ignore
+
+	Dim ts
+	ts = TimeStamp	' preserve for the silent clear
+
+	Dim parts
+	parts = Split(Me.Value, ":")
+
+	' Two fields, and only two.
+	'
+	' Nobody commands a line transfer - it answers a line losing potential -
+	' so the second field is which line lost it, written by the watcher that
+	' saw it go. There is no third field naming a contingency because there
+	' was no operator to pick one.
+	If UBound(parts) <> 1 Then
+		Reject "Invalid Start format '" & Me.Value & "' (expected TAL:line).", ts
+		Exit Sub
+	End If
+
+	Dim mode
+	mode = UCase(Trim(parts(0)))
+
+	If mode <> "TAL" Then
+		Reject "This automation runs TAL and nothing else - '" & mode & "' was asked for.", ts
+		Exit Sub
+	End If
+
+	If Not IsNumeric(parts(1)) Then
+		Reject "Invalid line '" & parts(1) & "'.", ts
+		Exit Sub
+	End If
+
+	Dim fromLine
+	fromLine = CInt(parts(1))
+
+	If fromLine <> 1 And fromLine <> 2 Then
+		Reject "There are two lines, and " & fromLine & " is not one of them.", ts
+		Exit Sub
+	End If
+
+	' ================
+	' GATE CHECKS
+	' ================
+
+	If Not xatm_TAL.Enabled Then
+		Reject "Automation disabled.", ts
+		Exit Sub
+	End If
+
+	If xatm_TAL.Running Then
+		Reject "Already running.", ts
+		Exit Sub
+	End If
+
+	If xatm_TAL.OperatorBlock Then
+		Reject "Blocked by operator.", ts
+		Exit Sub
+	End If
+
+	If xatm_TAL.GeneralBlock Then
+		Reject "General interlock active.", ts
+		Exit Sub
+	End If
+
+	' One pair of gates, named outright rather than built from the mode.
+	'
+	' There is nothing for a gate name to vary with here: the transfer is
+	' picked by a line going dead, not by an operator choosing a maneuver.
+	'
+	' Both are read before either is judged, so a manifest that has not been
+	' rebuilt is reported as the configuration fault it is rather than
+	' surfacing as a transfer that will not start for no stated reason.
+	Dim missing, blocked, permitted
+	missing = ""
+
+	blocked   = ReadGate("AutomaticBlock", False, missing)
+	permitted = ReadGate("Preconditions",  True,  missing)
+
+	If missing <> "" Then
+		Reject "this automation has no " & missing & " - the manifest has not been rebuilt.", ts
+		Exit Sub
+	End If
+
+	If blocked Then
+		Reject "Blocked by field conditions.", ts
+		Exit Sub
+	End If
+
+	' This one reads the other way round - the expression on it says when the
+	' transfer may go ahead, so it is the absence of it that rejects.
+	If Not permitted Then
+		Reject "Preconditions are not met.", ts
+		Exit Sub
+	End If
+
+	If AnyOtherAutomationRunning() Then
+		Reject "Another automation is in progress.", ts
+		Exit Sub
+	End If
+
+	' ================
+	' START
+	' ================
+
+	xatm_TAL.Item("FSM").Item("FromLine").WriteEx  fromLine
+	xatm_TAL.Item("FSM").Item("OntoLine").WriteEx  3 - fromLine
+	xatm_TAL.Item("FSM").Item("StepTimer").WriteEx 0
+	xatm_TAL.Item("FSM").Item("Main").WriteEx      0
+
+	xatm_TAL.Running = True
+
+	' The direction point goes up with the run and not at the first command.
+	' A transfer is in progress from the moment the loss is confirmed, which
+	' is what the scheme this replaces published too.
+	On Error Resume Next
+	Execute "xatm_TAL.RunningL" & fromLine & "L" & (3 - fromLine) & " = True"
+	Err.Clear
+	On Error Goto 0
+
+	WriteEx "", ts
+
+End Sub
+
+
+Sub Reject(reason, ts)
+
+	WriteLog "Not started - " & reason
+	WriteEx "", ts
+
+End Sub
+
+
+' One gate, read by the name built for it.
+'
+' E3 gives no way to index an XObject's properties, so the read is late bound.
+' A property that is not there leaves the default and adds its name to
+' missing - reported rather than assumed either way round.
+Function ReadGate(propertyName, defaultValue, ByRef missing)
+
+	gGateValue = defaultValue
+
+	Dim failed
+	failed = False
+
+	On Error Resume Next
+	Err.Clear
+	Execute "gGateValue = xatm_TAL." & propertyName
+	If Err.Number <> 0 Then failed = True
+	Err.Clear
+	On Error Goto 0
+
+	If failed Then
+		If missing <> "" Then missing = missing & ", "
+		missing = missing & propertyName
+		gGateValue = defaultValue
+	End If
+
+	ReadGate = CBool(gGateValue)
+
+End Function
+
+
+' Scratch cell for the late-bound read. Execute runs in the global scope and
+' cannot see a local.
+Dim gGateValue
+
+
+' Whether anything else in the Automation folder is mid-run.
+'
+' Nothing is excused here, unlike the transfer and the reclosing, which excuse
+' each other because one lockout relay starts both. Nothing starts this and
+' something else at the same instant - and the reclosing operates the very
+' breakers this is about to operate, so it is the last thing to run alongside.
+Function AnyOtherAutomationRunning()
+
+	AnyOtherAutomationRunning = False
+
+	Dim obj
+	For Each obj In Application.GetObject("XATM_Data.Automation")
+
+		If Not (obj Is xatm_TAL) Then
+
+			Dim running
+			running = False
+			On Error Resume Next
+			running = obj.Running
+			On Error GoTo 0
+
+			If running Then
+				AnyOtherAutomationRunning = True
+				Exit Function
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_TAL.Signals.Blocked:Blocked_OnChangedValue()>
+Sub Blocked_OnChangedValue()
+
+	' Whether a transfer could start, published from the tag that works it out.
+	'
+	' The condition is an expression on this tag and not a line of script, which
+	' is how the transfer and the reclosing both keep theirs. The expression is
+	' 
+	'   Not xatm_TAL.Enabled Or xatm_TAL.OperatorBlock
+	'   Or xatm_TAL.GeneralBlock Or Not xatm_TAL.Preconditions
+	'
+	' and it is the same list Commands.Start walks before it refuses - which is
+	' the point of publishing it: the operator sees the answer before asking the
+	' question.
+	xatm_TAL.Blocked = Value
+
+End Sub
+
+<xatm_TAL.Signals.Line1Dead:Line1Dead_OnChangedValue()>
+Sub Line1Dead_OnChangedValue()
+
+	' Wakes the watcher, and decides nothing.
+	'
+	' Six tags carry what the two breakers are doing, and a change in any of
+	' them can be the start of a transfer - a line going dead, a line coming
+	' back, or a breaker moving while the lines are already as they need to
+	' be. Each one only sets the watcher running; the watcher is where the
+	' question is asked, so there is one copy of the answer and not six.
+	Parent.Item("Watch").Value = 0
+
+End Sub
+
+<xatm_TAL.Signals.Line1Live:Line1Live_OnChangedValue()>
+Sub Line1Live_OnChangedValue()
+
+	Parent.Item("Watch").Value = 0
+
+End Sub
+
+<xatm_TAL.Signals.Line1Position:Line1Position_OnChangedValue()>
+Sub Line1Position_OnChangedValue()
+
+	Parent.Item("Watch").Value = 0
+
+End Sub
+
+<xatm_TAL.Signals.Line2Dead:Line2Dead_OnChangedValue()>
+Sub Line2Dead_OnChangedValue()
+
+	Parent.Item("Watch").Value = 0
+
+End Sub
+
+<xatm_TAL.Signals.Line2Live:Line2Live_OnChangedValue()>
+Sub Line2Live_OnChangedValue()
+
+	Parent.Item("Watch").Value = 0
+
+End Sub
+
+<xatm_TAL.Signals.Line2Position:Line2Position_OnChangedValue()>
+Sub Line2Position_OnChangedValue()
+
+	Parent.Item("Watch").Value = 0
+
+End Sub
+
+<xatm_TAL.Signals.Watch:Watch_AutomaticBlock()>
+Sub Watch_AutomaticBlock()
+
+	' A field condition arriving while the watcher is asleep.
+	'
+	' It has to latch the general block and raise the alarm, and a sleeping
+	' watcher would sit on it until the switchyard happened to move. Both of
+	' the bound conditions get one of these; the operator's two commands wake
+	' it from their own handlers.
+	Value = 0
+
+End Sub
+
+<xatm_TAL.Signals.Watch:Watch_Enabled()>
+Sub Watch_Enabled()
+
+	' The master enable, which is edited on the configuration screen and not
+	' sent as a command, so nothing else would wake the watcher for it.
+	Value = 0
+
+End Sub
+
+<xatm_TAL.Signals.Watch:Watch_Preconditions()>
+Sub Watch_Preconditions()
+
+	Value = 0
+
+End Sub
+
+<xatm_TAL.Signals.Watch:Watch_Counter()>
+Sub Watch_Counter()
+
+	' What the switchyard is doing, and whether it is asking for a transfer.
+	'
+	' The sequence itself is over in FSM.Main, the way every other automation
+	' keeps it. This is the part that has no equivalent there: the others are
+	' asked to run - by an operator, or by a lockout relay through the
+	' transformer's trigger - and this one has to notice for itself that a
+	' line has gone dead. Having noticed, it asks the same way they are asked,
+	' by writing Commands.Start.
+	'
+	' It runs while Value is zero or more and stops by going to -1, the way
+	' UndervoltageRelay and CommandTimer already stop. Standing idle it does
+	' nothing at all: the six tags linked to the two breakers wake it when
+	' the switchyard moves, and it puts itself back to sleep below.
+
+	If Not xatm_TAL.Enabled Then
+		Value = -1
+		Exit Sub
+	End If
+
+	' Nothing bound, nothing to do.
+	'
+	' Worth its own guard rather than being left to fall out of the tests
+	' below: an unlinked tag reads False, so both lines would look dead and
+	' the pause would raise itself on a transfer that was never wired to a
+	' switchyard at all.
+	If Not Bound() Then
+		Value = -1
+		Exit Sub
+	End If
+
+	LatchFieldBlock
+	RunPause
+	LookForLoss
+
+	' And back to sleep when nothing is left to time.
+	If AtRest() Then Value = -1
+
+End Sub
+
+
+' Whether the two entry breakers were found when the project came up.
+Function Bound()
+
+	Bound = (PathOf(1) <> "" And PathOf(2) <> "")
+
+End Function
+
+
+' Whether there is anything left for the clock to do.
+'
+' Two things can want the next tick: a pause timer part way through, and a
+' transfer already running - the sequence has its own clock, but this one
+' keeps watch on the cancel conditions while it runs. A pause waiting for
+' voltage to come back wants nothing: the tag that carries the voltage will
+' wake it, and that is the state the station sits in for hours.
+Function AtRest()
+
+	AtRest = False
+
+	If xatm_TAL.Running Then Exit Function
+	If PauseStage() = 2 Or PauseStage() = 4 Then Exit Function
+
+	AtRest = True
+
+End Function
+
+
+' ============================================================
+'  BLOCKS
+' ============================================================
+
+' The one block that latches.
+'
+' AutomaticBlock takes GeneralBlock with it rather than only barring the
+' start. The specification is explicit that a deviation takes the function out
+' of service and that the operator has to select it back in, so it must not
+' come back on its own the moment the field recovers.
+'
+' Preconditions does not latch. It is the question asked before arming, and a
+' live gate is what it is for.
+'
+' Nothing else is computed here. Blocked is a tag with an expression on it,
+' the way the transfer and the reclosing both keep theirs - see
+' Signals.Blocked.
+Sub LatchFieldBlock()
+
+	If xatm_TAL.AutomaticBlock And Not xatm_TAL.GeneralBlock Then
+		xatm_TAL.GeneralBlock = True
+		WriteLog "Field condition blocked the transfer - a reset is needed to put it back."
+	End If
+
+End Sub
+
+
+' ============================================================
+'  BOTH LINES DEAD
+' ============================================================
+
+' The pause, which is not a block.
+'
+' Two lines without potential is not a fault of the automation and there is
+' nowhere to transfer to, so it waits rather than dropping out of service and
+' asking the operator for a reset it has no reason to want.
+'
+' Stage 4 re-reads the voltage, which the scheme this replaces did not: its
+' timer ran to completion whatever the line did in the meantime, so a supply
+' that came back and fell over again still released the pause. The document it
+' was built from says "apos 120 s com tensao estavel", and stable is what this
+' checks.
+Sub RunPause()
+
+	Select Case PauseStage()
+
+		Case 0, 1
+
+			SetPaused False
+
+			If BothDead() Then
+				SetPauseTimer 0
+				SetPauseStage 2
+			End If
+
+		Case 2
+
+			' Called off by a line coming back, and by nothing else. A VT that
+			' fails part way through the count leaves its line neither dead nor
+			' live, and dropping out on that would leave two dead lines with no
+			' pause declared and nothing on the screen. The scheme this replaces
+			' kept counting too.
+			If EitherLive() Then
+				SetPauseStage 1
+				Exit Sub
+			End If
+
+			TickPause
+
+			If PauseTimer() >= Setting("BothLinesDeadDelay", 10) Then
+				SetPaused True
+				WriteLog "Both lines without voltage - the transfer is paused."
+				SetPauseStage 3
+			End If
+
+		Case 3
+
+			If EitherLive() Then
+				SetPauseTimer 0
+				SetPauseStage 4
+			End If
+
+		Case 4
+
+			If Not EitherLive() Then
+				SetPauseStage 3
+				Exit Sub
+			End If
+
+			TickPause
+
+			If PauseTimer() >= Setting("VoltageStableDelay", 120) Then
+				SetPaused False
+				WriteLog "Voltage back and steady - the transfer is released."
+				SetPauseStage 1
+			End If
+
+	End Select
+
+End Sub
+
+
+Sub SetPaused(state)
+
+	On Error Resume Next
+	If xatm_TAL.Paused <> state Then xatm_TAL.Paused = state
+	On Error Goto 0
+
+End Sub
+
+
+' ============================================================
+'  ASKING FOR A TRANSFER
+' ============================================================
+
+' One line dead, the other alive, and the breakers where they should be.
+'
+' Nothing is decided here beyond that. The request goes to Commands.Start,
+' which keeps every gate the other automations keep and refuses out loud.
+Sub LookForLoss()
+
+	If xatm_TAL.Running Then Exit Sub
+	If xatm_TAL.Blocked Then Exit Sub
+	If xatm_TAL.Paused Then Exit Sub
+
+	Dim src
+	src = 0
+
+	If Dead(1) And Live(2) And PositionOf(1) = 2 And PositionOf(2) = 1 Then src = 1
+	If Dead(2) And Live(1) And PositionOf(2) = 2 And PositionOf(1) = 1 Then src = 2
+
+	If src = 0 Then Exit Sub
+
+	WriteLog "Line " & src & " without voltage - requesting a transfer to line " & (3 - src) & "."
+
+	On Error Resume Next
+	Parent.Parent.Item("Commands").Item("Start").WriteEx "TAL:" & src
+	On Error Goto 0
+
+End Sub
+
+
+' ============================================================
+'  WHAT THE TWO LINES ARE DOING
+' ============================================================
+
+' Off the tags linked to the breakers when the project came up, not off the
+' breakers. They are read on every tick and they are what wakes the watcher,
+' which is the same reason they are linked rather than fetched.
+Function LinkValue(tagName, fallback)
+
+	LinkValue = fallback
+
+	On Error Resume Next
+	LinkValue = Parent.Item(tagName).Value
+	On Error Goto 0
+
+End Function
+
+
+Function PositionOf(n)
+
+	PositionOf = CLng(LinkValue("Line" & n & "Position", 0))
+
+End Function
+
+
+' A line with no potential, and one with potential.
+'
+' Not each other's opposite. Each is a tag of its own, linked when the
+' project came up to an expression over three of the breaker's signals -
+' see BindLine - and a line whose VT cannot be trusted is neither: not dead,
+' so nothing is started from it, and not live, so nothing is transferred
+' onto it. An unlinked tag reads False, which is the same answer.
+Function Dead(n)
+
+	Dead = CBool(LinkValue("Line" & n & "Dead", False))
+
+End Function
+
+
+Function Live(n)
+
+	Live = CBool(LinkValue("Line" & n & "Live", False))
+
+End Function
+
+
+Function BothDead()
+
+	BothDead = (Dead(1) And Dead(2))
+
+End Function
+
+
+Function EitherLive()
+
+	EitherLive = (Live(1) Or Live(2))
+
+End Function
+
+
+Function PathOf(n)
+
+	PathOf = CStr(LinkValue("Line" & n & "Path", ""))
+
+End Function
+
+
+' ============================================================
+'  THE PAUSE'S OWN TAGS
+' ============================================================
+
+Sub SetTagValue(tagName, newValue)
+
+	On Error Resume Next
+	Parent.Item(tagName).WriteEx newValue
+	On Error Goto 0
+
+End Sub
+
+Function PauseStage()
+	PauseStage = CLng(LinkValue("PauseStage", 1))
+End Function
+
+Sub SetPauseStage(v)
+	SetTagValue "PauseStage", v
+End Sub
+
+Function PauseTimer()
+	PauseTimer = CLng(LinkValue("PauseTimer", 0))
+End Function
+
+Sub SetPauseTimer(v)
+	SetTagValue "PauseTimer", v
+End Sub
+
+Sub TickPause()
+	SetPauseTimer PauseTimer() + 1
+End Sub
+
+
+' A configured time, and a fallback for one that has not been set.
+'
+' Zero is not a setting anybody means - it is what an Integer holds before
+' anybody has given it a value, and every one of these would fire instantly.
+Function Setting(propertyName, fallback)
+
+	Setting = fallback
+
+	gSettingValue = 0
+
+	On Error Resume Next
+	Execute "gSettingValue = xatm_TAL." & propertyName
+	Err.Clear
+	On Error Goto 0
+
+	If IsNumeric(gSettingValue) Then
+		If CLng(gSettingValue) > 0 Then Setting = CLng(gSettingValue)
+	End If
+
+End Function
+
+
+Dim gSettingValue
+
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_TAL.FSM.Main:Main_Main()>
+Sub Main_Main()
+
+	' The dispatcher, the same shape the other three automations carry.
+	'
+	' Four steps and no revert, against the six and a revert a transformer
+	' transfer needs - but the frame is the frame: Value is the step, the
+	' steps are scopes of this tag, and a step that overruns goes to global
+	' lockout.
+	'
+	' It runs only while Running is true, so a station at rest costs nothing.
+	Const STEP_TIMEOUT = 30
+
+	If Not xatm_TAL.Enabled Then
+
+		' Stopped and not frozen. Leaving the step where it stood would have
+		' the commands picked up again whenever somebody re-enabled - minutes
+		' later, against a switchyard that has moved on.
+		If xatm_TAL.Running Then
+			WriteLog "Not enabled - the transfer in progress was abandoned."
+			Main_Completed()
+		End If
+
+		Exit Sub
+
+	End If
+
+	If Not xatm_TAL.Running Then Exit Sub
+
+	Select Case Value
+
+		Case 0
+
+			Main_Step00()
+
+		Case 1
+
+			' No timeout on this one: the wait is the step, so reaching the
+			' end of it is the step succeeding and not overrunning.
+			Main_Step01()
+
+		Case 2
+
+			If Parent.Item("StepTimer").Value < STEP_TIMEOUT Then
+
+				Main_Step02()
+
+			Else
+
+				WriteLog "Step 2: Execution failed - Timeout exceeded."
+				Main_GlobalLockout
+				Exit Sub
+
+			End If
+
+		Case 3
+
+			If Parent.Item("StepTimer").Value < STEP_TIMEOUT Then
+
+				Main_Step03()
+
+			Else
+
+				WriteLog "Step 3: Execution failed - Timeout exceeded."
+				Main_GlobalLockout
+				Exit Sub
+
+			End If
+
+		Case 99
+
+			Main_Finish()
+
+	End Select
+
+	IncrementTimer()
+
+End Sub
+
+<xatm_TAL.FSM.Main:Main_Step00()>
+Sub Main_Step00()
+
+	WriteLog "Starting " & DescribeAutomation()
+
+	Value = 1
+
+End Sub
+
+
+' Human-readable summary of the running transfer for the step log.
+Function DescribeAutomation()
+
+	DescribeAutomation = "TAL line " & FromLine() & " to line " & OntoLine()
+
+End Function
+
+
+' E3 will not take a scope that ends on a Function, and says nothing about
+' it - so the scope ends on a Sub that does nothing, the way the others do.
+Sub EndOfScope()
+End Sub
+
+<xatm_TAL.FSM.Main:Main_Step01()>
+Sub Main_Step01()
+
+	' The wait: TransferDelay seconds before anything is commanded. It is what
+	' tells a real loss of potential from a momentary sag.
+	'
+	' Four things call it off, and the call-off is silent: no breaker has been
+	' touched, so there is no outcome to report. That is the difference
+	' between this and a global lockout, which reports one and blocks.
+	Dim why
+	why = ""
+
+	If xatm_TAL.Blocked Then why = "the transfer was blocked"
+	If xatm_TAL.Paused Then why = "both lines lost voltage"
+	If Live(FromLine()) Then why = "voltage came back on line " & FromLine()
+
+	' A reserve that is not live has either lost its voltage or can no longer
+	' be read, and the log says which. Neither is somewhere to transfer to.
+	If Not Live(OntoLine()) Then
+		If Dead(OntoLine()) Then
+			why = "line " & OntoLine() & " lost voltage"
+		Else
+			why = "the voltage on line " & OntoLine() & " can no longer be confirmed"
+		End If
+	End If
+
+	If why <> "" Then
+		WriteLog "Step 1: transfer abandoned - " & why & "."
+		Main_Completed()
+		Exit Sub
+	End If
+
+	If Parent.Item("StepTimer").Value < Setting("TransferDelay", 45) Then Exit Sub
+
+	WriteLog "Step 1: loss of voltage confirmed - transferring."
+
+	Advance 2
+
+End Sub
+
+<xatm_TAL.FSM.Main:Main_Step02()>
+Sub Main_Step02()
+
+	' Open the breaker of the line that lost potential.
+	'
+	' Break before make, and the reason is the state of the line: there is
+	' nothing to preserve, so the isolation is confirmed first. A manual
+	' transfer of the same two breakers does it the other way round.
+	If Operate(FromLine(), 1) Then
+
+		WriteLog "Step 2: line " & FromLine() & " breaker opened - proceeding to the next step."
+		Advance 3
+
+	End If
+
+End Sub
+
+<xatm_TAL.FSM.Main:Main_Step03()>
+Sub Main_Step03()
+
+	' Close the breaker of the reserve line.
+	'
+	' No revert if this one will not answer. Putting the first breaker back
+	' means closing onto a line that has no voltage, which is what the
+	' transfer started from.
+	If Operate(OntoLine(), 2) Then
+
+		WriteLog "Step 3: line " & OntoLine() & " breaker closed."
+		SetDirectionFlag "Successful", True
+		Advance 99
+
+	End If
+
+End Sub
+
+<xatm_TAL.FSM.Main:Main_Completed()>
+Sub Main_Completed()
+
+	' The run torn down.
+	'
+	' The outcome goes out with it. It stood for OutcomeHoldTime, which is
+	' what makes it an event the alarm engine sees begin and end rather than a
+	' line that never leaves the list of current alarms.
+	'
+	' GeneralBlock is untouched. That is the standing fault and waits for a
+	' Reset, which is the difference between it and an outcome.
+
+	Parent.Item("FromLine").WriteEx  Empty, 0
+	Parent.Item("OntoLine").WriteEx  Empty, 0
+	Parent.Item("StepTimer").WriteEx Empty, 0
+	WriteEx Empty, 0
+
+	xatm_TAL.Running = False
+
+	ClearRunning
+	ClearOutcomes
+
+End Sub
+
+<xatm_TAL.FSM.Main:Main_GlobalLockout()>
+Sub Main_GlobalLockout()
+
+	' A failure also takes the automation out of service.
+	'
+	' GeneralBlock and not merely the outcome: the specification wants the
+	' operator back in the loop after an unsuccessful transfer, and the
+	' outcome itself is an event that will be gone in a few seconds.
+	xatm_TAL.GeneralBlock = True
+	SetDirectionFlag "Unsuccessful", True
+
+	WriteLog "Global lockout activated due to automation failure."
+
+	' Out through the same door as a transfer that finished, rather than
+	' stopping here. An outcome has to go True and then False or its alarm
+	' never leaves the list, and stopping here would leave this one True for
+	' good.
+	Advance 99
+
+End Sub
+
+<xatm_TAL.FSM.Main:Main_Functions()>
+Sub Main_Functions()
+End Sub
+
+
+' The end of a run, which holds the outcome up before taking it away.
+'
+' Held rather than pulsed on one pass, unlike the transformer automations. A
+' level 3 client that polls on interrogation reads the current value, and a
+' point that was up for a single pass is gone by then. The scheme this
+' replaces held it for five seconds, and the reason is the same.
+Sub Main_Finish()
+
+	If Parent.Item("StepTimer").Value < Setting("OutcomeHoldTime", 5) Then Exit Sub
+
+	Main_Completed()
+
+End Sub
+
+
+' ============================================================
+'  THE STEP FRAME
+' ============================================================
+
+Sub Advance(nextStep)
+
+	ResetTimer()
+	Value = nextStep
+
+End Sub
+
+
+Sub ResetTimer()
+
+	Parent.Item("StepTimer").Value = 0
+
+End Sub
+
+
+Sub IncrementTimer()
+
+	Parent.Item("StepTimer").Value = Parent.Item("StepTimer").Value + 1
+
+End Sub
+
+
+Function FromLine()
+
+	FromLine = 0
+
+	On Error Resume Next
+	FromLine = CLng(Parent.Item("FromLine").Value)
+	On Error Goto 0
+
+End Function
+
+
+Function OntoLine()
+
+	OntoLine = 0
+
+	On Error Resume Next
+	OntoLine = CLng(Parent.Item("OntoLine").Value)
+	On Error Goto 0
+
+End Function
+
+
+' ============================================================
+'  THE TWO BREAKERS
+' ============================================================
+
+' The breaker of line n, and Nothing when the path answers to nothing.
+'
+' Only the two commands need it. Everything read on a tick comes off the tags
+' linked to the breaker when the project started.
+Function Bay(n)
+
+	Set Bay = Nothing
+
+	Dim path
+	path = ""
+
+	On Error Resume Next
+	path = CStr(xatm_TAL.Item("Signals").Item("Line" & n & "Path").Value)
+	On Error Goto 0
+
+	If path = "" Then Exit Function
+
+	On Error Resume Next
+	Set Bay = Application.GetObject(path)
+	On Error Goto 0
+
+End Function
+
+
+Function LinkValue(tagName, fallback)
+
+	LinkValue = fallback
+
+	On Error Resume Next
+	LinkValue = xatm_TAL.Item("Signals").Item(tagName).Value
+	On Error Goto 0
+
+End Function
+
+
+Function PositionOf(n)
+
+	PositionOf = CLng(LinkValue("Line" & n & "Position", 0))
+
+End Function
+
+
+' Off the same two tags the watcher reads, and for its reason: a line whose
+' VT cannot be trusted is neither.
+Function Live(n)
+
+	Live = CBool(LinkValue("Line" & n & "Live", False))
+
+End Function
+
+
+Function Dead(n)
+
+	Dead = CBool(LinkValue("Line" & n & "Dead", False))
+
+End Function
+
+
+Function CommandInProgressOf(n)
+
+	CommandInProgressOf = 0
+
+	Dim obj
+	Set obj = Bay(n)
+	If obj Is Nothing Then Exit Function
+
+	On Error Resume Next
+	CommandInProgressOf = CLng(obj.Item("Data").Item("CommandInProgress").Value)
+	On Error Goto 0
+
+End Function
+
+
+' One command, and whether the breaker has got there.
+'
+' The deadline is the breaker's own CommandTimeout: it raises
+' CommandInProgress 1 when it does not reach the position in time, and that is
+' read here as the failure. The step timeout in the dispatcher is the second
+' net, for a breaker that answers nothing at all.
+'
+' A breaker already where the step wants it is not commanded.
+Function Operate(n, action)
+
+	Operate = False
+
+	Dim obj
+	Set obj = Bay(n)
+
+	If obj Is Nothing Then
+		WriteLog "The line " & n & " breaker is not in the project."
+		Main_GlobalLockout
+		Exit Function
+	End If
+
+	If PositionOf(n) = action Then
+		Operate = True
+		Exit Function
+	End If
+
+	Select Case CommandInProgressOf(n)
+
+		Case 0, 3
+
+			On Error Resume Next
+			obj.Item("Data").Item("CommandOpenClose").WriteEx action
+			On Error Goto 0
+
+		Case 1
+
+			WriteLog OperationName(action) & " of the line " & n & " breaker failed."
+			Main_GlobalLockout
+
+	End Select
+
+End Function
+
+
+Function OperationName(action)
+
+	If action = 2 Then
+		OperationName = "Closing"
+	ElseIf action = 1 Then
+		OperationName = "Opening"
+	Else
+		OperationName = "Operation"
+	End If
+
+End Function
+
+
+' ============================================================
+'  THE PER DIRECTION POINTS
+' ============================================================
+
+' E3 gives no way to index an XObject's properties, so these are late bound.
+' The literal is built rather than passed because Execute runs in the global
+' scope and cannot see a local.
+Sub SetDirectionFlag(kind, state)
+
+	Dim f, t
+	f = FromLine()
+	t = OntoLine()
+
+	If f = 0 Or t = 0 Then Exit Sub
+
+	Dim literal
+	literal = "False"
+	If state Then literal = "True"
+
+	On Error Resume Next
+	Execute "xatm_TAL." & kind & "L" & f & "L" & t & " = " & literal
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+Sub ClearRunning()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 2
+		Execute "xatm_TAL.RunningL" & i & "L" & (3 - i) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+Sub ClearOutcomes()
+
+	Dim i
+
+	On Error Resume Next
+	For i = 1 To 2
+		Execute "xatm_TAL.SuccessfulL" & i & "L" & (3 - i) & " = False"
+		Execute "xatm_TAL.UnsuccessfulL" & i & "L" & (3 - i) & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
+End Sub
+
+
+Function Setting(propertyName, fallback)
+
+	Setting = fallback
+
+	gSettingValue = 0
+
+	On Error Resume Next
+	Execute "gSettingValue = xatm_TAL." & propertyName
+	Err.Clear
+	On Error Goto 0
+
+	If IsNumeric(gSettingValue) Then
+		If CLng(gSettingValue) > 0 Then Setting = CLng(gSettingValue)
+	End If
+
+End Function
+
+
+Dim gSettingValue
+
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Parent.Parent.Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Parent.Parent.Name & "] - " & message
+	End If
+
+End Sub
+
+<xatm_TAL:xatm_TAL_OnStartRunning()>
+Sub xatm_TAL_OnStartRunning()
+
+	' The two entry breakers found once, and what they are doing wired into
+	' this object's own tags.
+	'
+	' The walk of the substation folder happens here and nowhere else. After
+	' it, the four tags below follow the breakers through E3's own links, so a
+	' tick reads nothing outside this object - and, which matters more, there
+	' is something static for a user event to watch. The breakers are chosen
+	' at runtime from the incomer layout, so no expression written in the
+	' Studio could name them; without these tags the watcher would have to
+	' poll for a trigger it can now be told about.
+	'
+	' Re-applying the incomer layout does not reach this. The links were made
+	' when the project came up and are stale until it comes up again, which is
+	' already what the Save screen tells the operator to do.
+
+	Dim ids
+	ids = IncomerBreakers(GetIncomerLayout())
+
+	If ids = "" Then
+		WriteLog "Incomer layout " & GetIncomerLayout() & " has no line transfer - nothing bound."
+		Exit Sub
+	End If
+
+	Dim parts
+	parts = Split(ids, ",")
+	If UBound(parts) < 1 Then Exit Sub
+
+	BindLine 1, CLng(parts(0))
+	BindLine 2, CLng(parts(1))
+
+	' And set the watcher going, now that there is something for it to read.
+	'
+	' Not left to the links to do. A link fires its target's OnChangedValue
+	' only when the value it pushes differs from the one already there, and a
+	' breaker that comes up with voltage against a tag that already reads True
+	' changes nothing - four of those and the watcher would sleep until the
+	' switchyard next moved.
+	On Error Resume Next
+	Item("Signals").Item("Watch").WriteEx 0
+	On Error Goto 0
+
+End Sub
+
+
+' One line: the breaker's path written down for the two commands, and its
+' state and position linked in for everything else.
+Sub BindLine(n, id)
+
+	Dim breaker, exists
+	Set breaker = GetDeviceById(id, exists)
+
+	If Not exists Then
+		SetPath n, ""
+		WriteLog "Entry breaker " & id & " was not found - line " & n & " is not bound."
+		Exit Sub
+	End If
+
+	SetPath n, breaker.PathName
+
+	Dim p
+	p = breaker.PathName
+
+	' Dead and live, each one expression over the breaker's own signals, so
+	' the watcher reads a tag and never the rule.
+	'
+	' Dead is the loss 10.4.1 describes: the undervoltage element actuated,
+	' the line's VT healthy, and no current through the breaker. Live is the
+	' voltage there and the VT healthy, with no current in it - the reserve
+	' breaker is open and carries none whatever its line is doing. On that
+	' open breaker the current term in Dead is always met, which is why the
+	' one expression serves the both-lines-dead pause as well.
+	'
+	' The three rest at False, so one the site leaves unbound drops out of
+	' both expressions instead of deciding them. Bind only the undervoltage
+	' element and dead and live become each other's opposite, which is the
+	' site's call to make. Parenthesised so the answer does not depend on
+	' where the expression engine puts Not.
+	Relink "Line" & n & "Dead", _
+		p & ".UndervoltageRelay And (Not " & p & ".LineVTFailure) And (Not " & p & ".HasLoadCurrent)"
+	Relink "Line" & n & "Live", _
+		"(Not " & p & ".UndervoltageRelay) And (Not " & p & ".LineVTFailure)"
+
+	' Position is a tag under the breaker's Data folder, and the library reads
+	' it that way everywhere.
+	Relink "Line" & n & "Position", p & ".Data.Position"
+
+	WriteLog "Line " & n & " bound to " & breaker.Name & "."
+
+End Sub
+
+
+' One link made again from nothing.
+'
+' Taken off first, because CreateLink on a Value that already carries one is
+' not a replacement. RemoveLink raises where there is nothing to remove, which
+' is the ordinary case the first time the project comes up, so the error is
+' swallowed rather than guarded against.
+Sub Relink(tagName, source)
+
+	Dim tag
+	Set tag = Nothing
+
+	On Error Resume Next
+	Set tag = Item("Signals").Item(tagName)
+	On Error Goto 0
+
+	If tag Is Nothing Then
+		WriteLog "There is no " & tagName & " tag to bind."
+		Exit Sub
+	End If
+
+	On Error Resume Next
+
+	tag.Links.RemoveLink "Value"
+	Err.Clear
+
+	tag.Links.CreateLink "Value", source
+
+	If Err.Number <> 0 Then
+		WriteLog tagName & " would not take " & source & " - " & Err.Description
+		Err.Clear
+	End If
+
+	On Error Goto 0
+
+End Sub
+
+
+Sub SetPath(n, path)
+
+	On Error Resume Next
+	Item("Signals").Item("Line" & n & "Path").WriteEx path
+	On Error Goto 0
+
+End Sub
+
+
+' Which breakers the incomer layout puts on the two lines.
+'
+' The logical Ids and never the display names - the Id is the contract, the
+' same one TransformerDevices and BusbarDevices go by over in the
+' configuration. Line 1 is the first of the pair and line 2 the second.
+Function IncomerBreakers(incomerType)
+
+	Select Case UCase(incomerType)
+
+		Case "2BR2BB"
+			IncomerBreakers = "10,20"
+
+		Case Else
+
+			' Nothing said about this layout, so nothing claimed about it. A
+			' transfer that does not run beats one operating a pair of
+			' breakers it guessed at.
+			IncomerBreakers = ""
+
+	End Select
+
+End Function
+
+
+Function GetIncomerLayout()
+
+	GetIncomerLayout = ""
+
+	On Error Resume Next
+	GetIncomerLayout = Application.GetObject("XATM_Data.Automation.Layout.Incomer").Value
+	On Error Goto 0
+
+End Function
+
+
+Function GetDeviceById(id, ByRef exists)
+
+	exists = False
+	Set GetDeviceById = FindInFolder(Application.GetObject("XATM_Data.Substation"), id, exists)
+
+End Function
+
+
+Function FindInFolder(folder, id, ByRef exists)
+
+	Set FindInFolder = Nothing
+
+	Dim obj
+
+	For Each obj In folder
+
+		Select Case UCase(TypeName(obj))
+
+			Case "XATM_BREAKER", "XATM_TRANSFORMER", "XATM_DISCONNECTOR"
+				If obj.Id = id Then
+					Set FindInFolder = obj
+					exists = True
+					Exit Function
+				End If
+
+			Case Else
+				Dim found
+				On Error Resume Next
+				Set found = FindInFolder(obj, id, exists)
+				On Error GoTo 0
+
+				If exists Then
+					Set FindInFolder = found
+					Exit Function
+				End If
+
+		End Select
+
+	Next
+
+End Function
+
+
+Sub WriteLog(message)
+
+	Dim consoleLogEngine
+	Set consoleLogEngine = Nothing
+
+	On Error Resume Next
+	Set consoleLogEngine = Application.GetObject("xatm_config_data.ConsoleLogEngine")
+	Application.Trace "[" & Name & "] - " & message
+	On Error Goto 0
+
+	If Not consoleLogEngine Is Nothing Then
+		consoleLogEngine.WriteLine = "[" & Name & "] - " & message
+	End If
+
+End Sub
+
 <xatm_TMTNM.Commands.OperatorBlock:OperatorBlock_CommandOperatorBlock()>
 Sub OperatorBlock_CommandOperatorBlock()
 	
@@ -9348,12 +10924,6 @@ Sub WriteLog(message)
 	
 End Sub
 
-<xatm_Transformer.Data.Triggers.RASEAT:RASEAT_OnCRTrip()>
-Sub RASEAT_OnCRTrip()
-	
-	RequestRASEAT()
-	
-End Sub
 
 <xatm_Transformer.Data.Triggers.TA:TA_Functions()>
 Sub TA_Functions()
