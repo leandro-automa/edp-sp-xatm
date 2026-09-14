@@ -59,10 +59,51 @@ Sub objButton_Click()
 	defective = CBool(source.Defective)
 	On Error Goto 0
 
+	' Line voltage, and only on the two entry breakers.
+	'
+	' Those are the two the line transfer reads HasVoltage from. On any other
+	' breaker the flag drives nothing, and a toggle there would look like a
+	' test that had been run. The Ids are the ones IncomerBreakers hands the
+	' transfer for a 2BR2BB incomer - written again here because a library
+	' control has no way to ask the automation for them.
+	Dim deviceId
+	deviceId = 0
+
+	On Error Resume Next
+	deviceId = CLng(source.Id)
+	On Error Goto 0
+
+	Dim isEntry
+	isEntry = (deviceId = 10 Or deviceId = 20)
+
+	Dim lineLive
+	lineLive = True
+
+	On Error Resume Next
+	lineLive = CBool(source.HasVoltage)
+	On Error Goto 0
+
+	' SelectMenu numbers the entries in order and skips the separators, so
+	' Reset moves down one when the voltage entry is there. Both numbers are
+	' worked out rather than written into the cases; -1 is a number no menu
+	' hands back.
+	Dim voltageEntry, voltageOption, resetOption
+
+	If isEntry Then
+		voltageEntry  = IIf(lineLive, "*", "") & "Has Voltage|"
+		voltageOption = 5
+		resetOption   = 6
+	Else
+		voltageEntry  = ""
+		voltageOption = -1
+		resetOption   = 5
+	End If
+
 	Dim options
 	options = "Command{" & openCmd & "|" & closeCmd & "||" & _
 	          IIf(CBool(failTag.Value), "*", "") & "Command Failure}|" & _
 	          IIf(defective, "*", "") & "Defective|" & _
+	          voltageEntry & _
 	          "Reset||Cancel"
 
 	Dim userOption
@@ -84,7 +125,13 @@ Sub objButton_Click()
 			source.Defective = Not defective
 			On Error Goto 0
 
-		Case 5
+		Case voltageOption
+
+			On Error Resume Next
+			source.HasVoltage = Not lineLive
+			On Error Goto 0
+
+		Case resetOption
 
 			source.Item("Data").Item("Reset").WriteEx True
 
@@ -1749,6 +1796,7 @@ Sub objButton_Click()
 	options = IIf(source.OutOfService,      "*", "") & "Out Of Service|" & _
 	          IIf(source.UndervoltageRelay, "*", "") & "Undervoltage (27)|" & _
 	          IIf(source.LockingOutRelay,   "*", "") & "Locking Out Relay (86)|" & _
+	          IIf(source.Isolated,          "*", "") & "Isolated|" & _
 	          "|Reset|Cancel"
 
 	Dim userOption
@@ -1766,6 +1814,9 @@ Sub objButton_Click()
 			source.LockingOutRelay = Not source.LockingOutRelay
 		
 		Case 4
+			source.Isolated = Not source.Isolated
+		
+		Case 5
 			' TODO: Reset
 
 	End Select
