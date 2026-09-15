@@ -3238,15 +3238,27 @@ Sub Main_Step04()
 
 	If TimedOut(BREAKER_TIMEOUT) Then
 		
-		' The breaker is told to drop the command before this step lets go
-		' of it.
+		' The breaker's command is ended as failed before this step lets go of
+		' it.
 		'
 		' Its own timer is still running: a command it has not confirmed is
 		' resent once, at half of CommandTimeout, which is far longer than
 		' this step waited. Left alone it would close this incomer long
 		' after step 6 had closed the other, and the station would find
 		' itself with both.
-		breaker.Item("Data").Item("Reset").WriteEx True
+		'
+		' Not by resetting the breaker, which is what this used to do. A reset
+		' clears the failure latches along with the command, so a close that
+		' never confirmed went by without an alarm. Running the breaker's timer
+		' out instead ends it the way a timeout of its own would, on its next
+		' tick: stopped, CommandInProgress at failed, CommandCloseFailed latched
+		' for the operator. The timer asks about the timeout before it asks
+		' about the retry, so nothing is resent.
+		'
+		' Only while the command is in progress. One the breaker already
+		' failed has its latch set, and one it never took - an interlock, no
+		' relay - has nothing in flight to stop and no failure to report.
+		ExpireCommand breaker
 
 		WriteLog "Step 4: " & breaker.Name & " has not confirmed closed - asking the current."
 		Advance 5
@@ -3256,6 +3268,25 @@ Sub Main_Step04()
 
 	IssueClose breaker
 		
+End Sub
+
+
+' Brings a breaker's command timeout forward to now.
+Sub ExpireCommand(breaker)
+
+	Dim inProgress
+	inProgress = False
+
+	On Error Resume Next
+	inProgress = (breaker.Item("Data").Item("CommandInProgress").Value = 2)
+	On Error Goto 0
+
+	If Not inProgress Then Exit Sub
+
+	On Error Resume Next
+	breaker.Item("Data").Item("Timers").Item("CommandTimer").WriteEx 0
+	On Error Goto 0
+
 End Sub
 
 <xatm_RASEAT.FSM.Main:Main_Step05()>
