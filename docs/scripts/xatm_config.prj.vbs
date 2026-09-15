@@ -6444,6 +6444,18 @@ Sub xatm_RASEAT_OnStartRunning()
 		"The reclosing failed.", _
 		"O religamento foi malsucedido."
 
+	' Which line the station came back on - asked for by the client, the way the
+	' line transfer shows its direction. Up with Successful and put out with it.
+	' No per-line failure: a reclosing that fails has tried the primary and then
+	' the other, so a failure belongs to neither line.
+	For i = 1 To 2
+
+		AddProperty bag, "SuccessfulL" & i, "Boolean", False, _
+			"The reclosing succeeded on line " & i & " - its incomer confirmed closed, or load current confirmed it. An event and not a state, put out with Successful.", _
+			"O religamento foi bem-sucedido na linha " & i & " - o disjuntor de entrada confirmou fechado, ou a corrente de carga o confirmou. Um evento e não um estado, apagado junto com o Successful."
+
+	Next
+
 	For i = 1 To 6
 
 		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
@@ -6473,6 +6485,10 @@ Sub xatm_RASEAT_OnStartRunning()
 	SetExposure bag, "Successful",   EXPOSE_INTERFACE + EXPOSE_IOTAG
 	SetExposure bag, "Unsuccessful", EXPOSE_INTERFACE + EXPOSE_IOTAG
 
+	For i = 1 To 2
+		SetExposure bag, "SuccessfulL" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
+	Next
+
 	For i = 1 To 6
 		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
 	Next
@@ -6484,8 +6500,14 @@ Sub xatm_RASEAT_OnStartRunning()
 	SetAlarm bag, "AutomaticBlock", "BLOQUEIO AUTOMÁTICO RA",   PAIR_BLOCKED,      SEV_MEDIUM
 	SetAlarm bag, "Preconditions",  "PRECONDIÇÕES RA",       PAIR_PRECONDITION, SEV_MEDIUM
 	SetAlarm bag, "Running",        "RELIGAMENTO AT",              PAIR_RUNNING,      SEV_LOW
-	SetAlarm bag, "Successful",     "RELIGAMENTO AT BEM SUCEDIDO", PAIR_ACTUATED,     SEV_LOW
 	SetAlarm bag, "Unsuccessful",   "RELIGAMENTO AT MAL SUCEDIDO", PAIR_ACTUATED,     SEV_HIGH
+
+	' A success is alarmed per line and not twice. Successful keeps its point for
+	' level 3, but a second line on the list saying only what the first already
+	' says, less the line, would tell the operator nothing.
+	For i = 1 To 2
+		SetAlarm bag, "SuccessfulL" & i, "RELIGAMENTO AT L" & i & " BEM SUCEDIDO", PAIR_ACTUATED, SEV_LOW
+	Next
 
 	SetAlarm bag, "Blocked",       "RELIGAMENTO AT", PAIR_BLOCKED, SEV_MEDIUM
 

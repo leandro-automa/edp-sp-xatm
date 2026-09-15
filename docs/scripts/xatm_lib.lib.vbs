@@ -2212,6 +2212,8 @@ Sub Reset()
 	xatm_RASEAT.Running      = False
 	xatm_RASEAT.GeneralBlock = False
 	xatm_RASEAT.Successful   = False
+	xatm_RASEAT.SuccessfulL1 = False
+	xatm_RASEAT.SuccessfulL2 = False
 	xatm_RASEAT.Unsuccessful = False
 
 	Dim i
@@ -2381,6 +2383,8 @@ Sub Start_OnChangedValue()
 	' of it, so the control room keeps seeing how the previous reclosing
 	' went until a new one actually begins.
 	xatm_RASEAT.Successful   = False
+	xatm_RASEAT.SuccessfulL1 = False
+	xatm_RASEAT.SuccessfulL2 = False
 	xatm_RASEAT.Unsuccessful = False
 
 	xatm_RASEAT.Item("FSM").Item("StepTimer").WriteEx 0
@@ -2531,6 +2535,8 @@ Sub Main_Completed()
 	' fault and wait for a Reset, which is the difference between them and an
 	' outcome.
 	xatm_RASEAT.Successful   = False
+	xatm_RASEAT.SuccessfulL1 = False
+	xatm_RASEAT.SuccessfulL2 = False
 	xatm_RASEAT.Unsuccessful = False
 
 	WriteLog "Reclosing completed."
@@ -2607,6 +2613,26 @@ Function IncomerIds()
 		Case "2BR2BB" : IncomerIds = Array(10, 20)
 		Case Else     : IncomerIds = Array()
 	End Select
+
+End Function
+
+
+' Which line an incomer is on: its place in the layout's list, counted from 1,
+' or 0 for one the layout does not declare. The order is the one the line
+' transfer takes its two breakers in, so line 1 here is line 1 there.
+Function LineOf(id)
+
+	LineOf = 0
+
+	Dim ids, i
+	ids = IncomerIds()
+
+	For i = 0 To UBound(ids)
+		If ids(i) = id Then
+			LineOf = i + 1
+			Exit Function
+		End If
+	Next
 
 End Function
 
@@ -3232,7 +3258,7 @@ Sub Main_Step04()
 	If breaker.Item("Data").Item("Position").Value = 2 Then
 
 		WriteLog "Step 4: " & breaker.Name & " closed - the reclosing succeeded."
-		Succeed()
+		Succeed ReadPrimaryId()
 		Exit Sub
 
 	End If
@@ -3318,7 +3344,7 @@ Sub Main_Step05()
 	If carrying Then
 
 		WriteLog "Step 5: " & breaker.Name & " is carrying load - the reclosing succeeded."
-		Succeed()
+		Succeed ReadPrimaryId()
 		Exit Sub
 
 	End If
@@ -3353,7 +3379,7 @@ Sub Main_Step06()
 	If breaker.Item("Data").Item("Position").Value = 2 Then
 
 		WriteLog "Step 6: " & breaker.Name & " closed - the reclosing succeeded."
-		Succeed()
+		Succeed ReadBackupId()
 		Exit Sub
 
 	End If
@@ -3418,9 +3444,21 @@ End Sub
 
 ' What every successful ending does. Held rather than cleared, so the
 ' control room sees the result before Main_Completed takes it away.
-Sub Succeed()
+'
+' And which line the station came back on, which the client asked to see
+' the way the line transfer shows its direction. Taken from the incomer
+' that closed and not from the step: steps 4 and 5 restore the primary,
+' step 6 the other one. An incomer the layout does not place on a line
+' still succeeds, and says so only through Successful.
+Sub Succeed(breakerId)
 
 	xatm_RASEAT.Successful = True
+
+	Select Case LineOf(breakerId)
+		Case 1 : xatm_RASEAT.SuccessfulL1 = True
+		Case 2 : xatm_RASEAT.SuccessfulL2 = True
+	End Select
+
 	Advance 99
 	
 End Sub
