@@ -6192,6 +6192,14 @@ Sub Reset()
 	ClearRunning
 	ClearOutcomes
 
+	Dim i
+	On Error Resume Next
+	For i = 1 To 3
+		Execute "xatm_TAL.StepExecutionFailed" & i & " = False"
+	Next
+	Err.Clear
+	On Error Goto 0
+
 	Dim tag
 	On Error Resume Next
 	For Each tag In xatm_TAL.Item("FSM")
@@ -6725,6 +6733,36 @@ Function Operate(n, action)
 End Function
 
 
+' Brings a breaker's command timeout forward to now.
+'
+' A step gives up at STEP_TIMEOUT, shorter than the breaker's CommandTimeout,
+' and left alone the breaker would go on and could still open or close after
+' the transfer had been declared a failure. Its timer run out ends the command
+' the way a timeout of its own would: failed, latched on the breaker, nothing
+' resent. RASEAT's step 4 does the same.
+'
+' Only while the command is in progress. One the breaker already failed has
+' its latch set, and one it never took has nothing in flight.
+Sub ExpireCommand(breaker)
+
+	If breaker Is Nothing Then Exit Sub
+
+	Dim inProgress
+	inProgress = False
+
+	On Error Resume Next
+	inProgress = (breaker.Item("Data").Item("CommandInProgress").Value = 2)
+	On Error Goto 0
+
+	If Not inProgress Then Exit Sub
+
+	On Error Resume Next
+	breaker.Item("Data").Item("Timers").Item("CommandTimer").WriteEx 0
+	On Error Goto 0
+
+End Sub
+
+
 Function OperationName(action)
 
 	If action = 2 Then
@@ -6841,6 +6879,23 @@ Sub Main_GlobalLockout()
 	' outcome itself is an event that will be gone in a few seconds.
 	xatm_TAL.GeneralBlock = True
 	SetDirectionFlag "Unsuccessful", True
+
+	' Which step it was, latched until Reset. The outcome is gone after
+	' OutcomeHoldTime and GeneralBlock does not say where it stopped.
+	On Error Resume Next
+	Select Case Value
+		Case 1 : xatm_TAL.StepExecutionFailed1 = True
+		Case 2 : xatm_TAL.StepExecutionFailed2 = True
+		Case 3 : xatm_TAL.StepExecutionFailed3 = True
+	End Select
+	On Error Goto 0
+
+	' The breaker the step was commanding is told its command is over - see
+	' ExpireCommand.
+	Select Case Value
+		Case 2 : ExpireCommand Bay(FromLine())
+		Case 3 : ExpireCommand Bay(OntoLine())
+	End Select
 
 	WriteLog "Global lockout activated due to automation failure."
 

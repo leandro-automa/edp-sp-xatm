@@ -6030,8 +6030,8 @@ Sub xatm_TAL_OnStartRunning()
 		"True quando uma transferência não pode partir - desabilitado, bloqueado pelo operador ou pelo intertravamento geral, ou barrado pelo campo."
 
 	AddProperty bag, "CommandReset", "InternalTag", Empty, _
-		"Reset command. Clears the general block, which is how the operator selects the automation back into service.", _
-		"Comando de reset. Apaga o bloqueio geral, que é como o operador seleciona o automatismo de volta ao serviço."
+		"Reset command. Clears the general block and the latched step failures, which is how the operator selects the automation back into service.", _
+		"Comando de reset. Apaga o bloqueio geral e as falhas seladas de passo, que é como o operador seleciona o automatismo de volta ao serviço."
 
 	AddProperty bag, "CommandOperatorBlock", "InternalTag", Empty, _
 		"Operator lock command. Written by the operator's screen to set or release OperatorBlock.", _
@@ -6071,6 +6071,17 @@ Sub xatm_TAL_OnStartRunning()
 
 	Next
 
+	' Which step a failed transfer stopped at, latched until Reset, as in the
+	' other three automations. One per step this one has rather than their six:
+	' each is a licensed tag and a point level 3 receives.
+	For i = 1 To 3
+
+		AddProperty bag, "StepExecutionFailed" & i, "Boolean", False, _
+			"Latched failure of step " & i & ". Set when the step does not execute and the automation goes to global lockout, cleared by Reset.", _
+			"Falha selada do passo " & i & ". Marcada quando o passo não executa e o automatismo entra em bloqueio geral, apagada pelo Reset."
+
+	Next
+
 
 	' --- what the screen may do, and what leaves the station -------------
 
@@ -6104,6 +6115,10 @@ Sub xatm_TAL_OnStartRunning()
 		SetExposure bag, "UnsuccessfulL" & lineFrom & "L" & lineOnto, EXPOSE_INTERFACE + EXPOSE_IOTAG
 	Next
 
+	For i = 1 To 3
+		SetExposure bag, "StepExecutionFailed" & i, EXPOSE_INTERFACE + EXPOSE_IOTAG
+	Next
+
 
 	' --- what the operator is alarmed on ---------------------------------
 
@@ -6128,6 +6143,10 @@ Sub xatm_TAL_OnStartRunning()
 		SetAlarm bag, "UnsuccessfulL" & lineFrom & "L" & lineOnto, _
 			"TRANSFERÊNCIA AUTOMÁTICA L" & lineFrom & " PARA L" & lineOnto & " MAL SUCEDIDA", _
 			PAIR_ACTUATED, SEV_HIGH
+	Next
+
+	For i = 1 To 3
+		SetAlarm bag, "StepExecutionFailed" & i, "FALHA PASSO " & i, PAIR_ACTUATED, SEV_HIGH
 	Next
 
 	Set Value = bag
